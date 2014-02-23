@@ -16,9 +16,9 @@ echo [{"permissionId":1,"dataSource":"AURORA_USERS","groupId":3,"userId":"","acc
 echo [{"userId":1,"firstname":"root","lastname":"user","emailaddress":"root","username":"root","password":"0192023a7bbd73250516f069df18b500","groupId":3}] > aurora.users.json
 echo [{"groupId":1,"description":"Public","locked":true},{"groupId":2,"description":"Members","locked":false},{"groupId":3,"description":"Administrators","locked":true}] > aurora.groups.json
 
-openssl genrsa -out privatekey.pem 1024 
-openssl req -new -key privatekey.pem -out certrequest.csr 
-openssl x509 -req -in certrequest.csr -signkey privatekey.pem -out certificate.pem
+C:\OpenSSL-Win32\bin\openssl genrsa -out privatekey.pem 1024 
+C:\OpenSSL-Win32\bin\openssl req -new -key privatekey.pem -out certrequest.csr 
+C:\OpenSSL-Win32\bin\openssl x509 -req -in certrequest.csr -signkey privatekey.pem -out certificate.pem
 cd ..
 
 build.bat
