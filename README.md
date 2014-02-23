@@ -6,7 +6,7 @@ Aurora is a Pseudo Functional, declarative two way push data model, that is impl
 Decent examples coming soon!
 
 Information About FRP On the WIki!
-https://github.com/Zysen/NodeAurora/wiki
+https://github.com/Zysen/Aurora/wiki
 
 Installation
 ===========
