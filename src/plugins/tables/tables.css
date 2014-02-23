@@ -1,0 +1,262 @@
+.testTable{
+	
+}
+.testTable th{
+	background-color: #0055FF;
+	color: #FFFFFF;
+}
+.testTable tr{
+	background-color: #A0A0A0;
+	color: #000000;
+}
+
+.changeIndicator{
+	min-width: 20px;
+	width: 20px;
+}
+
+.TableWidget_verticalTableHeading{
+	
+}
+.TableWidget_horizontalTableHeading{
+	
+}
+.TablesSelectedRow{
+	background-color: #67c3ff;
+}
+.TablesSelectedColumn{
+	background-color: #67c3ff;
+}
+
+.TableWidget{
+
+}
+
+.TableWidget_modified_row
+{
+	background-image: url("/resources/images/icon_atlas.png");
+	background-repeat: no-repeat;
+	background-position: -80px -120px;
+	width: 20px;
+	height: 20px;
+}
+
+.TableWidget_deleted_row
+{
+	background-image: url("/resources/images/icon_atlas.png");
+	background-repeat: no-repeat;
+	background-position: -100px -120px;
+	width: 20px;
+	height: 20px;
+}
+
+
+.TableWidget_modified_col{
+	background-image: url("/resources/images/icon_atlas.png");
+	background-repeat: no-repeat;
+	background-position: -85px -125px;
+	width: 10px;
+	height: 10px;
+	margin: 0 auto;
+}
+.TableWidget_modified_colContainer{
+	text-align: center;
+}
+
+.noSelection{
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	-khtml-user-select: none;
+	-moz-user-select: -moz-none;
+	-ms-user-select: none;
+	user-select: none;
+}
+
+
+
+.page_toolbar_container
+{
+	margin-right: 20px;
+	margin-left: 20px;
+	margin-top: 30px;
+	margin-bottom: 10px;
+	width: 46px;
+	float: left;
+}
+
+.page_toolbar_content
+{
+	margin-left: 86px;
+}
+
+.page_toolbar_feedback
+{
+	border: 2px solid transparent;
+	background-color: #ffffff;
+	border-radius: 7px;
+	margin-top: -6px;
+	margin-left: -2px;
+	margin-right: -2px;
+	margin-bottom: 4px;
+	width: 46px;
+	height: 46px;
+}
+
+.page_toolbar_feedback.success
+{
+	border-color: #71bf44;
+	background-color: #e2f3de;
+	background-image: url('/resources/images/tick.png');
+	background-repeat: no-repeat;
+	background-position: 15px 50px;
+	height: 80px;
+}
+
+.page_toolbar_feedback.error
+{
+	border-color: #ff0000;
+	background-color: #ffeddf;
+	background-image: url('/resources/images/exclamation.png');
+	background-repeat: no-repeat;
+	background-position: 15px 50px;
+	height: 80px;
+}
+
+.page_toolbar_feedback.updating
+{
+	background-image: url('/resources/images/spinner.gif');
+	background-repeat: no-repeat;
+	background-position: 10px 50px;
+	height: 80px;
+}
+
+.page_toolbar_errors 
+{
+	border: 2px solid #ff0000;
+	background-color: #ffeddf;
+	border-radius: 7px;
+	margin-top: 0px;
+	margin-left: -2px;
+	margin-right: -2px;
+	margin-bottom: 4px;
+	width: 46px;
+	height: 46px;
+	background-image: url('/resources/images/exclamation.png');
+	background-repeat: no-repeat;
+	background-position: 15px 8px;
+	cursor: pointer;
+}
+
+.page_toolbar_error_count
+{
+	text-align: center;
+	margin-top: 25px;
+}
+
+
+/* Toolbar buttons extend .button in global.css
+*/
+
+.button.add {
+	margin: 4px;
+	width: 20px;
+	height: 20px;
+	padding: 5px 8px;
+	background-image: url('/resources/images/toolbar_add.png');
+	background-repeat: no-repeat;
+	background-origin: content-box;
+}
+
+.button.add.disabled {
+	background-image: url('/resources/images/toolbar_add_disabled.png');
+}
+
+.button.undo {
+	margin: 4px;
+	width: 20px;
+	height: 20px;
+	padding: 5px 8px;
+	background-image: url('/resources/images/toolbar_undo.png');
+	background-repeat: no-repeat;
+	background-origin: content-box;
+}
+
+.button.undo.disabled {
+	background-image: url('/resources/images/toolbar_undo_disabled.png');
+}
+
+.button.delete {
+	margin: 4px;
+	width: 20px;
+	height: 20px;
+	padding: 5px 8px;
+	background-image: url('/resources/images/toolbar_delete.png');
+	background-repeat: no-repeat;
+	background-origin: content-box;
+}
+
+.button.delete.disabled {
+	background-image: url('/resources/images/toolbar_delete_disabled.png');
+}
+
+.button.apply {
+	margin: 4px;
+	margin-left: 3px;
+	margin-right: 3px;
+	border-width: 2px;
+	width: 20px;
+	height: 20px;
+	padding: 5px 8px;
+	background-image: url('/resources/images/toolbar_apply.png');
+	background-repeat: no-repeat;
+	background-origin: content-box;
+}
+
+.button.apply.disabled {
+	background-image: url('/resources/images/toolbar_apply_disabled.png');
+}
+
+.button_spacer_vertical {
+	margin-left: 6px;
+	margin-right: 6px;
+	margin-top: 10px;
+	margin-bottom: 10px;
+	width: 34px;
+	height: 1px;
+	border-bottom: 1px dashed #ccc;
+}
+
+
+
+
+.mapRenderer_row {
+	display: table-row;	
+	width: 100%;
+}
+.mapRenderer_key{
+	display: table-cell;
+}
+.mapRenderer_val{
+	display: table-cell;
+}
+.mapRenderer_newValue{
+	display: table-cell;
+}
+.mapRenderer_newKey{
+	display: table-cell;
+}
+.mapRenderer_controls{
+	display: table-row;
+}
+.mapRenderer_addButton{
+	display: table-cell;
+}
+.mapRenderer_rowsContainer{
+	width: 100%;
+}
+.mapRenderer_newKeyInput{
+	display: table-cell;
+}
+.mapRenderer_newValueInput{
+	display: table-cell;
+}

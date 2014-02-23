@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>WebApp TestBed</title>
+<script type="text/javascript" src="/client.js"></script>
+<style type="text/css" media="all">@import "/style.css";</style>  
+{HEAD}                                    
+</head>
+<body>
+<div id="maincontainer">
+    <div id="menu">
+            <ul>
+                <li><a href="/home" onclick="return changePage('/home');">Home</a></li>
+                <li><a href="/admin" onclick="return changePage('/admin');">Administration</a></li>
+                <li><a href="/logout" onclick="return changePage('/logout');">Logout</a></li>
+            </ul>
+        </div>
+    <div id="content">{CONTENT}</div> 
+    <div id="footer">Footer</div>
+</div>
+</body>
+</html>
