@@ -363,6 +363,15 @@ F.EventStream.prototype.printE = function(str){
 		return value;
 	});
 };
+F.EventStream.prototype.print = F.EventStream.prototype.printE;
+
+F.Behavior.prototype.printB = function(){
+    return this.liftB(function(val){
+        LOG.create(val);
+    });
+};
+F.Behavior.prototype.print = F.Behavior.prototype.printB;
+
 F.EventStream.prototype.undefinedE = function(){
 	return this.mapE(function(){return undefined});
 };
