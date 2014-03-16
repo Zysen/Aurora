@@ -9,7 +9,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
           if (c.indexOf(name)==0) return c.substring(name.length,c.length);
           }
         return "";
-    }   
+    }
     
     //Send Authentication token to server
     aurora.authTokenRequestE = aurora.connectionStatusE.filterE(function(packet){   //TODO: Should the onceE be there?
@@ -17,6 +17,8 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     }).onceE().mapE(function(){
        LOG.create("Sending Auth Token");
        aurora.sendToServer({command: aurora.COMMANDS.AUTHENTICATE, data: {token: getCookie("sesh")}});
+    }).mapE(function(){
+        DATA.reregisterAll();
     });
     
     //TODO: Link up with http server, to enable a session across all requests. Probably give the webserver a copy of the sessions table. 
@@ -24,12 +26,8 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     
     //Receive Authentication token from server.
     aurora.sendToClientE.filterE(function(message){
-        return message.command===aurora.COMMANDS.AUTHENTICATE && message.data.token!=undefined;
+        return message.command===aurora.COMMANDS.AUTHENTICATE && message.data.expiry!=undefined;
     }).mapE(function(messagePacket){
-        if(typeof(Storage)!=="undefined"){
-            localStorage.setItem("sesh", messagePacket.data.token);
-            localStorage.setItem("sesh_expiry", messagePacket.data.expiry);
-        }
         var date = new Date();
         date.setTime(messagePacket.data.expiry+(date.getTimezoneOffset()*60000));    //TODO: Apply timezone offset
         document.cookie="sesh="+messagePacket.data.token+"; expires="+date.toGMTString()+"; path=/";      //Thu, 18 Dec 2013 12:00:00 GMT
@@ -234,9 +232,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
             load:function(){
                F.liftB(function(connected, authTokenSent){
                    if(good(connected) && connected===true){
-                      AURORA.sendToServer({command: AURORA.COMMANDS.UNAUTHENTICATE, data: {token: localStorage.getItem("sesh")}}); 
-                      LOG.create("Logging Out");
-                      localStorage.removeItem("sesh");
+                      LOG.create("LOgging Out");
+                      AURORA.sendToServer({command: AURORA.COMMANDS.UNAUTHENTICATE, data: {command: AURORA.COMMANDS.UNAUTHENTICATE,token: getCookie("sesh")}}); 
+                      document.cookie = 'sesh=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
                    }
                },aurora.connectedB, aurora.authTokenRequestE.startsWith(SIGNALS.NOT_READY));
             },

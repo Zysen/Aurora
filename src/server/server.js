@@ -44,11 +44,11 @@ var handleRequest = function(request, response){
 		cookies[parts[0].trim()] = (parts[1] || '').trim();
 	});
 	if(cookies["sesh"]==undefined){    //TODO: Handle the case where the server reboots but a client still has an active auth token in session
+		
 		var tokenPair = AUTHENTICATION.createNewTokenSeriesPair(sessionsTableB.valueNow(), 10);
 		cookies["sesh"] = tokenPair.token+"-"+tokenPair.seriesId;
 		responseHead['Set-Cookie']="sesh"+'='+cookies["sesh"]+'; Path=/;';
 		dataThread.send({command: AURORA.COMMANDS.UPDATE_TOKEN, token: tokenPair.token, seriesId:tokenPair.seriesId});
-		//LOG.create("Creating token "+cookies["sesh"]);
 	}
 	var authToken = cookies["sesh"];
 	//TODO: Perform user lookup from sessionsTable and auth token
@@ -94,16 +94,8 @@ var handleRequest = function(request, response){
 
 
 
+
 var connections = {};
-
-var connectionsChanged = function(){
-    var clientIds = [];
-    for(var clientId in connections){
-        clientIds.push({clientId:clientId, token:connections[clientId].token, seriesId:connections[clientId].seriesId});
-    }
-    dataThread.send({data: {command: AURORA.COMMANDS.UPDATE_DATA,data: clientIds, key: "AURORA_CONNECTIONS"}});  
-};
-
 //Messages from Data Thread
 
 dataThread.on('message', function(data){dataThreadE.sendEvent(data);});
@@ -131,7 +123,7 @@ dataThreadE.mapE(function(data){
             }
             else{
                 LOG.create("Server doesnt know how to handle packet");
-               LOG.create(data);
+                LOG.create(data);
             }
         }
         catch(e){
@@ -150,7 +142,6 @@ dataThreadE.mapE(function(data){
 var handleSocketRequest = function(request){
 	var connection = request.accept('aurora_channel', request.origin);   
     var id = request.key;
-    LOG.create("Connection: "+id);
     var token = undefined;
     var seriesId = undefined;
     for(var index in request.cookies){
@@ -167,14 +158,14 @@ var handleSocketRequest = function(request){
         LOG.create(error);
     });
     //Send Version String
-    LOG.create("Sending version string to client "+AURORA.VERSION);
+    //LOG.create("Sending version string to client "+AURORA.VERSION);
     connections[id].connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.VERSION, data: AURORA.VERSION}));
     connection.on('message', function(message){
         
         //Handle each command specifically. Only pass specific commands through to the data thread. This should help keep unwanted requests to a minimum.
         if(message.type=="utf8"){
         	try{
-        		var data = JSON.parse(message.utf8Data);
+        		var data = JSON.parse(message.utf8Data);	
         		if(data.command===AURORA.COMMANDS.UPDATE_DATA || data.command===AURORA.COMMANDS.REGISTER_DATA || data.command===AURORA.COMMANDS.DEREGISTER_DATA || data.command===AURORA.COMMANDS.AUTHENTICATE || data.command===AURORA.COMMANDS.UNAUTHENTICATE){
         			dataThread.send({data: data, clientId: id, token:token, seriesId:seriesId});
         		}
@@ -196,9 +187,10 @@ var handleSocketRequest = function(request){
     connection.on('close', function(reasonCode, description) {
         OBJECT.delete(connections, id); 
         dataThread.send({data: {command: AURORA.COMMANDS.DEREGISTER_DATA}, clientId: id});
-        connectionsChanged();
+        //Inform the session  manager to drop the connection
+        dataThread.send({command: AURORA.COMMANDS.AUTH.DROP_CONNECTION, data: id}); 
     });
-    connectionsChanged();
+    dataThread.send({command: AURORA.COMMANDS.AUTH.NEW_CONNECTION, data: {clientId: id, token: token, seriesId: seriesId}}); 
 };
 
 

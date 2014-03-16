@@ -717,10 +717,11 @@ var TABLES = (function(tables){
 			 * @returns - Index of row added.
 			 */
 			tables.UTIL.addRow = function(table, rowPk, newData){
-				
-				if(TABLES.UTIL.findRow(table, rowPk) !== false){
-					LOG.create('Error, cannot add row. Table already has primary key of ' + rowPk);
-					return false;
+				var rowIndex = TABLES.UTIL.findRowIndex(table, rowPk);
+				if(rowIndex !== false){
+					//LOG.create('Error, cannot add row. Table already has primary key of ' + rowPk);
+					OBJECT.extend(table.data[rowIndex], newData);
+					return rowIndex;
 				}
 				if(newData==undefined){
 					var newData = {};

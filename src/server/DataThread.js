@@ -8,11 +8,8 @@ var DATA = (function(dataManager){
     var dataSourcesUpdatedE = F.receiverE();
     dataManager.httpMessageInE = F.receiverE();
     var clientDataRegE = dataManager.httpMessageInE.filterE(function(websocketPacket){
-        return websocketPacket.data!=undefined && websocketPacket.data.command!==undefined && websocketPacket.data.key!==undefined;
-    }).collectE({}, function(websocketPacket, dataReg){
-        
-        
-        
+        return websocketPacket.data!=undefined && websocketPacket.data.command!==undefined;
+    }).collectE({}, function(websocketPacket, dataReg){        
         var dataPacket = websocketPacket.data;
         var clientId = websocketPacket.clientId;
         var registered = dataReg[dataPacket.key]!=undefined && ARRAYS.arrayContains(dataReg[dataPacket.key], clientId);
@@ -129,13 +126,17 @@ var DATA = (function(dataManager){
         
     var clientDataRegB = clientDataRegE.startsWith(SIGNALS.NOT_READY);
     
+    /*
     dataManager.auroraConnectionsTableE = dataManager.httpMessageInE.filterE(function(websocketPacket){
         return websocketPacket.data && websocketPacket.data.command && websocketPacket.data.command === AURORA.COMMANDS.UPDATE_DATA && websocketPacket.data.key && websocketPacket.data.key=="AURORA_CONNECTIONS" && websocketPacket.data.data;
     }).mapE(function(websocketPacket){
+        LOG.create("Sending new Connections Table");
+        LOG.create(websocketPacket.data.data);
         return TABLES.parseTable("aurora_connections", "clientId", websocketPacket.data.data, {clientId: {name:"Client Id", type: "number"}, token: {name:"Session Id", type: "string"}, seriesId: {name:"Series Id", type: "string"}});
     });
     dataManager.auroraConnectionsTableB = dataManager.auroraConnectionsTableE.startsWith(SIGNALS.NOT_READY);
-    
+    */
+   
     var dataRegTableE = clientDataRegE.mapE(function(dataReg){
        var userSourcesData = [];
        var clients = {};
@@ -199,7 +200,7 @@ var STORAGE = (function(storage, aurora){
 		var pushBackE = F.receiverE();
 		var initialTable = TABLES.parseTable(objectName, primaryKey, JSON.parse(fs.readFileSync(path, 'utf8')), columns);
 		var tableUpdateE = F.mergeE(pushBackE, inputE).collectE(initialTable, function(update, table){
-		    if(!TABLES.UTIL.isTable(update)){ //&&update.command!==undefined
+		    if(!TABLES.UTIL.isTable(update)){
 		        update = (update instanceof Array)?update:[update];
 		        for(var index in update){
     		        if(update[index].command==="add"){
@@ -229,13 +230,9 @@ var STORAGE = (function(storage, aurora){
 		    }
 		    fs.writeFileSync(path, JSON.stringify(update.data), 'utf8');
             return update;
-		});
-		
+		});		
 		
 		var tableBI = F.liftBI(function(table){
-			//onsole.log("Table Down");
-			//TABLES.UTIL.printTable(table);
-			//console.log(table);
 			return table;
 		}, function(newData){
 			var existingTable = TABLES.UTIL.isTable(newData)?newData:tableBI.valueNow();
@@ -247,23 +244,23 @@ var STORAGE = (function(storage, aurora){
 					maxId = Math.max(maxId, typeof(rowPk)!="string"?rowPk:parseInt(rowPk));
 				}
 			}
-				var rows = [];
-				var newRows = [];
-				for(var index in newData.data){
-					var rowPk = TABLES.UTIL.findRowPk(newData, index);
-					if(newData.rowMetaData[rowPk] && newData.rowMetaData[rowPk]["deleted"]){
-						continue;
-					}
-					if(typeof(rowPk)=="string" && (rowPk+"").contains("temp")){
-						newData.data[index][newData.tableMetaData.primaryKey] = ++maxId;
-					}
-					rows.push(newData.data[index]);	
+			var rows = [];
+			var newRows = [];
+			for(var index in newData.data){
+				var rowPk = TABLES.UTIL.findRowPk(newData, index);
+				if(newData.rowMetaData[rowPk] && newData.rowMetaData[rowPk]["deleted"]){
+					continue;
 				}
-				
-				
-				var newTable = TABLES.parseTable(objectName, primaryKey, rows, columns);
-				newTable.tableMetaData.applyId = newData.tableMetaData.applyId;
-			//}
+				if(typeof(rowPk)=="string" && (rowPk+"").contains("temp")){
+					newData.data[index][newData.tableMetaData.primaryKey] = ++maxId;
+				}
+				rows.push(newData.data[index]);	
+			}
+			
+			
+			var newTable = TABLES.parseTable(objectName, primaryKey, rows, columns);
+			newTable.tableMetaData.applyId = newData.tableMetaData.applyId;
+
 			pushBackE.sendEvent(newTable);
 			return [newTable];
 		}, tableUpdateE.startsWith(initialTable));
