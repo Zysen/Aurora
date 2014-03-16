@@ -6,4 +6,12 @@ Aurora is a Pseudo Functional, declarative two way push data model, that is impl
 Decent examples coming soon!
 
 Information About FRP On the WIki!
-https://github.com/Zysen/NodeAurora/wiki
+https://github.com/Zysen/Aurora/wiki
+
+Installation
+===========
+1. Install NodeJS
+2. change to your projects directory
+3. git clone https://github.com/Zysen/Aurora.git
+4. Run install.bat or install.sh depending on your OS
+5. Login with both the username and password as admin
