@@ -44,6 +44,10 @@ var OBJECT = (function(obj){
 	};
 	obj.remove = obj.delete;
 	obj.extend = function(sourceObject){
+	    if(sourceObject===undefined){
+	        LOG.create("TypeError: OBJECT.extend sink object (first argument) is undefined. Using empty object.");
+	        sourceObject = {};
+	    }
 	    Array.prototype.slice.call(arguments, 1).forEach(function(source) {
 	        if (source) {
 	            for (var prop in source) {

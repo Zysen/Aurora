@@ -13,18 +13,20 @@ var ARRAYS = (function(arrays){
 	};
 	arrays.contains = arrays.arrayContains;
 	arrays.arrayIndexOf = function(arr, needle, strictType) {
-        for(var i = 0; i < arr.length; i++) {
-        	
-        	if(strictType === false){
-        		if(arr[i] == needle) {
-                    return i;
-                }
-        	}else{
-        		if(arr[i] === needle) {
-                    return i;
-                }
-        	}
-            
+	    if(arr!==undefined){
+            for(var i = 0; i < arr.length; i++) {
+            	
+            	if(strictType === false){
+            		if(arr[i] == needle) {
+                        return i;
+                    }
+            	}else{
+            		if(arr[i] === needle) {
+                        return i;
+                    }
+            	}
+                
+        }
         }
         return -1;
     };

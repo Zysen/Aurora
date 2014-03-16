@@ -5,12 +5,19 @@ var LOG = (function(log, aurora) {
 	log.WARNING=0;
 	log.ERROR=0;
 	log.create = function(message){
-		if(console===undefined){
-			postMessage({command: aurora.RESPONSES.LOG, data: message});
-		}
-		else{
-			console.log(message);
-		}
+	    try{
+    		if(console===undefined){
+    			postMessage({command: aurora.RESPONSES.LOG, data: message});
+    		}
+    		else if(TABLES.UTIL.isTable(message)){
+    		    TABLES.UTIL.printTable(message);
+    		}
+    		else{
+    			console.log(message);
+    		}
+	   }
+	   catch(e){console.log(e);}
+    	
 		/*
 		var type = typeof(message);
 		if(type==="object" || message instanceof Array){
