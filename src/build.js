@@ -5,9 +5,9 @@ var path = require("path");
 
 var config = JSON.parse(fs.readFileSync("../config.json"));
 var theme = config.theme;
-
-
 var exec = require('exec');
+
+var ignorePlugins = ["tables", "layer2.isp", "canvasjs", "stats", "csr", "csr.top_menu", "csr.revert_timer"];
 
 var ARRAYS = (function(arrays){
     arrays.arrayCut = function(array, index) {
@@ -136,9 +136,12 @@ function wait(){
 var clientBuildFiles = [
     //"client/closure-base.js",
     "server/goog.js",
+    "shared/number.js",
     "shared/enums.js",
     "shared/aurora_version.js",
     "shared/log.js",
+    "shared/date.js",
+    "shared/math.js",
     "shared/object.js",
     "shared/arrays.js",
     "shared/string.js",
@@ -174,38 +177,23 @@ var clientCSSFiles = [
 var serverBuildFiles = [
     "server/goog.js",
     "shared/enums.js",
-    "shared/aurora_version.js",
+    "shared/number.js",
     "shared/log.js",
     "shared/signals.js",
-    "shared/object.js",
-    "shared/arrays.js",
-    "shared/string.js",
-    "server/http.library.js",
-    "server/aurora.settings.server.js", 
-    "shared/flapjax.closure.js",
-    "shared/aurora.flapjax.js",    
-    "plugins/tables/tables.shared.js", 
-    "server/authentication.server-datathread.shared.js",        
-    "server/server.js"
-];
-
-var serverDataThreadBuildFiles = [
-    "server/goog.js",
-    "shared/enums.js",
-    "shared/log.js",
-    "shared/signals.js",
+    "shared/math.js",
     "shared/object.js",
     "shared/arrays.js",
     "shared/string.js",
     "shared/date.js",
     "shared/crypto.js",
+    "shared/aurora_version.js",
     "server/aurora.settings.server.js", 
     "shared/flapjax.closure.js",
     "shared/aurora.flapjax.js",            
-    "plugins/tables/tables.shared.js",         
-    "server/DataThread.js",
-    "server/authentication.server.js",
-    "server/authentication.server-datathread.shared.js"
+    "plugins/tables/tables.shared.js", 
+    "server/http.library.js",
+    "server/server.js",      
+    "server/authentication.server.js"
    // "plugins/stats/stats.server.js",
   //  "plugins/debug/debug.server.js",
   //  "plugins/aurora.administration/aurora.administration.server.js",
@@ -230,7 +218,7 @@ fs.readdir("plugins", function (err, files) {
         throw err;
     }
     
-    var ignorePlugins = ["tables", "layer2.isp", "canvasjs"];
+    
     
     plugins = files;
     var widgetCode = [];
@@ -247,7 +235,7 @@ fs.readdir("plugins", function (err, files) {
             for(var fileIndex in pluginDir){
                 var fullPath = "plugins/"+plugin+"/"+pluginDir[fileIndex];
                 if(fullPath.endsWith(".server.js")){
-                    serverDataThreadBuildFiles.push(fullPath);
+                    serverBuildFiles.push(fullPath);
                 }
                 else if(fullPath.endsWith(".client.widgets.js")){
                     widgetCode.push(fullPath);
@@ -291,16 +279,7 @@ fs.readdir("plugins", function (err, files) {
         var lintPassed = lintCheck(concatenated, serverFile, {white: true, sloppy: true,debug: true, node: true});
     }
     writeFile(concatenated, serverFile);
-    
-    //Build server DataThread.js
-    var serverDataFile = "../DataThread.js";
-    var concatenated = concatenate(serverDataThreadBuildFiles);
-    if(target!=="fast"){
-        var lintPassed = lintCheck(concatenated, serverDataFile, {white: true, sloppy: true,debug: true, node: true});
-    }
-    writeFile(concatenated, serverDataFile);
-    
-    
+
     if(target==="all"){
         generateJSDocs(clientFile, function(){
             generateJSDocs(serverFile, function(){
