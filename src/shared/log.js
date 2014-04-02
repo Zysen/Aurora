@@ -9,7 +9,7 @@ var LOG = (function(log, aurora) {
     		if(console===undefined){
     			postMessage({command: aurora.RESPONSES.LOG, data: message});
     		}
-    		else if(TABLES.UTIL.isTable(message)){
+    		else if(message!==undefined && TABLES.UTIL.isTable(message)){
     		    TABLES.UTIL.printTable(message);
     		}
     		else{

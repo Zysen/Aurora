@@ -132,9 +132,6 @@ var TREEVIEW = (function(treeview) {
                 var eventArray = [];
                 var matchingElements = DOM.getElementsByClassName("treeView_domNode", container);
                 
-                LOG.create("matchingElements");
-                LOG.create(matchingElements);
-                
                 for(var index in matchingElements){
                     eventArray.push(F.clicksE(matchingElements[index]));
                 }

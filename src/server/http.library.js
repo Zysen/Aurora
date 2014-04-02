@@ -49,6 +49,38 @@ var HTTP = (function(httpPublic){
         response.write(listingHtml, 'utf8');
         response.end();
 	};
+	httpPublic.startHTTPServerE = function(port, receiver){
+        var httpServer = http.createServer(function(request, response){
+            receiver.sendEvent({request: request, response: response});
+        });
+        httpServer.listen(port);  
+        return httpServer;
+	};
 	
+	httpPublic.startHTTPSServerE = function(port, receiver){
+        var httpsServer = https.createServer({
+            key: fs.readFileSync('./data/privatekey.pem'),
+            cert: fs.readFileSync('./data/certificate.pem')
+        }, function(request, response){
+            receiver.sendEvent({request: request, response: response});
+        });
+        httpsServer.listen(port);  
+        return httpsServer;        
+    };
+	httpPublic.createWebSocket = function(httpServer, receiver){
+        var webSocket = new WebSocketServer({
+            httpServer: httpServer,
+            autoAcceptConnections: false
+        });
+        
+        webSocket.on('error', function(error) {               
+            receiver.sendEvent(SIGNALS.newError("Websocket Error: "+error));
+        });
+        
+        webSocket.on('request', function(request){
+            receiver.sendEvent(request);
+        });
+        return webSocket;
+    };
 	return httpPublic;
 })(HTTP || {});

@@ -107,3 +107,13 @@ String.prototype.trim = String.prototype.trim || function() {
   String.prototype.clearPunc=function(){
           return this.replace(/[\.,-\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s{2,}/g," ");
   };
+  
+    String.prototype.toByteArray = function(){
+        var bytes = [];
+        for(var i = 0; i < this.length; i++) {
+            var char = this.charCodeAt(i);
+            bytes.push(char >>> 8);
+            bytes.push(char & 0xFF);
+        }
+        return bytes;
+    };

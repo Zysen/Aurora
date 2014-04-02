@@ -5,7 +5,7 @@ var TABLES = (function(tablesClass, widgets){
 	}
 	
 	
-	tablesClass.WIDGETS.basicTableWidget = function(objectName, tableMetaData, columnMetaData, rowMetaData, cellMetaData){
+	tablesClass.WIDGETS.basicTableWidget = function(objectName, primaryKey, tableMetaData, columnMetaData, rowMetaData, cellMetaData){
 		return (function(instanceId, data, purgeData){
 			var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
 			
@@ -19,7 +19,14 @@ var TABLES = (function(tablesClass, widgets){
 						if(!good()){
 							return chooseSignal();
 						}
-						
+						LOG.create("\nBASIC TABLE\n");
+						LOG.create(table);
+						if(!TABLES.UTIL.isTable(table)){
+						    try{
+						      table = TABLES.parseTable(objectName, primaryKey, table); 
+						    }catch(e){LOG.create("Error, Unable to parse data as a table.");return;}
+						}
+						LOG.create(table);
 						if(tableMetaData!=undefined){
 						    table.tableMetaData = OBJECT.extend(table.tableMetaData, tableMetaData);
 						}
@@ -37,7 +44,7 @@ var TABLES = (function(tablesClass, widgets){
 					},function(table){
 						return [table];
 					}, DATA.requestB(instanceId, objectName));
-					
+
 					tableWidget.load(modifiedDataTableBI);
 				},
 				destroy:function(){
@@ -47,8 +54,63 @@ var TABLES = (function(tablesClass, widgets){
 			};
 		});
 	};
-	
 	widgets.register("BasicTable", tablesClass.WIDGETS.basicTableWidget());
+	
+	tablesClass.WIDGETS.chunkedBasicTable = function(objectName, primaryKey, tableMetaData, columnMetaData, rowMetaData, cellMetaData){
+        return (function(instanceId, data, purgeData){
+            var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
+            
+            objectName = objectName!=undefined?objectName:data.source;
+            return {
+                build:function(){
+                    return tableWidget.build();
+                },
+                load:function(){
+                    var modifiedDataTableBI = F.liftBI(function(table){
+                        if(!good()){
+                            return chooseSignal();
+                        }
+                        if(!TABLES.UTIL.isTable(table)){
+                            try{
+                                if(table instanceof Array){
+                                    ARRAYS.arrayCut(table, 0);    //Remove the types row
+                                }
+                                else{
+                                    OBJECT.remove(table, "$.types");
+                                    table = [table];
+                                }
+                                table = TABLES.parseTable(objectName, primaryKey, table); 
+                            }catch(e){LOG.create("Error, Unable to parse data as a table.");LOG.create(e);return;}
+                        }
+                        
+                        if(tableMetaData!=undefined){
+                            table.tableMetaData = OBJECT.extend(table.tableMetaData, tableMetaData);
+                        }
+                        if(columnMetaData!=undefined){
+                            table.columnMetaData = OBJECT.extend(table.columnMetaData, columnMetaData);
+                        }
+                        if(rowMetaData!=undefined){
+                            table.rowMetaData = OBJECT.extend(table.rowMetaData, rowMetaData);
+                        }
+                        if(cellMetaData!=undefined){
+                            table.cellMetaData = OBJECT.extend(table.cellMetaData, cellMetaData);
+                        }
+                        
+                        return table;
+                    },function(table){
+                        return [table];
+                    }, DATA.requestChunkedB(instanceId, objectName));
+
+                    tableWidget.load(modifiedDataTableBI);
+                },
+                destroy:function(){
+                    DATA.release(instanceId, objectName);
+                    tableWidget.destroy();
+                }
+            };
+        });
+    };
+    widgets.register("ChunkedBasicTable", tablesClass.WIDGETS.chunkedBasicTable());
 	
 	
 	tablesClass.WIDGETS.basicReadTableWidget = function(objectName){

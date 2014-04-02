@@ -3,39 +3,6 @@
 goog['require']("LOG");
 goog['require']("F");
 //goog['require']("SIGNALS");
-
-F.liftBI = function(fn, functionUp) {
-	var args = Array.prototype.slice.call(arguments, 2);
-	var constituentsE = F.map(function(b) {
-		return b.changes();
-	}, F.filter(function(v) {
-		return v instanceof F.Behavior;
-	}, F.mkArray(arguments)));
-	
-	var getCur = function(v) {
-		return v instanceof F.Behavior ? v.last : v;
-	};
-	
-	var getRes = function() {
-		return getCur(fn).apply(null, F.map(getCur, args));
-	};
-	
-	if (constituentsE.length === 1) {
-		return new F.Behavior(constituentsE[0], getRes(), getRes, functionUp, args);
-	}
-
-	var prevStamp = -1;
-	var mid = new F.EventStream(constituentsE, function(p) {
-		if (p.stamp != prevStamp) {
-			prevStamp = p.stamp;
-			return p;
-		} else {
-			return F.doNotPropagate;
-		}
-	});
-	return new F.Behavior(mid, getRes(), getRes, functionUp, args);
-};
-
   /**
  * @param {Function|F.Behavior} fn
  * @param {Function|F.Behavior} fu
@@ -44,7 +11,15 @@ F.liftBI = function(fn, functionUp) {
  */
 F.liftBI = function (fn, functionUp) {
    // showObj(var_args);
-  var args = Array.prototype.slice.call(arguments, 2);
+    var args = Array.prototype.slice.call(arguments, 2);
+  
+    for(var index in args){
+        if(args[index]===undefined){
+            LOG.create("Error - liftBI was passed a behaviour that is undefined");
+            throw "Error - liftBI was passed a behaviour that is undefined";
+        }
+    }
+  
   //dependencies
   var constituentsE = F.map(function (b) { return b.changes(); }, F.filter(function (v) { return v instanceof F.Behavior; }, F.mkArray(arguments)));
   
@@ -393,4 +368,30 @@ F.EventStream.prototype.windowedQueueE = function(max_length){
 		output[0] = new_object;
 		return output; 
 	});
+};
+F.EventStream.prototype.chunkedCollectE = function(){
+    return this.collectE({str:""}, function(update, state){
+        state.str+=update.data;
+        if (update.end){                     
+            try{
+                return {str: "", object: JSON.parse(state.str)};
+            }
+            catch(e){
+                LOG.create("Error, during chunked data rebuild " + state.str);
+                LOG.create(e);
+                return {str: ""};
+            }
+        }
+        
+        return {str: state.str};
+    }).filterE(function(state){
+        return state.object!=undefined;
+    }).mapE(function(state){
+        return state.object;
+    });
+};
+F.EventStream.prototype.tagE = function(tag){
+    return this.mapE(function(value){
+        return {tag: tag, value:value};
+    });
 };

@@ -318,6 +318,7 @@ var TABLES = (function(tables){
 				return [table, undefined];
 			}, tableBI, userPriviledgeB);
 		};
+		
 		/**
 		 * Looks for changed cells in a table and flags every cell in that row as changed. This is required for some back end objects..
 		 * 
@@ -656,7 +657,7 @@ var TABLES = (function(tables){
 				
 				for(var rowIndex in table.cellMetaData){
 					for(var columnIndex in table.cellMetaData[rowIndex]){
-						OBJECT.delete(table.cellMetaData[rowIndex][columnIndex], "userChange");
+						OBJECT.remove(table.cellMetaData[rowIndex][columnIndex], "userChange");
 					}
 				}
 				return table;
@@ -670,9 +671,9 @@ var TABLES = (function(tables){
 				return false;
 			};
 			
-			tables.UTIL.findRows = function(table, rowPk, value){
-                var searchColumn = value==undefined?table.tableMetaData.primaryKey:rowPk;
-                var searchValue = value==undefined?rowPk:value;
+			tables.UTIL.findRows = function(table, column, value){
+                var searchColumn = value==undefined?table.tableMetaData.primaryKey:column;
+                var searchValue = value==undefined?column:value;
                 var rows = [];
                 for(var rowIndex in table.data){
                     if(table.data[rowIndex][searchColumn]==searchValue){
@@ -681,6 +682,7 @@ var TABLES = (function(tables){
                 }
                 return rows;
             };
+            
 			
 			tables.UTIL.findRowPk = function(table, rowIndex){
 				return table.data[rowIndex][table.tableMetaData.primaryKey];

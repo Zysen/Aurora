@@ -1,5 +1,3 @@
-var fs = require("fs");
-
 var osm = require("os-monitor");
 osm.start({
 	delay : 333,
