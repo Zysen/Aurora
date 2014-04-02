@@ -94,7 +94,7 @@ var WIDGETS = (function(widgets, OBJECT){
 				for(var index in widgetInstances[instanceId].cleanUp){
 					widgetInstances[instanceId].cleanUp[index].purge();	
 				}
-				OBJECT.delete(widgetInstances, instanceId);
+				OBJECT.remove(widgetInstances, instanceId);
 			}
 		}
 	};
@@ -112,7 +112,13 @@ var WIDGETS = (function(widgets, OBJECT){
 var AURORA = (function(aurora, F){
 	aurora.settings = {scriptPath: parent.window.location.origin+"/"};
 	var sendToServerE = F.receiverE();
-
+	function getCookie(name) {
+      var value = "; " + document.cookie;
+      var parts = value.split("; " + name + "=");
+      if (parts.length == 2) return parts.pop().split(";").shift();
+    }
+	var cookie = getCookie("sesh").split("-");
+    aurora.token = cookie[0];
 	
 	aurora.sendToClientE = F.receiverE();
 	
@@ -204,7 +210,22 @@ var DATA = (function(dataManager, F, aurora){
 			aurora.sendToServer({command: aurora.COMMANDS.UPDATE_DATA, key: objectName, data:newData});
 			return [newData];
 		}, dataManager.requestE(instanceId, objectName).startsWith(SIGNALS.NOT_READY));
-	}
+	};
+	dataManager.requestChunkedB = function(instanceId, objectName){
+       
+        var inputB = DATA.requestE(instanceId, objectName).chunkedCollectE().mapE(function(object){
+            //LOG.create(Object.keys(object["$.get"]));
+            var firstKey = Object.keys(object["$.get"])[0];
+            return object["$.get"][firstKey];
+        }).startsWith(SIGNALS.NOT_READY); 
+
+        return F.liftBI(function(newData){return newData;}, function(newData){
+            //aurora.sendToServer({command: aurora.COMMANDS.UPDATE_DATA, key: objectName, data:newData});
+            LOG.create("Error - Chunked data upstream is not implemented.");
+            return [newData];
+        }, inputB);
+
+    };
 	dataManager.release = function(instanceId, objectName){
 		referenceCount[objectName] = (referenceCount[objectName]==undefined||referenceCount[objectName]<=0)?0:(referenceCount[objectName]-1);
 		if(referenceCount[objectName]<=0){
@@ -215,17 +236,56 @@ var DATA = (function(dataManager, F, aurora){
 		}
 		
 		requests[instanceId].purge();	
-		OBJECT.delete(requests[instanceId]);
+		OBJECT.remove(requests[instanceId]);
 	};
 	dataManager.reregisterAll = function(){
 		for(var objectName in referenceCount){
 			aurora.sendToServer({command: aurora.COMMANDS.REGISTER_DATA, key: objectName});
 		}
+	};
+	
+	
+	
+	function extractData(str){
+	    var qCount = 0;
+	    var key = "";
+	    var command = "";
+	    var data = "";
+	    var end = "";
+	    var textMarkerFound = false;
+	    
+	    
+	    
+	    for(var index=0;index<str.length;index++){
+	        if(str.charCodeAt(index)===0){
+	            continue;
+	        }
+	        var ch = str.charAt(index);
+	        
+	        if(qCount>=6){
+                data+=ch;
+            }
+	        else if(ch==='"'){
+                qCount++;
+            }
+	        else if(qCount===1){
+	           command += ch;
+	        }
+	        else if(qCount===3){
+	            key+=ch;
+	        }
+	        else if(qCount===5){
+                end+=ch;
+            }
+	    }
+	    //LOG.create({command:parseInt(command), key:key, data: data, end: end==="true"});
+	    //LOG.create(key);
+	    //LOG.create(data);
+	    //LOG.create("");
+	    return {command:parseInt(command), key:key, data: {data:data, end: end==="true"}};
 	}
 	
-	
-	
-	var webSocket; 	
+	var webSocket; 
 	dataManager.connect = function(ws){
 		var reconnected = false;
 		if(ws!=undefined){
@@ -235,6 +295,7 @@ var DATA = (function(dataManager, F, aurora){
 		}
 		if(typeof(WebSocket)!="undefined"){
 			webSocket = new WebSocket((location.protocol==="https:"?"wss":"ws")+'://'+location.hostname+(location.port ? ':'+location.port: ''), 'aurora_channel');
+		    dataManager.webSocket = webSocket;
 		    webSocket.onopen = function () {
 		    	LOG.create("Websocket connection established");
 		    	aurora.sendToClient({command: aurora.COMMANDS.CONNECTION_STATUS, data: aurora.STATUS.CONNECTED});
@@ -248,32 +309,50 @@ var DATA = (function(dataManager, F, aurora){
 		    	setTimeout(function(){
 		    		dataManager.connect(webSocket);
 		    	}, 4000);
-		    }
+		    };
 		    webSocket.onerror = function (error) {
 		        aurora.sendToClient({command: aurora.COMMANDS.CONNECTION_STATUS, data: aurora.STATUS.ERRORED});
 		    };
 		    //Messages from server to GUI
 		    webSocket.onmessage = function (packet) {
-		        //LOG.create(packet);
-		    	//try{
-					aurora.sendToClient(JSON.parse(packet.data));
-				//}
-				//catch(e){
-				//	aurora.sendToClient(aurora.ERRORS.DATA_UPDATE_PARSE(e));
-				//	console.log(e.message);
-				//	LOG.create(e);
-				//}
+		    	try{
+		    	    if(packet.data instanceof Blob){
+                        var fileReader = new FileReader();
+                        fileReader.onload = function() {
+                            //console.log("");
+                            //console.log(this.result);
+                            aurora.sendToClient(extractData(this.result));
+                        };
+                        //fileReader.readAsArrayBuffer(packet.data);
+                        
+                        
+                       // LOG.create(packet.data);
+                        
+                        fileReader.readAsBinaryString(packet.data, "utf8");
+                        //fileReader.readAsText(packet.data, "utf8");
+                        //console.log(packet.data);
+		    	    }
+		    	    else{
+		    	        aurora.sendToClient(JSON.parse(packet.data));
+		    	    }
+				}
+				catch(e){
+					aurora.sendToClient(aurora.ERRORS.DATA_UPDATE_PARSE(e));
+					LOG.create(e);
+				}
 		    };
 		}else{
 			LOG.create("Sorry but your browser does not support WebSockets");	
 		}
 	};
 	aurora.dataUpdateE.mapE(function(packet){
+		
+		
 		if(webSocket==undefined){
 			LOG.create("Unabled to send data, WebSocket has not been initialized");
 			return;
 		}
-		webSocket.send((typeof(packet)!='string')?JSON.stringify(packet):packet);
+		webSocket.send(JSON.stringify({token: aurora.token, message:packet}));
     });
 	dataManager.connect();
 	

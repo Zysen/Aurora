@@ -3,13 +3,22 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     function getCookie(cname){
         var name = cname + "=";
         var ca = document.cookie.split(';');
-        for(var i=0; i<ca.length; i++) 
-          {
+        for(var i=0; i<ca.length; i++){
           var c = ca[i].trim();
-          if (c.indexOf(name)==0) return c.substring(name.length,c.length);
+          if (c.indexOf(name)==0){
+              return c.substring(name.length,c.length);
           }
+        }
         return "";
     }
+    
+    //Invalid token reset
+    aurora.sendToClientE.filterE(function(packet){   //TODO: Should the onceE be there?
+       return packet.command===AURORA.COMMANDS.AUTH.TOKEN_INVALID;
+    }).mapE(function(){ //The presented token is now invalid. Delete it and reconnect.     
+        document.cookie="sesh=false; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/";
+        location.reload();
+    });
     
     //Send Authentication token to server
     aurora.authTokenRequestE = aurora.connectionStatusE.filterE(function(packet){   //TODO: Should the onceE be there?
@@ -26,11 +35,17 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     
     //Receive Authentication token from server.
     aurora.sendToClientE.filterE(function(message){
-        return message.command===aurora.COMMANDS.AUTHENTICATE && message.data.expiry!=undefined;
+        return message.command===aurora.COMMANDS.UPDATE_TOKEN && message.data.token!=undefined;
     }).mapE(function(messagePacket){
-        var date = new Date();
-        date.setTime(messagePacket.data.expiry+(date.getTimezoneOffset()*60000));    //TODO: Apply timezone offset
-        document.cookie="sesh="+messagePacket.data.token+"; expires="+date.toGMTString()+"; path=/";      //Thu, 18 Dec 2013 12:00:00 GMT
+        aurora.token = messagePacket.data.token;
+        if(messagePacket.data.expiry!==undefined){
+            var date = new Date();
+            date.setTime(messagePacket.data.expiry);    //TODO: Apply timezone offset   -(date.getTimezoneOffset()*60000)
+            document.cookie="sesh="+messagePacket.data.cookie+"; expires="+date.toGMTString()+"; path=/";      //Thu, 18 Dec 2013 12:00:00 GMT
+        }
+        else{
+            document.cookie="sesh="+messagePacket.data.cookie+"; path=/"; 
+        }
     });
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
@@ -97,6 +112,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                 return tableWidget.build();
             },
             load:function(){
+                /*
                 var modifiedDataTableBI = F.liftBI(function(table){
                     if(!good()){
                         return chooseSignal();
@@ -118,13 +134,25 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                 },function(table){
                     return [table];
                 }, TABLES.leftJoin(DATA.requestB(instanceId, "AURORA_ACTIVE_USERS"), TABLES.leftJoin(DATA.requestB(instanceId, "AURORA_USERS"), DATA.requestB(instanceId, "AURORA_GROUPS"), "groupId"), "userId"));
-                
-                tableWidget.load(modifiedDataTableBI);
+                */
+               
+                var modifiedDataTableBI = F.liftBI(function(table){
+                    if(!good()){
+                        return chooseSignal();
+                    }
+                    var newTable = OBJECT.clone(table);
+                    //newTable.columnMetaData.expiry.renderer = WIDGETS.renderers.TimestampDiff;
+                    newTable.columnMetaData.expiry.dataType = "TimestampDiff";
+                    return newTable;
+                },function(table){
+                    return [table];
+                }, DATA.requestB(instanceId, "AURORA_SESSIONS"));
+               tableWidget.load(modifiedDataTableBI);
             },
             destroy:function(){
-                DATA.release(instanceId, "AURORA_ACTIVE_USERS");
-                DATA.release(instanceId, "AURORA_USERS");
-                DATA.release(instanceId, "AURORA_GROUPS");
+                DATA.release(instanceId, "AURORA_SESSIONS");
+                //DATA.release(instanceId, "AURORA_USERS");
+                //DATA.release(instanceId, "AURORA_GROUPS");
                 tableWidget.destroy();
             }
         };
@@ -158,7 +186,6 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                             newTable.rowMetaData[row.permissionId].disabled = true;
                         }
                     });
-                    
                     var groupOptions = {keyMap: {}, valueMap: {"R":"R", "RW":"RW"}};                
                     for(var rowIndex in groups.data){
                         groupOptions.keyMap[groups.data[rowIndex]["groupId"]] = groups.data[rowIndex]["description"];
@@ -171,8 +198,8 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                     var newTable = OBJECT.clone(table);
                     TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
                         if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
-                            OBJECT.delete(newTable.rowMetaData[row.permissionId], "userChange");
-                            OBJECT.delete(newTable.rowMetaData[row.permissionId], "deleted");
+                            OBJECT.remove(newTable.rowMetaData[row.permissionId], "userChange");
+                            OBJECT.remove(newTable.rowMetaData[row.permissionId], "deleted");
                         }
                     });
                     return [newTable, undefined, undefined];                                  
@@ -188,7 +215,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
             }
         };
     });
-    
+    /*
     widgets.register("PersistentSessionsTable", function(instanceId, data, purgeData){
         var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
         return {
@@ -225,7 +252,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
             }
         };
     });
-    
+    */
     widgets.register("Logout", function(instanceId, data, purgeData){
         return {
             build:function(){},

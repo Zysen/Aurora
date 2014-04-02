@@ -129,11 +129,9 @@ WIDGETS.renderers.Map = function(id) {
         isDisabled : function() {
             return false;
         },
-        
         isErrored : function() {
             return false;
         },
-        
         isReadOnlyB : function() {
             return false;
         }
@@ -188,6 +186,7 @@ WIDGETS.renderers.List = function(id) {
 					if(list==undefined){list = "";}
 					if(typeof(list)==="string"){list = list.split("|");}
 					if(list instanceof Array){
+					    alert("List Is ARRAY!!!");
 					   for(var index in list){
 					       option = DOM.create("option",undefined, undefined, list[index]);
                             option.value = list[index];
@@ -272,6 +271,66 @@ WIDGETS.renderers.List = function(id) {
 };
 WIDGETS.renderers.list = WIDGETS.renderers.List;
 
+
+
+
+/**
+ * Array Renderer
+ */
+WIDGETS.renderers.Array = function(id) {
+    // Ensure new keyword has been used
+    if ( !(this instanceof arguments.callee)){
+        throw new Error("Constructor called as a function, use new keyword");
+    }
+         
+    var container = document.createElement("div");  
+
+    var stateE = F.receiverE();
+    // Public object
+    return {
+        build : function() {
+            return container;
+        },
+        destroy : function() {
+        },
+        load : function(options) {
+           
+        },
+        setValue : function(value) {    
+            if(value instanceof Array){
+                container.innerHTML = "";
+                for(var index in value){
+                     container.innerHTML+=value[index]+"<br />";  
+                }
+            }
+        },
+        setState : function(state) {
+            stateE.sendEvent(state);
+        },
+        getValueE : function() {
+            return F.zeroE();
+        },
+        getFocusE : function() {
+            return F.zeroE();
+        },
+        getBlurE : function() {
+            return F.zeroE();
+        },
+        isDisabled : function() {
+            return F.constantB(false);
+        },
+        
+        isErrored : function() {
+            return false;
+        },
+        
+        isReadOnlyB : function() {
+            return F.constantB(true);
+        }
+    };
+};
+
+WIDGETS.renderers.array = WIDGETS.renderers.Array;
 /**
  * Password Renderer
  */
@@ -1765,4 +1824,123 @@ WIDGETS.renderers.HTMLDropdown = function(id) {
 			click_outsideE.sendEvent();
 		}
 	};
+};
+
+/**
+ * Timestamp Renderer
+ */
+WIDGETS.renderers.Timestamp = function(id) {
+    // Ensure new keyword has been used
+    if ( !(this instanceof arguments.callee)){
+        throw new Error("Constructor called as a function, use new keyword");
+    }
+         
+    var container = document.createElement("div");  
+
+    var stateE = F.receiverE();
+    // Public object
+    return {
+        build : function() {
+            return container;
+        },
+        destroy : function() {
+        },
+        load : function(options) {
+           
+        },
+        setValue : function(value) { 
+            if(MATH.isNumber(value)){
+                var d = new Date();
+                d.setTime(value);       //-DATE.getLocalOffSet()
+                container.innerHTML = d.toString();
+            }
+        },
+        setState : function(state) {
+            stateE.sendEvent(state);
+        },
+        getValueE : function() {
+            return F.zeroE();
+        },
+        getFocusE : function() {
+            return F.zeroE();
+        },
+        getBlurE : function() {
+            return F.zeroE();
+        },
+        isDisabled : function() {
+            return F.constantB(false);
+        },
+        
+        isErrored : function() {
+            return false;
+        },
+        
+        isReadOnlyB : function() {
+            return F.constantB(true);
+        }
+    };
+};
+WIDGETS.renderers.timestamp = WIDGETS.renderers.Timestamp;
+
+/**
+ * TimestampDiff Renderer
+ */
+WIDGETS.renderers.TimestampDiff = function(id) {
+    // Ensure new keyword has been used
+    if ( !(this instanceof arguments.callee)){
+        throw new Error("Constructor called as a function, use new keyword");
+    }
+         
+    var container = document.createElement("div");  
+    var value = undefined;
+    var stateE = F.receiverE();
+    // Public object
+    return {
+        build : function() {
+            return container;
+        },
+        destroy : function() {
+        },
+        load : function(options) {
+            F.timerE(1000).mapE(function(){
+                if(value!==undefined){
+                    var diff = (value-DATE.getTime())/1000;
+                    var prefix = diff>=0?"In ":"";
+                    var postfix = diff>=0?"":" ago";
+                    if(diff<0){
+                        diff = Math.abs(diff);
+                    }
+                    container.innerHTML = prefix+diff.formatAsTime()+postfix;
+                }
+           });
+        },
+        setValue : function(val) { 
+            if(MATH.isNumber(val)){
+                value = val;
+            }
+        },
+        setState : function(state) {
+            stateE.sendEvent(state);
+        },
+        getValueE : function() {
+            return F.zeroE();
+        },
+        getFocusE : function() {
+            return F.zeroE();
+        },
+        getBlurE : function() {
+            return F.zeroE();
+        },
+        isDisabled : function() {
+            return F.constantB(false);
+        },
+        
+        isErrored : function() {
+            return false;
+        },
+        
+        isReadOnlyB : function() {
+            return F.constantB(true);
+        }
+    };
 };
