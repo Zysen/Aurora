@@ -1,6 +1,6 @@
 Aurora
 ==========
-Aurora is a pseudo functional, reactive web application framework for NodeJS. It uses a two directional push datamodel based on a graph of function nodes. State transformations are bound to events, as Aurora follows the Functional Reactive Programming paradigm (FRP). This mostly eliminates state bugs and makes it easy to trace the cause of unexpected state. This approach addresses issues with the observer pattern and combines data processing and user interaction into a single structure that is highly reusable and composable.
+Aurora is a pseudo functional, reactive web application framework for NodeJS. It uses a two directional push data model based on a graph of function nodes. State transformations are bound to events, as Aurora follows the Functional Reactive Programming paradigm (FRP). This mostly eliminates state bugs and makes it easy to trace the cause of unexpected state. This approach addresses issues with the observer pattern and combines data processing and user interaction into a single structure that is highly reusable and composable.
 
 Decent examples coming soon!
 
