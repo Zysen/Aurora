@@ -10,17 +10,95 @@ var HTTP = (function(httpPublic){
 		}
         response.end();  
 	};
-	httpPublic.sendFile = function(path, response){
-		response['Content-Type'] = mime.lookup(path);
-		if(fs.existsSync(path)){        
-			response.writeHead(200, response);
-            response.write(fs.readFileSync(path), 'utf8');
-        }
-        else{
-        	public.writeError(404, response);
-        }
-        response.end();
-	};	
+	httpPublic.writeNotModified = function(response) {
+		response.writeHead(304, response);
+		response.end();
+	};
+	httpPublic.request = function(method, path, address, port, postData, domainSocket, requestComplete){
+    	var domainSocket = domainSocket || false;
+    	try{
+			var post_data = qs.stringify(postData);
+			  
+			// An object of options to indicate where to post to
+			var post_options = {
+				path: path,
+			    method: method,
+			    headers: {
+			    	'Content-Type': 'application/x-www-form-urlencoded',
+			        'Content-Length': post_data.length
+			    }
+			};
+			if(domainSocket){
+				post_options.socketPath = address;
+			}
+			else{
+				post_options.host = address;
+			}
+			if(port){
+				post_options.port = port;
+			}
+		
+			  // Set up the request
+			  var post_req = httplib.request(post_options, function(res) {
+			      var data = "";
+				  res.setEncoding('utf8');
+			      res.on('data', function (chunk) {
+			          data+=chunk;
+			      });
+			      res.on('end', function () {
+			    	  requestComplete(data);
+			      });
+			  });
+		
+			  // post the data
+			  post_req.write(post_data);
+			  post_req.end();
+		}
+		catch(e){console.log("ISS Authentication Exception");console.log(e);}
+    };
+	httpPublic.sendFile = function(path, request, response, headers){
+	    fs.exists(path, function(exists){
+	        if(exists){
+	            fs.stat(path, function(err, stats){
+	            	err = null;
+	                fs.readFile(path, function(err, data){ 
+						if (err) {
+							response.writeHead(500);
+							response.end();
+						}
+						else{         
+			                var reqETag = request.headers['if-none-match'];
+			                var reqDate = request.headers['if-modified-since'];
+			                if((reqDate!==undefined && new Date(reqDate).getTime()>=new Date(stats.mtime).getTime()) || (reqETag!=undefined && crypto.createHash('md5').update(data).digest('hex')===reqETag)){
+			                	httpPublic.writeNotModified(response);
+			                }
+			                else{
+			                    headers['Content-Type'] = mime.lookup(path);
+			                    headers['Accept-Ranges'] = "bytes";
+			                    headers['ETag'] = crypto.createHash('md5').update(data).digest('hex'); 
+			                    headers['Last-Modified'] = stats.mtime;
+			                    response.writeHead(200, headers);
+			                    fs.createReadStream(path).pipe(response);
+			                }
+						}
+						data = null;
+						exists = null;
+						err = null;
+						stats = null;
+						data = null;
+						path=null;
+						request = null;
+						response = null;
+			
+					});
+	            });            
+	        }
+	        else{
+	            console.log("File Does not Exist "+path);
+	            HTTP.writeError(404, response);
+	        }
+	    });
+	};
 	httpPublic.redirect = function(response, url){
 	    response.writeHead(302, {'Location': url});
         response.end();
@@ -45,7 +123,7 @@ var HTTP = (function(httpPublic){
                 listingHtml += "<div class=\"directoryEntry\"><a href=\""+url+"/"+files[index]+"\" class=\"directory_file\"><img src=\""+icon+"\" class=\"directory_icon\" />"+files[index]+"</a></div>";
             }
         }
-        listingHtml+="</body></html>"
+        listingHtml+="</body></html>";
         response.write(listingHtml, 'utf8');
         response.end();
 	};

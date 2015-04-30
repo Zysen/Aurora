@@ -80,15 +80,17 @@ F.EventStream.prototype.workerE = function (filename) {
  * If no arguments are passed it checks the caller's arguments
  * @returns {Boolean}
  */
+	
 function good(){
+	
 	var args = Array.prototype.slice.call(arguments);
 	if(args.length === 0){
 		args = Array.prototype.slice.call(arguments.callee.caller.arguments);
 	}
-	
     for(var index in args){
-        if(args[index]==SIGNALS.NOT_READY || args[index] instanceof SIGNALS.ERROR || args[index]==SIGNALS.NOT_LICENSED || args[index]==SIGNALS.PERMISSION_ERROR || args[index]==SIGNALS.SESSION_EXPIRED)
+        if(args[index]==SIGNALS.NOT_READY || args[index] instanceof SIGNALS.ERROR || args[index]==SIGNALS.NOT_LICENSED || args[index]==SIGNALS.PERMISSION_ERROR || args[index]==SIGNALS.SESSION_EXPIRED){
             return false;
+    	}
     }
     
     return true;
@@ -394,4 +396,10 @@ F.EventStream.prototype.tagE = function(tag){
     return this.mapE(function(value){
         return {tag: tag, value:value};
     });
+};
+
+F.Behavior.prototype.domDisplayB = function(domTarget){
+	this.liftB(function(display){
+		domTarget.style.display = display?'':'none';
+	});
 };
