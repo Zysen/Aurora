@@ -1,10 +1,17 @@
 var AUTHENTICATION = (function(authentication, http){
-
     DATA.httpMessageInE = F.zeroE();
 
     var activeSessionExpiry = 30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
     var sessionExpiryClean = 30000;   //How often to check for expired session tokens
     var persistentSessionExpiry = 2419200000;  //How long a persistent token should last.
+
+    
+    var customLoginReceiverE = F.receiverE();
+    authentication.customLogin = function(token, seriesId, userId, groupId, rememberMe, clientId, connection){
+        customLoginReceiverE.sendEvent({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
+    };
+
+    
 
     authentication.GROUPS = {PUBLIC:0, ADMINISTRATOR: 1};
 
@@ -23,14 +30,11 @@ var AUTHENTICATION = (function(authentication, http){
         groupId:{name: "Group Id", type: "number"}
     }).sendToClients("AURORA_USERS", AURORA.DATATYPE.UTF8);
 
-    
 
 
     var passwordLoginE = http.userAuthenticationE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE && packet.data.data.password!==undefined;}).mapE(function(dataPacket){
-        
         var clientId = dataPacket.clientId;
         var token = dataPacket.token;
-        LOG.create("passwordLoginE: Token Is "+token);
         var seriesId = dataPacket.seriesId;
         var username = dataPacket.data.data.username;
         var password = dataPacket.data.data.password;
@@ -54,7 +58,6 @@ var AUTHENTICATION = (function(authentication, http){
                 foundUser = true;
             }
         }
-
         if(currentUser!==undefined){
             LOG.create("Password Authentication Success");
             return {user: currentUser, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: dataPacket.connection};
@@ -71,21 +74,28 @@ var AUTHENTICATION = (function(authentication, http){
             packet.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTHENTICATE, data: {message:packet.message}}));
         }
     }).filterUndefinedE();
-
     //HTTP and WebSocket Logout Event
     var logoutCommandE = F.mergeE(http.httpRequestE.filterE(function(packet){return packet.url==="/logout";}), http.userAuthenticationE.filterE(function(packet){return packet.command===AURORA.COMMANDS.UNAUTHENTICATE;})).mapE(function(packet){
         return {clientId: packet.clientId, token: packet.token, logout:true};
     });    
-    
     var expiredSessionsCleanE = F.timerE(sessionExpiryClean).mapE(function(){return {cleanExpiry: true};});
     var sessionTableUpE = F.receiverE();
-    var sessionTable = TABLES.parseTable("sessionTable", "token", JSON.parse(fs.readFileSync("data/aurora.sessions.json", 'utf8')), {token:{name:"Token", type: "string"},userId:{name:"User Id", type: "number"},groupId:{name:"Group Id", type: "number"},seriesId:{name:"Series Id", type: "number"},instances:{name:"Instances", type: "array"},expiry:{name:"Expiry", type: "datetime"},persistent:{name:"persistent", type: "boolean"}});    
-    var sessionTableStateE = F.mergeE(HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), passwordLoginE.tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}}, function(taggedPacket, state){
+    try{
+    	var sessionTable = TABLES.parseTable("sessionTable", "token", JSON.parse(fs.readFileSync(__dirname+"/data/aurora.sessions.json", 'utf8')), {token:{name:"Token", type: "string"},userId:{name:"User Id", type: "number"},groupId:{name:"Group Id", type: "number"},seriesId:{name:"Series Id", type: "number"},instances:{name:"Instances", type: "array"},expiry:{name:"Expiry", type: "datetime"},persistent:{name:"persistent", type: "boolean"}});    
+    }
+    catch(e){
+    	var sessionTable = TABLES.parseTable("sessionTable", "token", [], {token:{name:"Token", type: "string"},userId:{name:"User Id", type: "number"},groupId:{name:"Group Id", type: "number"},seriesId:{name:"Series Id", type: "number"},instances:{name:"Instances", type: "array"},expiry:{name:"Expiry", type: "datetime"},persistent:{name:"persistent", type: "boolean"}});    
+    }
+    var sessionTableStateE = F.mergeE(HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), F.mergeE(customLoginReceiverE, passwordLoginE).tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}}, function(taggedPacket, state){
         //Todo maintain a clientId to token map.
         //Use this to close properly.
-        var sessionTable = state.sessionTable;
+    	var sessionTable = state.sessionTable;
         var clientMap = state.clientMap;
         var update = taggedPacket.value;
+       // console.log("SessionTable");
+       // console.log(taggedPacket);
+       // console.log(state);
+       // console.log("");
         switch(taggedPacket.tag){
             case "TABLE_UP":{
                 //TODO: rebuild clientMap;
@@ -117,7 +127,9 @@ var AUTHENTICATION = (function(authentication, http){
                     row.groupId = update.user.groupId;
                     row.persistent = update.rememberMe;
                     row.expiry = DATE.getTime()+(update.rememberMe?persistentSessionExpiry:activeSessionExpiry);
-                    update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry}}));
+                    if(update.connection){
+                    	update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));
+                    }
                 }
                 break;
             }
@@ -131,7 +143,6 @@ var AUTHENTICATION = (function(authentication, http){
                     row.token = tokenPair.token;
                     row.expiry = DATE.getTime()+(row.persistent?persistentSessionExpiry:activeSessionExpiry);
                     
-                    
                     for(var index in row.instances){
                         clientMap[row.instances[index]] = row.token;
                     }
@@ -139,7 +150,7 @@ var AUTHENTICATION = (function(authentication, http){
                     //TODO: Should this token re create happen on each HTTP request? What does this mean for http security?
                     //TODO: Add longer expiry if remember me login has happened.
                     //, expiry:row.expiry                
-                    update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {message: "Successfully Logged In!", cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry}}));   
+                    update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {message: "Successfully Logged In!", cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));   
                 }
                 else if(update.seriesId!==undefined){   //Invalid token, possible token theft.
                     var deleteTokens = TABLES.UTIL.findRows(sessionTable, "seriesId", update.seriesId);
@@ -150,8 +161,7 @@ var AUTHENTICATION = (function(authentication, http){
                         }
                     }
                     else{
-                        LOG.create("TODO: Legitimate Old Token Attempt "+update.token);
-                        update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));
+                        update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));   //Legitimate Old Token Attempt
                     }
                 }
                 else{
@@ -174,6 +184,7 @@ var AUTHENTICATION = (function(authentication, http){
         return {sessionTable:sessionTable, clientMap: clientMap};
     });//.mapE(function(state){return state.sessionTable;});
     
+    authentication.usersTableBI = usersTableBI;
     
     authentication.sessionTableE = sessionTableStateE.mapE(function(state){return state.sessionTable;});
     authentication.sessionTableB = authentication.sessionTableE.startsWith(SIGNALS.NOT_READY);
@@ -187,7 +198,9 @@ var AUTHENTICATION = (function(authentication, http){
     }, authentication.sessionTableB).sendToClients("AURORA_SESSIONS", AURORA.DATATYPE.UTF8);
     
     authentication.sessionTableE.calmE(1000).mapE(function(){
-        var table = authentication.sessionTableB.valueNow();
+        
+    	return; //Do not cache old sessions
+    	var table = authentication.sessionTableB.valueNow();
         var newTable = [];
         for(var rowIndex in table.data){
             if(table.data[rowIndex].persistent===true){
@@ -197,10 +210,13 @@ var AUTHENTICATION = (function(authentication, http){
             }
         }
         //LOG.create("Writing sessions to file");
-        fs.writeFileSync("data/aurora.sessions.json", JSON.stringify(newTable), 'utf8');
+        try{
+        fs.writeFileSync(__dirname+"/data/aurora.sessions.json", JSON.stringify(newTable), 'utf8');
+        }
+        catch(e){
+        	console.log(e);
+        }
     });
-    
-    
     
     authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "dataSource", {
         dataSource:{name: "Data Source", type: "string"},
@@ -236,6 +252,7 @@ var AUTHENTICATION = (function(authentication, http){
     
     
     authentication.clientCanRead = function(clientId, dataSource, write){
+    return true;
         var table = authentication.sessionTableB.valueNow();
         var clientMap = authentication.clientMapB.valueNow();
         var token = clientMap[clientId];
@@ -263,6 +280,7 @@ var AUTHENTICATION = (function(authentication, http){
         }
         return false;
     };
+
     return authentication;
 })(AUTHENTICATION || {}, HTTP);
 
