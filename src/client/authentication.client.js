@@ -1,6 +1,6 @@
-var AUTHENTICATION = (function(authentication, widgets, aurora){
+var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     
-    function getCookie(cname){
+    /*function getCookie(cname){
         var name = cname + "=";
         var ca = document.cookie.split(';');
         for(var i=0; i<ca.length; i++){
@@ -11,21 +11,22 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
         }
         return "";
     }
+    */
     
     //Invalid token reset
     aurora.sendToClientE.filterE(function(packet){   //TODO: Should the onceE be there?
        return packet.command===AURORA.COMMANDS.AUTH.TOKEN_INVALID;
     }).mapE(function(){ //The presented token is now invalid. Delete it and reconnect.     
         document.cookie="sesh=false; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/";
-        location.reload();
+        location.reload(true);
     });
     
     //Send Authentication token to server
     aurora.authTokenRequestE = aurora.connectionStatusE.filterE(function(packet){   //TODO: Should the onceE be there?
-       return packet.data===aurora.STATUS.CONNECTED && getCookie("sesh")!=undefined;
+       return packet.data===aurora.STATUS.CONNECTED && cookies.getCookie("sesh")!=undefined;
     }).onceE().mapE(function(){
        LOG.create("Sending Auth Token");
-       aurora.sendToServer({command: aurora.COMMANDS.AUTHENTICATE, data: {token: getCookie("sesh")}});
+       aurora.sendToServer({command: aurora.COMMANDS.AUTHENTICATE, data: {token: cookies.getCookie("sesh")}});
     }).mapE(function(){
         DATA.reregisterAll();
     });
@@ -34,7 +35,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     
     
     //Receive Authentication token from server.
-    aurora.sendToClientE.filterE(function(message){
+    aurora.currentUserB = aurora.sendToClientE.filterE(function(message){
         return message.command===aurora.COMMANDS.UPDATE_TOKEN && message.data.token!=undefined;
     }).mapE(function(messagePacket){
         aurora.token = messagePacket.data.token;
@@ -46,7 +47,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
         else{
             document.cookie="sesh="+messagePacket.data.cookie+"; path=/"; 
         }
-    });
+        console.log(document.cookie);
+        return {userId: messagePacket.data.userId, groupId: messagePacket.data.groupId};
+    }).startsWith({userId: -1, groupId: 1});
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
         var container = DOM.create("div");
@@ -74,13 +77,17 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                 return container;
             },
             load:function(){
+            	aurora.currentUserB.liftB(function(currentUser){
+            		return good(currentUser)&&(currentUser.groupId===undefined||currentUser.groupId===1);
+            	}).domDisplayB(container);
+            	
                 var usernameB = F.extractValueB(usernameInput);
                 var passwordB = F.extractValueB(passwordInput);
                 var emailB = F.extractValueB(emailInput);
                 var rememberMeB = F.extractValueE(rememberMe).mapE(function(){LOG.create(rememberMe.checked);return rememberMe.checked;}).startsWith(false);
                 
                 var formDataB = F.liftB(function(username, password,emailaddress, rememberMe){
-                    var formData = {password:CRYPTO.md5(password),rememberMe:rememberMe};
+                	var formData = {password:CRYPTO.md5(password),rememberMe:rememberMe};
                     if(emailaddress!=undefined && emailaddress.length>0){
                         formData.emailaddress = emailaddress;
                     }
@@ -141,6 +148,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
                         return chooseSignal();
                     }
                     var newTable = OBJECT.clone(table);
+                    newTable.tableMetaData.readonly = true;
                     //newTable.columnMetaData.expiry.renderer = WIDGETS.renderers.TimestampDiff;
                     newTable.columnMetaData.expiry.dataType = "TimestampDiff";
                     return newTable;
@@ -270,7 +278,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora){
     });
     
     return authentication;
-}(AUTHENTICATION || {}, WIDGETS, AURORA));
+}(AUTHENTICATION || {}, WIDGETS, AURORA, COOKIES));
 
 
 

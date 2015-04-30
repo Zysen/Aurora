@@ -4,7 +4,7 @@ STORAGE.createTableBI("aurora.pages", "pageId", {
 	pageId:{name: "Page Id", type: "number"},
 	title:{name: "Title", type: "string"},
 	owner:{name: "Owner", type: "number"}
-}).sendToClients("AURORA_PAGES", AURORA.DATATYPE.UTF8);
+}).sendTableToClients("AURORA_PAGES", AURORA.DATATYPE.UTF8);
 
 STORAGE.createTableBI("aurora.settings", "settingId", {
 	settingId:{name: "Setting Id", type: "number"},

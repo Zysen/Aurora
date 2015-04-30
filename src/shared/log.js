@@ -6,17 +6,14 @@ var LOG = (function(log, aurora) {
 	log.ERROR=0;
 	log.create = function(message){
 	    try{
-    		if(console===undefined){
-    			postMessage({command: aurora.RESPONSES.LOG, data: message});
-    		}
-    		else if(message!==undefined && TABLES.UTIL.isTable(message)){
+    		if(message!==undefined && TABLES.UTIL.isTable(message)){
     		    TABLES.UTIL.printTable(message);
     		}
     		else{
     			console.log(message);
     		}
 	   }
-	   catch(e){console.log(e);}
+	   catch(e){console.log("Log Exception"); console.log(e); console.log(arguments.callee.caller);}
     	
 		/*
 		var type = typeof(message);

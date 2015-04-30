@@ -44,7 +44,6 @@ if(typeof window === 'undefined'){
 
 //goog['provide']('F');
 //goog['require']("LOG");
-goog.provide('F');
 //goog.provide('flapjax');
 
 /**
@@ -838,6 +837,29 @@ F.EventStream.prototype.filterRepeatsE = function(optStart) {
     return false;
   });
 };
+
+
+F.EventStream.prototype.filterChangesE = function(optStart) {
+  var hadFirst = optStart === undefined ? false : true;
+  var prev = optStart;
+
+  return this.filterE(function (v) {
+    if(typeof(v)=='object'){
+        if(!OBJECT.equals(v, prev)){
+            prev = OBJECT.clone(v);
+            return false;
+        }
+    }
+    else if (!hadFirst || prev !== v) {
+      hadFirst = true;
+      prev = v;
+      return false;
+    }
+    return true;
+  });
+};
+
+
 
 /**
  * <i>Calms</i> this event stream to fire at most once every <i>time</i> ms.

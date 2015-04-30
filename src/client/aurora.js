@@ -27,6 +27,15 @@
 
 goog['require']("LOG");
 
+var COOKIES = (function(cookieLib){
+	cookieLib.getCookie = function(name) {
+      var value = "; " + document.cookie;
+      var parts = value.split("; " + name + "=");
+      if (parts.length == 2) return parts.pop().split(";").shift();
+    };
+    return cookieLib;
+}(COOKIES || {}));
+
 var WIDGETS = (function(widgets, OBJECT){
 	
 	if(widgets.renderers==undefined){
@@ -106,18 +115,16 @@ var WIDGETS = (function(widgets, OBJECT){
 			inflatedWidgetSet[index].widget.load();
 		}
 	};
+	widgets.get = function(key){
+		return widgetTypes[key];
+	};
 	return widgets;
 }(WIDGETS || {}, OBJECT));
 
-var AURORA = (function(aurora, F){
+var AURORA = (function(aurora, F, cookies){
 	aurora.settings = {scriptPath: parent.window.location.origin+"/"};
 	var sendToServerE = F.receiverE();
-	function getCookie(name) {
-      var value = "; " + document.cookie;
-      var parts = value.split("; " + name + "=");
-      if (parts.length == 2) return parts.pop().split(";").shift();
-    }
-	var cookie = getCookie("sesh").split("-");
+	var cookie = cookies.getCookie("sesh").split("-");
     aurora.token = cookie[0];
 	
 	aurora.sendToClientE = F.receiverE();
@@ -131,7 +138,7 @@ var AURORA = (function(aurora, F){
 		var pageName = document.URL.replace(aurora.settings.scriptPath, '');
 		return (ev.state && ev.state.page)?ev.state.page:(pageName.length==0?aurora.settings.defaultPage:pageName);
 	});	
-
+	aurora.pageNameB = aurora.pageNameE.startsWith(SIGNALS.NOT_READY);
 	aurora.dataUpdateE = F.mergeE(sendToServerE, aurora.pageNameE.mapE(function(pageName){return {command: aurora.COMMANDS.REQUEST_PAGE, data: pageName};}));
 	
 	aurora.connectionStatusE = aurora.sendToClientE.filterE(function(packet){
@@ -160,7 +167,7 @@ var AURORA = (function(aurora, F){
 		location.reload();
 	});
 
-	F.liftB(function(windowLoaded, socketConnected){
+	aurora.widgetsLoadedE = F.liftB(function(windowLoaded, socketConnected){
 		if(!good() || socketConnected==false){
 			return chooseSignal();
 		}
@@ -168,17 +175,39 @@ var AURORA = (function(aurora, F){
 			LOG.create("Page Loaded and socket connected. Inflating widgets "+socketConnected);
 			WIDGETS.loadWidgets(WIDGETS.inflateWidgets(document.body));
 		}
-	}, aurora.windowLoadE.startsWith(SIGNALS.NOT_READY), aurora.connectedE.onceE().startsWith(false));
+		return true;
+	}, aurora.windowLoadE.startsWith(SIGNALS.NOT_READY), aurora.connectedE.onceE().startsWith(false)).changes();
 
+	
+	var firstRawPageB = F.liftB(function(windowLoaded, socketConnected){
+		if(!good() || socketConnected==false){
+			return chooseSignal();
+		}
+		LOG.create("Page Loaded and socket connected. Inflating widgets "+socketConnected);
+		var rawPage = DOM.get('content').innerHTML;
+		WIDGETS.loadWidgets(WIDGETS.inflateWidgets(document.body));
+		return rawPage;
+	}, aurora.windowLoadE.startsWith(SIGNALS.NOT_READY), aurora.connectedE.onceE().startsWith(false));
 
 	aurora.pageBuiltE = aurora.sendToClientE.filterE(function(message){
 		return message.command==aurora.RESPONSES.PAGE;
 	}).mapE(function(response){
+		if(CKEDITOR && CKEDITOR.instances.content){
+			console.log(CKEDITOR.instances.content.destroy)
+			CKEDITOR.instances.content.destroy();
+		}
 		WIDGETS.deflateWidgets(DOM.get("content"));
 		DOM.get("content").innerHTML = response.data;
 		WIDGETS.loadWidgets(WIDGETS.inflateWidgets(DOM.get("content")));
-	});
+		return response.data;
+	});	
 	
+	aurora.rawPageB = F.liftB(function(firstPage, updatedPage){
+		if(!good(updatedPage)){
+			return firstPage;
+		}
+		return updatedPage;
+	}, firstRawPageB,aurora.pageBuiltE.startsWith(SIGNALS.NOT_READY));
 	//Catch login cookie updates.	
 	
 	aurora.sendToServer = function(message){
@@ -187,13 +216,27 @@ var AURORA = (function(aurora, F){
 	aurora.sendToClient = function(message){
 		aurora.sendToClientE.sendEvent(message);
 	};
+
+	aurora.sendEvent = function(channelID, data){
+		aurora.sendToServer({command: AURORA.COMMANDS.UPDATE_DATA,key:channelID, data: data});
+	};
+
 	return aurora;
-}(AURORA || {}, F));
+}(AURORA || {}, F, COOKIES));
 
 
 var DATA = (function(dataManager, F, aurora){
 	var referenceCount = {};
 	var requests = {};	
+	
+	dataManager.sendToServer = aurora.sendEvent; 
+	
+	dataManager.receiveE = function(instanceId, objectName){
+		return aurora.sendToClientE.filterE(function(message){
+			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
+		}).mapE(function(messagePacket){return messagePacket.data;});
+		return requests[instanceId];
+	};
 	
 	dataManager.requestE = function(instanceId, objectName){
 		referenceCount[objectName] = referenceCount[objectName]==undefined?1:(referenceCount[objectName]+1);
@@ -205,12 +248,40 @@ var DATA = (function(dataManager, F, aurora){
 		}).mapE(function(messagePacket){return messagePacket.data;});
 		return requests[instanceId];
 	};
+	
 	dataManager.requestB = function(instanceId, objectName){
 		return F.liftBI(function(newData){return newData;}, function(newData){
 			aurora.sendToServer({command: aurora.COMMANDS.UPDATE_DATA, key: objectName, data:newData});
 			return [newData];
 		}, dataManager.requestE(instanceId, objectName).startsWith(SIGNALS.NOT_READY));
 	};
+	
+	dataManager.requestTableBI = function(instanceId, key){
+		var initialTable = SIGNALS.NOT_READY;
+		var channelE = dataManager.getChannelE(instanceId, key);
+		
+		channelE.collectE(initialTable, function(newState, state){
+			if(newState.command==="update"){	//Whole table
+				state = newState.data;
+			}
+			else if(newState==="chunk"){		//Chunk of table
+				//TODO: Add new chunks to state
+			}
+			else if(newState==="change"){		//Changeset for table
+				//TODO: Run through change set add changes to state
+			}
+			return state;
+		});
+		
+		return F.liftBI(function(newState){
+			return newState;
+		}, function(newState){
+			//TODO: check for and handle cases of changesets or chunks 
+			channelE.send("update", newState);
+		}, channelE.startsWith(SIGNALS.NOT_READY));
+	};
+	
+	/*
 	dataManager.requestChunkedB = function(instanceId, objectName){
        
         var inputB = DATA.requestE(instanceId, objectName).chunkedCollectE().mapE(function(object){
@@ -226,6 +297,8 @@ var DATA = (function(dataManager, F, aurora){
         }, inputB);
 
     };
+    */
+	
 	dataManager.release = function(instanceId, objectName){
 		referenceCount[objectName] = (referenceCount[objectName]==undefined||referenceCount[objectName]<=0)?0:(referenceCount[objectName]-1);
 		if(referenceCount[objectName]<=0){
@@ -244,9 +317,30 @@ var DATA = (function(dataManager, F, aurora){
 		}
 	};
 	
-	
+	dataManager.getChannelE = function(instanceId, channelId){
+		 var channelE = dataManager.receiveE(instanceId, channelId);
+		 channelE.filterCommandsE = function(){
+			 var args = arguments;
+			 return channelE.filterE(function(packet){
+				 for(var index in args){
+					 if(args[index]===packet.command){
+						 return true;
+					 }
+				 }
+				 return false;
+			}).mapE(function(packet){
+				console.log(packet);
+				return {data: packet.data};
+			});
+		 };
+		 channelE.send = function(command, data){
+			 dataManager.sendToServer(channelId, {command: command, data: data});
+		 };
+		 return channelE;
+	};
 	
 	function extractData(str){
+		//This is for extracting data from a binary stream back to JSON
 	    var qCount = 0;
 	    var key = "";
 	    var command = "";
@@ -315,7 +409,7 @@ var DATA = (function(dataManager, F, aurora){
 		    };
 		    //Messages from server to GUI
 		    webSocket.onmessage = function (packet) {
-		    	try{
+		    //	try{
 		    	    if(packet.data instanceof Blob){
                         var fileReader = new FileReader();
                         fileReader.onload = function() {
@@ -333,21 +427,24 @@ var DATA = (function(dataManager, F, aurora){
                         //console.log(packet.data);
 		    	    }
 		    	    else{
+		    	    	
 		    	        aurora.sendToClient(JSON.parse(packet.data));
 		    	    }
-				}
+			/*
+		    	}
 				catch(e){
 					aurora.sendToClient(aurora.ERRORS.DATA_UPDATE_PARSE(e));
+					console.log("WebSocket onmessage Error");
 					LOG.create(e);
+					console.log(packet.data);
 				}
+				*/
 		    };
 		}else{
 			LOG.create("Sorry but your browser does not support WebSockets");	
 		}
 	};
 	aurora.dataUpdateE.mapE(function(packet){
-		
-		
 		if(webSocket==undefined){
 			LOG.create("Unabled to send data, WebSocket has not been initialized");
 			return;
@@ -355,15 +452,12 @@ var DATA = (function(dataManager, F, aurora){
 		webSocket.send(JSON.stringify({token: aurora.token, message:packet}));
     });
 	dataManager.connect();
-	
 	return dataManager;
 }(DATA || {}, F, AURORA));
 
-
-
-
-
 window.changePage = function(page){
+	onsole.log("ChangePage");
+	console.log(page);
 	if(history){
 		history.pushState(page, page, page);
 	}

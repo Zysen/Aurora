@@ -1,6 +1,5 @@
 npm install mime
 npm install websocket
-npm install websockets
 npm install os-monitor
 
 npm install jsmin2

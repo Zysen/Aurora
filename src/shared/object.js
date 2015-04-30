@@ -1,4 +1,16 @@
 var OBJECT = (function(obj){
+	
+	Function.prototype.clone = function() {
+	    var that = this;
+	    var temp = function temporary() { return that.apply(this, arguments); };
+	    for(var key in this) {
+	        if (this.hasOwnProperty(key)) {
+	            temp[key] = this[key];
+	        }
+	    }
+	    return temp;
+	};
+	
 	obj.clone = function(source){
 		if(source instanceof Array) {
 	        var copy = [];
@@ -6,6 +18,9 @@ var OBJECT = (function(obj){
 	            copy[i] = obj.clone(source[i]);
 	        }
 	        return copy;
+	    }
+		else if(typeof(source) === 'function'){
+	    	return source.clone();
 	    }
 	    else if (source instanceof Object || typeof(source)=="object") {
 	       	var copy = {};
@@ -71,6 +86,74 @@ var OBJECT = (function(obj){
 		return JSON.stringify(sourceObject);		
 	};
 	
+	/*
+	function objectEquals(x, y)
+	{
+		// Check for NaN value
+		if (isNaN(x) && isNaN(y) && typeof x === 'number' && typeof y === 'number') {
+			return true;
+		}
+		
+		// Compare primitives and functions.
+		if (x === y) {
+	        return true;
+	    }
+		
+		// Check prototypes
+	    if (!(x instanceof Object && y instanceof Object)) {
+	        return false;
+	    }
+
+	    if (x.isPrototypeOf(y) || y.isPrototypeOf(x)) {
+	        return false;
+	    }
+
+	    if (x.constructor !== y.constructor) {
+	        return false;
+	    }
+
+	    if (x.prototype !== y.prototype) {
+	        return false;
+	    }
+		
+		// Quick property check y subset of x
+		var p;
+		for (p in y) {
+	        if (y.hasOwnProperty(p) !== x.hasOwnProperty(p)) {
+	            return false;
+	        }
+	        else if (typeof y[p] !== typeof x[p]) {
+	            return false;
+	        }
+	    }
+		
+		// Full check
+		for (p in x) {
+	        if (y.hasOwnProperty(p) !== x.hasOwnProperty(p)) {
+	            return false;
+	        }
+	        else if (typeof y[p] !== typeof x[p]) {
+	            return false;
+	        }
+
+	        switch (typeof (x[p])) {
+	            case 'object':
+	            case 'function':
+	                if (!objectEquals(x[p], y[p])) {
+	                    return false;
+	                }
+	                break;
+	            default:
+	                if (x[p] !== y[p]) {
+	                    return false;
+	                }
+	                break;
+	        }
+	    }
+
+	    return true;
+	}
+*/
 	
 	obj.equals = function(ob1, ob2, debug){
 		debug === undefined ? false : debug;
@@ -114,6 +197,41 @@ var OBJECT = (function(obj){
 	  return true;
 	};
 	
+	obj.sortKeys = function(ob){
+		if(ob instanceof Array){
+			console.log("Object Sort, argument is an array");
+			return ob;
+		}
+		if(typeof(ob)!=="object"){
+			console.log("Object Sort, argument is not an object");
+			return ob;
+		}
+		var newOb = {};
+		var orderedKeys = Object.keys(ob).sort();
+		console.log();
+		for(var index in orderedKeys){
+			newOb = ob[orderedKeys[index]];
+		}
+		return newOb;
+	};
+	
+	obj.asArray = function(ob, field){
+		if(ob instanceof Array){
+			console.log("Object Sort, argument is an array");
+			return ob;
+		}
+		if(typeof(ob)!=="object"){
+			console.log("Object Sort, argument is not an object");
+			return ob;
+		}
+		var newOb = [];
+		for(var index in ob){
+			newOb.push(ob[index]);
+		}
+		return newOb;
+	};
+	
 	
 	return obj;
 })(OBJECT || {});
+

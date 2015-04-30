@@ -16,6 +16,9 @@
 /src/client.js
 /src/build_output/*
 /config.json
+/themes/csr*
+/src/plugins/csr*
+
 
 # OS generated files #
 ######################

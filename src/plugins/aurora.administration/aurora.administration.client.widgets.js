@@ -10,7 +10,6 @@ var ADMINISTRATION = (function(administration, widgets){
 	widgets.register("DataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCES"));
 	widgets.register("DataSourcesAdminTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCESADMIN"));
 	
-	
 	widgets.register("SettingsManagementConfig", TABLES.WIDGETS.basicTableWidget("AURORA_SETTINGS"));
 	widgets.register("PageManagement", TABLES.WIDGETS.basicTableWidget("AURORA_PAGES"));
 	//widgets.register("UserManagement", TABLES.WIDGETS.basicTableWidget("AURORA_USERS"));	//administration.WIDGETS.UserManagement = 
