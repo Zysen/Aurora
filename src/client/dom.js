@@ -3,7 +3,7 @@ var DOM = (function(dom){
 		return document.getElementById(domId);
 	};
 	dom.parse = function(html){
-    	var element = this.createDiv();
+    	var element = dom.create('div');
     	element.innerHTML = html;
     	return element.children;
     };
@@ -20,6 +20,13 @@ var DOM = (function(dom){
     	}
     	return element;
     };
+    
+    dom.removeChildren = function(element){
+    	while (element.firstChild) {
+    		element.removeChild(element.firstChild);
+    	}
+    }
+    
     dom.createAndAppend = function(parentElement, type, id, className, innerHTML){
         var element = dom.create(type, id, className, innerHTML);
         parentElement.appendChild(element);
@@ -40,8 +47,9 @@ var DOM = (function(dom){
 	};
 	dom.stopEventBubble = function(e){
 		 var evt = e ? e:window.event;
-		 if (evt.stopPropagation)    evt.stopPropagation();
+		 if (evt.stopPropagation) evt.stopPropagation();
 		 if (evt.cancelBubble!=null) evt.cancelBubble = true;
+		 if (evt.preventDefault!=null) evt.preventDefault();
 	};
 	dom.findParentNodeWithTag = function(element, tag){
 	    if(element==undefined||element==null)
@@ -68,6 +76,18 @@ var DOM = (function(dom){
         return matchArray;
     };
     
+    F.EventStream.prototype.stopDomE = function(){
+    	return this.mapE(function(e){
+    		DOM.stopEventBubble(e);
+    		return e;
+    	});
+    };
+    
+    Element.prototype.removeChildren = function(){
+    	while (this.firstChild) {
+    		this.removeChild(this.firstChild);
+    	}
+    }
     
 	return dom;
 }(DOM || {}));
