@@ -1,12 +1,15 @@
 npm install mime
 npm install websocket
 npm install os-monitor
-
+npm install multiparty
+npm install slow-stream
 npm install jsmin2
 npm install node-jslint
 npm install jsdoc2
 npm install exec
 npm install openssl
+
+npm install closurecompiler
 
 mkdir data
 

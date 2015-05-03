@@ -1,12 +1,15 @@
 call npm install mime
 call npm install websocket
 call npm install os-monitor
-
+call npm install multiparty
+call npm install slow-stream
 call npm install jsmin2
 call npm install node-jslint
 call npm install jsdoc2
 call npm install exec
 call npm install openssl
+
+call npm install closurecompiler
 
 mkdir data
 
