@@ -97,7 +97,7 @@ WIDGETS.renderers.Map = function(id) {
             var deleteUpdateE = deleteClickedE.mapE(function(clickEvent){
                 var clickedKey = clickEvent.target.id.replace(id+"_", "").replace("_button", "");
                 var cloneData = OBJECT.clone(newValueB.valueNow());
-                OBJECT.delete(cloneData, clickedKey);
+                OBJECT.remove(cloneData, clickedKey);
                 return cloneData;
             });
             
@@ -617,7 +617,7 @@ WIDGETS.renderers.TextInput = function(id) {
 				return value;
 			});
 			
-			//var valueB = F.mergeE(F.extractValueE(jinput.get(0)), set_valueE).startsWith(NOT_READY);
+			//var valueB = F.mergeE(F.extractValueE(jinput.get(0)), set_valueE).startsWith(SIGNALS.NOT_READY);
 			var valueB = F.extractValueB(jinput.get(0));
 			
 			valueE = blurE.snapshotE(valueB).filterE(function(value){return good();}).mapE(function(value){
@@ -1309,7 +1309,7 @@ WIDGETS.renderers.RadioGroup = function(id) {
 				jdiv_readonly.toggleClass('disabled', disabled);
 				
 				var inputs = jdiv_input.find('input');
-				inputs.prop('disabled', disabled);
+				//inputs.prop('disabled', disabled);
 				inputs.toggleClass('disabled', disabled);
 			});
 			
@@ -1509,7 +1509,6 @@ WIDGETS.renderers.RadioGroup = function(id) {
  * SelectInput
  */
 WIDGETS.renderers.SelectInput = function(id) {
-	
 	// Ensure new keyword has been used
 	if ( !(this instanceof arguments.callee) ) 
 		   throw new Error("Constructor called as a function, use new keyword");
