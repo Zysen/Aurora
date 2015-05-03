@@ -314,14 +314,14 @@ var TABLES = (function(tables){
 //				}
 
 				var table2NewColumns = clone(table2.columnMetaData);
-				objectRemove(table2NewColumns, joinColumn);
+				OBJECT.remove(table2NewColumns, joinColumn);
 				jQuery.extend(newTable.columnMetaData, table2NewColumns);
 
 				for(var row1Index in table1.data){
 					for(var row2Index in table2.data){
 						if(table1.data[row1Index][joinColumn]===table2.data[row2Index][joinColumn]){
 							var table2Row = clone(table2.data[row2Index]);
-							objectRemove(table2Row, joinColumn);
+							OBJECT.remove(table2Row, joinColumn);
 							newTable.data[newTable.data.length] = jQuery.extend(clone(table1.data[row1Index]), table2Row);//.splice(table2indexColumn, 1)
 						}
 					}
@@ -453,7 +453,7 @@ var TABLES = (function(tables){
 					var rowIndex = TABLES.UTIL.findRowIndex(table, rowPk);
 					newTable.data.splice(rowIndex, 1);
 					newTable.cellMetaData.splice(rowIndex, 1);
-					objectRemove(newTable.rowMetaData, rowPk);
+					OBJECT.remove(newTable.rowMetaData, rowPk);
 				}
 
 				return newTable;
@@ -558,7 +558,7 @@ var TABLES = (function(tables){
 					
 					if(newColumnMetaData[rowId]==undefined && table.rowMetaData[rowPk]!=undefined){
 						newColumnMetaData[rowId] = clone(table.rowMetaData[rowPk]);
-						objectRemove(newColumnMetaData[rowId], "rotatePk");
+						OBJECT.remove(newColumnMetaData[rowId], "rotatePk");
 					}
 				}				
 				columnNumber++;
@@ -708,16 +708,16 @@ var TABLES = (function(tables){
 			},
 			cleanUserChange: function(table){
 				for(var columnIndex in table.columnMetaData){
-					objectRemove(table.columnMetaData[columnIndex], "userChange");
+					OBJECT.remove(table.columnMetaData[columnIndex], "userChange");
 				}
 				
 				for(var rowPk in table.rowMetaData){
-					objectRemove(table.rowMetaData[rowPk], "userChange");
+					OBJECT.remove(table.rowMetaData[rowPk], "userChange");
 				}
 				
 				for(var rowIndex in table.cellMetaData){
 					for(var columnIndex in table.cellMetaData[rowIndex]){
-						objectRemove(table.cellMetaData[rowIndex][columnIndex], "userChange");
+						OBJECT.remove(table.cellMetaData[rowIndex][columnIndex], "userChange");
 					}
 				}
 				return table;
@@ -800,12 +800,12 @@ var TABLES = (function(tables){
 			},
 			
 			removeRow: function(table, searchRowPk){
-				objectRemove(table.rowMetaData, searchRowPk);
+				OBJECT.remove(table.rowMetaData, searchRowPk);
 				for(var rowIndex in table.data){
 					var rowPk = TABLES.UTIL.findRowPk(table, rowIndex);
 					if(rowPk==searchRowPk){
-						objectRemove(table.data, rowIndex);
-						objectRemove(table.cellMetaData, rowIndex);		// Must call this even if no cell meta data so that array stays in order.
+						OBJECT.remove(table.data, rowIndex);
+						OBJECT.remove(table.cellMetaData, rowIndex);		// Must call this even if no cell meta data so that array stays in order.
 					}
 				}
 				return table;
@@ -816,17 +816,17 @@ var TABLES = (function(tables){
 				if(table==undefined){
 					log("RemoveColumn Table is undefined");
 				}
-				objectRemove(table.columnMetaData, columnId);
+				OBJECT.remove(table.columnMetaData, columnId);
 				
 				for(var rowIndex in table.data){
-					objectRemove(table.data[rowIndex], columnId);
+					OBJECT.remove(table.data[rowIndex], columnId);
 					if(table.cellMetaData[rowIndex] !== undefined){
-						objectRemove(table.cellMetaData[rowIndex], columnId);
+						OBJECT.remove(table.cellMetaData[rowIndex], columnId);
 					}
 				}
 				for(var rowPk in table.rowMetaData){
 					if(table.rowMetaData[rowPk] !== undefined){
-						objectRemove(table.rowMetaData[rowPk], columnId);
+						OBJECT.remove(table.rowMetaData[rowPk], columnId);
 					}
 				}
 				return table;
@@ -974,7 +974,7 @@ var TABLES = (function(tables){
 				return undefined;
 			},
 			printTable:function(table, dir){
-				if(table==NOT_READY){
+				if(table==SIGNALS.NOT_READY){
 					return SIGNALS.NOT_READY;
 				}
 				direction = dir==undefined?"down":"up";
