@@ -10,6 +10,8 @@
 /server.js
 /client.js
 /client.min.js
+/client.libs.js
+/client.js.map
 /client.data.min.js
 /DataThread.js
 /src/shared/aurora_version.js

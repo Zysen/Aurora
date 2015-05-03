@@ -1,17 +1,42 @@
-var fs = require("fs");
+console.log('Building Aurora');
+console.log('Using NodeJS ' + process.version);
 var jsmin = require('jsmin2');
 var jslint = require('node-jslint').JSLINT;
 var path = require("path");
-console.log(process.argv.length);
-console.log(process.argv);
-for ( var index in process.argv) {
-	console.log(process.argv[index]);
+var fs = require("fs");
+var ClosureCompiler = require("closurecompiler");
+
+var isModuleAvailableSync = function(moduleName)
+{
+    var ret = false; // return value, boolean
+    var dirSeparator = require("path").sep;
+    module.paths.forEach(function(nodeModulesPath)
+    {
+        if(fs.existsSync(nodeModulesPath + dirSeparator + moduleName) === true)
+        {
+            ret = true;
+            return false; // break forEach
+        }
+    });
+    return ret;
+};
+
+if(fs.existsSync===undefined){
+	fs.existsSync = path.existsSync;
 }
+
+fs.writeFileSync(__dirname+"/shared/aurora_version.js", "AURORA.VERSION = '" + (new Date().getTime()) + "';\n");
+
+var target = (process.argv.length > 3) ? process.argv[3] : "debug";
+console.log("Target: " + target);
+
 var config = JSON.parse(fs.readFileSync((process.argv.length > 2 && fs.existsSync(process.argv[2])) ? process.argv[2] : __dirname + "/../config.json"));
 var theme = config.theme;
 var exec = require('exec');
 
-var ignorePlugins = ["ckeditor", "webrtc", "cavalierJS", "zysen_dayz", "jqueryui", "jqueryui-modules","tables2", "tables", "layer2.isp", "canvasjs", "stats", "csr", "csr.top_menu", "csr.revert_timer", "debug", "npid", "requirejs", "webrtc2", "npid", "mysql", "traffic" ]; // "csr",
+config.generateDocumentation = config.generateDocumentation || true;
+
+var ignorePlugins = ["skeleton","stats", "debug"]; // "csr",
 
 var ARRAYS = (function(arrays) {
 	arrays.arrayCut = function(array, index) {
@@ -88,10 +113,34 @@ var lintCheck = function(code, filename, options) {
 	return true;
 };
 
-var minify = function(code, filename) {
-	var minified = jsmin(code);
-	var codeMap = minified.codeMap;
-	fs.writeFileSync(filename, minified.code);
+var minify = function() {
+	ClosureCompiler.compile(
+	    ['../client.js'],
+	    {
+	    	jscomp_off			:			"internetExplorerChecks",
+	    	language_in			:			"ECMASCRIPT5",
+	    	js					:			"../client.js",
+	        js_output_file		: 			"../client.min.js",
+	        output_wrapper		: 			"//# sourceMappingURL=/client.js.map\n%output%",
+	        compilation_level	: 			"SIMPLE_OPTIMIZATIONS",// SIMPLE_OPTIMIZATIONS | ADVANCED_OPTIMIZATIONS | WHITESPACE_ONLY
+	        source_map_format	: 			"V3",
+	        create_source_map	: 			"../client.js.map",
+	        source_map_location_mapping	: 	"none|../client.js.map"
+	        //Formatting			: 			"PRETTY_PRINT",// Capitalization does not matter      
+	        //externs: ["externs/file3.js", "externs/contrib/"], // If you specify a directory here, all files inside are used 
+	    },
+	    function(error, result) {
+	        if (result) {
+	           // console.log(result);
+	            console.log("Javascript Compilation Success");
+	            fs.writeFileSync("../client.min.js", result);
+	            // Display error (warnings from stderr) 
+	        } else {
+	        	console.log("ClosureCompiler", error);
+	            // Display error... 
+	         }
+	    }
+	);
 };
 
 var generateJSDocs = function(file, cb) {
@@ -110,21 +159,22 @@ var generateJSDocs = function(file, cb) {
 	}
 
 	exec([ 'node', '../node_modules/jsdoc2/app/run.js', '-a', "-d=build_output/" + name + "/docs", file ], function(err, out, code) {
-		if (err)
-			throw err;
-		// process.stdout.write(out);
-		var out2 = out;
-		// process.exit(code);
-		cb();
+		if (err){
+			exec([ 'nodejs', '../node_modules/jsdoc2/app/run.js', '-a', "-d=build_output/" + name + "/docs", file ], function(err, out, code) {
+				if (err){
+					throw err;
+				}
+				cb();
+			});
+		}
+		else{
+			cb();
+		}
 	});
 };
 
 var writeFile = function(code, filename) {
 	fs.writeFileSync(filename, code);
-};
-
-var updateVersion = function() {
-	fs.writeFileSync("shared/aurora_version.js", "AURORA.VERSION = '" + (new Date().getTime()) + "';\n");
 };
 
 var complete = false;
@@ -139,70 +189,45 @@ function wait() {
 
 var sharedBuildFiles = [];
 
-var clientBuildFiles = [
-// "client/closure-base.js",
-"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
-        "shared/crypto.js", "plugins/jquery/jquery-2.0.3.min.js", "plugins/jquery/jquery-flapjax.js", "shared/aurora.flapjax.js", "client/dom.js", "client/aurora.js",
-
-        "plugins/tables/tables.js", "plugins/tables/tables.shared.js", "plugins/tables/tables.client.js", "plugins/tables/tables.validators.js", "client/widget.renderers.js", "client/authentication.client.js"
-// "plugins/stats/stats.client.widgets.js",
-// "plugins/debug/debug.client.widgets.js",
-// "plugins/aurora.administration/aurora.administration.client.js",
-// "plugins/aurora.administration/aurora.administration.client.widgets.js",
-// "plugins/treeview/treeview.client.js",
-// "plugins/treeview/treeview.client.js",
-// "plugins/checklist/checklist.client.js",
-// "plugins/checklist/checklist.client.widgets.js"
-];
-
-var clientCSSFiles = [ "../themes/" + theme + "/style.css",
-// "plugins/stats/stats.css",
-"plugins/tables/tables.css" ];
-
-var serverBuildFiles = [ "server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/arrays.js", "shared/string.js", "shared/date.js",
-        "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "server/aurora.server.js", "plugins/tables/tables.shared.js", "server/http.library.js",
-        "server/server.js", "server/authentication.server.js"
-// "plugins/stats/stats.server.js",
-// "plugins/debug/debug.server.js",
-// "plugins/aurora.administration/aurora.administration.server.js",
-// "plugins/checklist/checklist.server.js"
-];
+///, "client/widget.renderers.js"
 
 
+var clientBuildFiles = ["server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/aurora.js", "plugins/tables/tables.shared.js", "plugins/tables/tables.client.js", "plugins/tables/tables.validators.js", "client/authentication.client.js", "client/widget.renderers.js"];
+var clientCSSFiles = ["../themes/" + theme + "/style.css", "plugins/tables/tables.css"]; 
+var serverBuildFiles = ["server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/date.js", "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js", "server/server.js", "server/authentication.server.js"];
 
-var target = (process.argv.length >= 3) ? process.argv[2] : "debug";
-
-if(target=="libs"){
-	var libs = concatenate(["server/goog.js", "shared/number.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js","shared/aurora.flapjax.js"]);
-	fs.writeFileSync("aurora.libs.js", libs);
-	process.exit();
-}
-
+var clientLibraries = [];
+var serverLibraries = [];
 
 var plugins = [];
 
-updateVersion();
 
 // Include plugins
 fs.readdir("plugins", function(err, files) {
 	if (err) {
 		throw err;
 	}
-
+	files = files.sort(function(a, b) {return a < b ? -1 : 1;});
 	plugins = files;
+	var filesStr = "";
 	var widgetCode = [];
 	for ( var index in files) {
 		var plugin = files[index];
 		if (ARRAYS.contains(ignorePlugins, plugin)) {
 			continue;
 		}
+		
 		var pluginDir = fs.readdirSync("plugins/" + plugin + "/");
+		filesStr+=plugin+", ";
 		for ( var fileIndex in pluginDir) {
 			var fullPath = "plugins/" + plugin + "/" + pluginDir[fileIndex];
 			if (fullPath.endsWith("build.js")) {
 				require(__dirname + "/" + fullPath);
+				console.log("Plugin build script complete");
 			}
 		}
+		pluginDir = fs.readdirSync("plugins/" + plugin + "/");		//New files might have been created by the build script.
+		pluginDir = pluginDir.sort(function(a, b) {return a < b ? -1 : 1;});
 		for ( var fileIndex in pluginDir) {
 			var fullPath = "plugins/" + plugin + "/" + pluginDir[fileIndex];
 			if (fullPath.endsWith(".server.js")) {
@@ -213,11 +238,22 @@ fs.readdir("plugins", function(err, files) {
 				clientBuildFiles.push(fullPath);
 			} else if (fullPath.endsWith(".shared.js")) {
 				sharedBuildFiles.push(fullPath);
-			} else if (fullPath.endsWith(".style.css")) {
+			} else if (fullPath.endsWith(".css")) {
 				clientCSSFiles.push(fullPath);
+			} else if (fullPath.endsWith(".server.lib.js") || fullPath.endsWith(".server.min.js")) {
+				serverLibraries.push(fullPath);
+			} else if (fullPath.endsWith(".client.lib.js") || fullPath.endsWith(".client.min.js")) {
+				clientLibraries.push(fullPath);
+			} else if (fullPath.endsWith(".shared.lib.js") || fullPath.endsWith(".shared.min.js")) {
+				serverLibraries.push(fullPath);
+				clientLibraries.push(fullPath);
 			}
 		}
 	}
+	if(target==="debug"){
+		console.log("Including plugins ", filesStr);
+	}
+	
 
 	fs.readdir("../themes/" + theme + "/", function(err, themeDir) {
 		if (err) {
@@ -238,9 +274,6 @@ fs.readdir("plugins", function(err, files) {
 
 		clientBuildFiles = clientBuildFiles.concat(widgetCode);
 
-		
-		console.log("Target: " + target);
-
 		// Build client.js
 		var clientFile = "client.js";
 		var concatenated = concatenate(sharedBuildFiles, clientBuildFiles);
@@ -252,16 +285,22 @@ fs.readdir("plugins", function(err, files) {
 			    browser : true
 			});
 		}
-		minify(concatenated, "../client.min.js");
-		writeFile(concatenated, clientFile);
+		
+		var compile = ((config.compile!==undefined && isModuleAvailableSync("closurecompiler"))?config.compile:false);
+		
+		//writeFile(concatenated, clientFile);
 		writeFile(concatenated, "../" + clientFile);
-
+		if(compile){
+			minify();
+		}
 		// Build CSS
 		writeFile(concatenate(clientCSSFiles), "../style.css");
-
+		
+		writeFile(concatenate(clientLibraries), "../client.libs.js");
+		
 		// Build server.js
 		var serverFile = "../server.js";
-		var concatenated = concatenate(sharedBuildFiles, serverBuildFiles);
+		var concatenated = concatenate(serverLibraries, sharedBuildFiles, serverBuildFiles);
 		if (target !== "fast") {
 			var lintPassed = lintCheck(concatenated, serverFile, {
 			    white : true,
@@ -274,12 +313,10 @@ fs.readdir("plugins", function(err, files) {
 		concatenated += "\nAURORA.pluginsLoadedE.sendEvent(true);\n";
 		writeFile(concatenated, serverFile);
 
-		if (target === "all") {
-			generateJSDocs(clientFile, function() {
+		if (isModuleAvailableSync("jsdoc2") && target === "all" && config.generateDocumentation) {
+			generateJSDocs("../" + clientFile, function() {
 				generateJSDocs(serverFile, function() {
-					generateJSDocs(serverDataFile, function() {
-						complete = true;
-					});
+					complete = true;
 				});
 			});
 			wait();
