@@ -63,6 +63,30 @@ var FILE = (function(file){
 	        }
 	    }
 	};
-	
+	file.watchE = function(filePath){
+		var watcher = undefined;
+		var rec = F.receiverE();
+		
+		var dirPath = path.dirname(filePath);
+		var filename = path.basename(filePath);
+
+		var watchFunc =function (event, eventFilename) {
+			if(eventFilename===filename){
+				rec.sendEvent({event:event,filename:eventFilename});
+				watcher.close();
+				try{
+					if(fs.existsSync(filePath)){watcher = fs.watch(filePath, watchFunc);}
+					else{watcher = fs.watch(dirPath, watchFunc);}
+				}
+				catch(e){
+					watcher = fs.watch(dirPath, watchFunc);
+				}
+			}
+		};
+		
+		if(fs.existsSync(filePath)){watcher = fs.watch(filePath, watchFunc);}
+		else{watcher = fs.watch(dirPath, watchFunc);}
+		return rec;
+	};
 	return file;
 }(FILE || {}));
