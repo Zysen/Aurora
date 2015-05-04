@@ -1,13 +1,13 @@
 //goog.provide('SIGNALS');
 var SIGNALS = (function(signals) {
-	signals.NOT_READY = {};
-	signals.SESSION_EXPIRED = {};
-	signals.NOT_LICENSED = {};
-	signals.ERROR = (function(message, errorNum){this.message = message; this.errorNum = errorNum;});
-	signals.PERMISSION_ERROR = {};
+	signals.NOT_READY = {type: "NOT_READY"};
+	signals.SESSION_EXPIRED = {type: "SESSION_EXPIRED"};
+	signals.NOT_LICENSED = {type: "NOT_LICENSED"};
+	signals.ERROR = (function(errorNum, message){this.message = message; this.errorNum = errorNum;});
+	signals.PERMISSION_ERROR = {type: "PERMISSION_ERROR"};
 	signals.APPLY_STATES = {ERROR: 0, SUCCESS: 1, APPLYING: 2};
 	signals.newError = function(message, errorNum){
-		return new signals.ERROR(message, errorNum);
+		return new signals.ERROR(errorNum, message);
 	};
 	signals.isError = function(signal){
 		return signal instanceof signals.ERROR;
