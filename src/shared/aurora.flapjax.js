@@ -622,3 +622,24 @@ F.EventStream.prototype.toggleE = function(defaultValue){
 		return state.value;
 	});
 };
+
+
+F.EventStream.prototype.filterChangesE = function(optStart) {
+  var hadFirst = optStart === undefined ? false : true;
+  var prev = optStart;
+
+  return this.filterE(function (v) {
+    if(typeof(v)=='object'){
+        if(!OBJECT.equals(v, prev)){
+            prev = OBJECT.clone(v);
+            return false;
+        }
+    }
+    else if (!hadFirst || prev !== v) {
+      hadFirst = true;
+      prev = v;
+      return false;
+    }
+    return true;
+  });
+};
