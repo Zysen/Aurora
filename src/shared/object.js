@@ -1,17 +1,6 @@
 var OBJECT = (function(obj){
 	
-	Function.prototype.clone = function() {
-	    var that = this;
-	    var temp = function temporary() { return that.apply(this, arguments); };
-	    for(var key in this) {
-	        if (this.hasOwnProperty(key)) {
-	            temp[key] = this[key];
-	        }
-	    }
-	    return temp;
-	};
-	
-	obj.clone = function(source){
+	obj.clone2 = function(source){
 		if(source instanceof Array) {
 	        var copy = [];
 	        for (var i = 0; i < source.length; i++) {
@@ -42,6 +31,28 @@ var OBJECT = (function(obj){
 	    	LOG.create("Error during clone, unable to clone data with type "+typeof(source));
 	    }
 	};
+	
+	obj.clone = function(source){
+		if(typeof(jQuery)==='undefined'){
+			return obj.clone2(source);
+		}
+		if(source instanceof Array) {
+	        var copy = [];
+	        for (var i = 0; i < source.length; i++) {
+	            copy[i] = clone(source[i]);
+	        }
+	        return copy;
+	    }else if(typeof(source) === 'string'){
+	    	return source;
+	    }else if(typeof(source) === 'number'){
+	    	return source;
+	    }else if(typeof(source) === 'boolean'){
+	    	return source;
+	    }
+	   
+	   return jQuery.extend(true, {}, source);
+	};
+	//obj.clone = obj.clone2;
 	
 	obj.delete = function(parentObj, key){
 		if(parentObj==undefined){
@@ -86,9 +97,7 @@ var OBJECT = (function(obj){
 		return JSON.stringify(sourceObject);		
 	};
 	
-	/*
-	function objectEquals(x, y)
-	{
+	obj.equals = function(x, y){
 		// Check for NaN value
 		if (isNaN(x) && isNaN(y) && typeof x === 'number' && typeof y === 'number') {
 			return true;
@@ -139,7 +148,7 @@ var OBJECT = (function(obj){
 	        switch (typeof (x[p])) {
 	            case 'object':
 	            case 'function':
-	                if (!objectEquals(x[p], y[p])) {
+	                if (!OBJECT.equals(x[p], y[p])) {
 	                    return false;
 	                }
 	                break;
@@ -152,9 +161,10 @@ var OBJECT = (function(obj){
 	    }
 
 	    return true;
-	}
-*/
+	};
+
 	
+	/*
 	obj.equals = function(ob1, ob2, debug){
 		debug === undefined ? false : debug;
 	    if(typeof(ob1)=='undefined'||typeof(ob2)=='undefined'){
@@ -196,6 +206,7 @@ var OBJECT = (function(obj){
 	  }
 	  return true;
 	};
+	*/
 	
 	obj.sortKeys = function(ob){
 		if(ob instanceof Array){
@@ -208,7 +219,6 @@ var OBJECT = (function(obj){
 		}
 		var newOb = {};
 		var orderedKeys = Object.keys(ob).sort();
-		console.log();
 		for(var index in orderedKeys){
 			newOb = ob[orderedKeys[index]];
 		}
@@ -231,6 +241,18 @@ var OBJECT = (function(obj){
 		return newOb;
 	};
 	
+
+	/**
+	 * Gets the key from an object, given a value.
+	 */
+	obj.findKeyByValue = function( obj, value ) {
+		for( var prop in obj ) {
+			if( obj.hasOwnProperty( prop ) ) {
+				if( obj[ prop ] === value )
+					return prop;
+			}
+		}
+	};
 	
 	return obj;
 })(OBJECT || {});
