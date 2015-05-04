@@ -44,6 +44,7 @@ if(typeof window === 'undefined'){
 
 //goog['provide']('F');
 //goog['require']("LOG");
+//goog.provide('F');
 //goog.provide('flapjax');
 
 /**
@@ -295,16 +296,19 @@ F.internal_.propagatePulse = function (pulse, node) {
   }
 };
 
+
+var count = 100;
 /**
  * Event: Array Node b * ( (Pulse a -> Void) * Pulse b -> Void)
  * @constructor
  * @param {Array.<F.EventStream>} nodes
  */
 F.EventStream = function (nodes,updater) {
-  this.updater = updater;
+	this.parents = nodes;
+	this.updater = updater;
   
   this.sendsTo = []; //forward link
-  
+  this.id = count++;
   this.rank = ++F.internal_.lastRank;
 
   for (var i = 0; i < nodes.length; i++) {
@@ -445,11 +449,10 @@ F.Behavior = function (event, init, updater, upstreamTransformation, parents) {
   if (!(event instanceof F.EventStream)) { 
     throw 'F.Behavior: expected event as second arg'; 
   }
-  
+  this.stamp = 0;
+  this.parents = parents;
   var behave = this;
   this.last = init;
-  
-  
   
   //sendEvent to this might impact other nodes that depend on this event
   //sendF.Behavior defaults to this one
@@ -457,7 +460,7 @@ F.Behavior = function (event, init, updater, upstreamTransformation, parents) {
  
  this.purge = function(){
  	behave.underlyingRaw.purge();
- 	OBJECT.delete(behave, "underlyingRaw");
+ 	OBJECT.remove(behave, "underlyingRaw");
  };
   
   //unexposed, sendEvent to this will only impact dependents of this behaviour
@@ -552,6 +555,7 @@ F.EventStream.prototype.bindE = function(k) {
   var prevE = false;
   
   var outE = new F.EventStream([],function(pulse) { return pulse; });
+  outE.parents = this.parents;
   outE.name = "bind outE";
   
   var inE = new F.EventStream([m], function (pulse) {
@@ -838,29 +842,6 @@ F.EventStream.prototype.filterRepeatsE = function(optStart) {
   });
 };
 
-
-F.EventStream.prototype.filterChangesE = function(optStart) {
-  var hadFirst = optStart === undefined ? false : true;
-  var prev = optStart;
-
-  return this.filterE(function (v) {
-    if(typeof(v)=='object'){
-        if(!OBJECT.equals(v, prev)){
-            prev = OBJECT.clone(v);
-            return false;
-        }
-    }
-    else if (!hadFirst || prev !== v) {
-      hadFirst = true;
-      prev = v;
-      return false;
-    }
-    return true;
-  });
-};
-
-
-
 /**
  * <i>Calms</i> this event stream to fire at most once every <i>time</i> ms.
  *
@@ -954,7 +935,7 @@ F.Behavior.prototype.firedBefore = function(b2) {
  * @returns {F.Behavior}
  */
 F.Behavior.prototype.firedAfter = function(b2) {
-  return this.stamp>b2.stamp;  
+  return this.stamp>b2.stamp;
 };
 
 /**
