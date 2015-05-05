@@ -43,6 +43,7 @@ var TABLES = (function(tables){
 		tables.metaTagProcessorType= {clientServerPair: 'clientServerPair'};
 		
 		tables.metaTagHeadingStyle= {None: 0, Horizontal: 1, Vertical: 2};
+		tables.metaTagZebraStyle = {None: 0, Horizontal: 1, Vertical: 2, Both: 3};
 		
 		// Temp Pk functions
 		// -----------------
@@ -78,20 +79,12 @@ var TABLES = (function(tables){
 			var table = OBJECT.clone(tableDef);
 			table.tableMetaData.primaryKey = primaryKey;
 			table.tableMetaData.id = tableId;
-			if(defaultColumns!=undefined){
+			if(defaultColumns!==undefined){
 				for(var columnId in defaultColumns){
 					TABLES.UTIL.addColumn(table, columnId, defaultColumns[columnId].name, defaultColumns[columnId].type);
 				}
 			}
-			else if(data.length>0){
-			    for(var columnId in data[0]){
-			        TABLES.UTIL.addColumn(table, columnId);
-			    }
-			}
-			else{
-			    LOG.create("Unable to parse table, not enough information to create columns;");
-			}
-			table.columnMetaData[primaryKey].readonly = true;
+			
 			// If data isn't array make into a array
 			if(!(data instanceof Array)) {
 				data = [data];
@@ -108,11 +101,25 @@ var TABLES = (function(tables){
 					row[key] = value;
 					
 					// Create column from key
-					if(table.columnMetaData[key] == undefined){
+					if(table.columnMetaData[key] === undefined){
 						var column_meta =OBJECT.clone(columnMetaDataDef);
 						column_meta.id = key;
-						column_meta.name = key.replaceAll('_', ' ').ucFirst();
+						column_meta.name = key.replaceAll('_', ' ').toProperCase();
 						column_meta.dataType = typeof value;
+						switch(column_meta.dataType){
+						case "number":
+							column_meta.defaultValue = 0;
+							break;
+						case "string":
+							column_meta.defaultValue = '';
+							break;
+						case "boolean":
+							column_meta.defaultValue = false;
+							break;
+						default:
+							column_meta.defaultValue = undefined;
+							break;
+						}
 						table.columnMetaData[key] = column_meta;
 					}
 					if(key==primaryKey){
@@ -124,7 +131,8 @@ var TABLES = (function(tables){
 					table.rowMetaData[rowPk] = OBJECT.extend({}, TABLES.rowMetaDataDefinition, {id:rowPk, name: rowPk});
 				}
 			}
-			if(table.columnMetaData.length > 0 && table.columnMetaData[primaryKey]==undefined){
+			
+			if(table.columnMetaData.length > 0 && table.columnMetaData[primaryKey]===undefined){
 				LOG.create("Error - Specified primary key does NOT exist in the data set. The widgets will likley have trouble displaying this table");
 			}
 			return table;
@@ -169,7 +177,7 @@ var TABLES = (function(tables){
 		    
 		    return F.liftB(function(table1, table2){
 		        if(!good()){
-                return chooseSignal();
+                return SIGNALS.chooseSignal();
             }
     		    var newTable = OBJECT.clone(table1);
     		    for(var columnIndex in table2.columnMetaData){
@@ -199,7 +207,7 @@ var TABLES = (function(tables){
 		tables.outerJoinB = function(table1B, table2B, joinColumn, newPk){
 		  return F.liftB(function(joinedTable){
 		      if(!good()){
-                return chooseSignal();
+                return SIGNALS.chooseSignal();
             }
 		      var innerTable = OBJECT.clone(joinedTable);
 	        var otherTable = table2B.valueNow();
@@ -225,55 +233,48 @@ var TABLES = (function(tables){
 		tables.leftJoin = function(table1BI, table2BI, joinColumn, joinDescriptor){				
 			var sourceTable1 = undefined;
 			var sourceTable2 = undefined;
-			var oldTable = undefined;
 			
 			return F.liftBI(function(table1, table2){
-			    if(!good()){
-			        return chooseSignal();
-			    }
+				if(!good()){
+					return SIGNALS.chooseSignal();
+				}
+				
 				table1Columns = table1.columnMetaData;
 				table2Columns = table2.columnMetaData;
 				
 				sourceTable1 = table1;
 				sourceTable2 = table2;
 				
-				var newTable =OBJECT.clone(table1);
+				var newTable = OBJECT.clone(table1);
 				newTable.tableMetaData.id ="("+table1.tableMetaData.id+"+"+table2.tableMetaData.id+")";
-				LOG.create("Table Downwards for "+newTable.tableMetaData.id);
 				newTable.data = [];
-				
-				if(joinDescriptor!=undefined){
-					//newTable.tableMetaData.id = joinDescriptor;
-				}
 
-				var table2NewColumns =OBJECT.clone(table2.columnMetaData);
-				OBJECT.delete(table2NewColumns, joinColumn);
+				var table2NewColumns = OBJECT.clone(table2.columnMetaData);
+				OBJECT.remove(table2NewColumns, joinColumn);
 				OBJECT.extend(newTable.columnMetaData, table2NewColumns);
 
 				for(var row1Index in table1.data){
 					for(var row2Index in table2.data){
 						if(table1.data[row1Index][joinColumn]===table2.data[row2Index][joinColumn]){
-							var table2Row =OBJECT.clone(table2.data[row2Index]);
-							OBJECT.delete(table2Row, joinColumn);
+							var table2Row = OBJECT.clone(table2.data[row2Index]);
+							OBJECT.remove(table2Row, joinColumn);
 							newTable.data[newTable.data.length] = OBJECT.extend(OBJECT.clone(table1.data[row1Index]), table2Row);//.splice(table2indexColumn, 1)
 						}
 					}
 				}
-				oldTable = newTable;
 				return newTable;
-			}, function(newTable){
-				var leftTable =OBJECT.clone(sourceTable1);
-				var rightTable =OBJECT.clone(sourceTable2);
+			}, function(newTable, oldTable){
+				var leftTable = OBJECT.clone(sourceTable1);
+				var rightTable = OBJECT.clone(sourceTable2);
 				
-				
-				LOG.create("Table Upwards for "+newTable.tableMetaData.id);
+				//log("Table Upwards for "+newTable.tableMetaData.id);
 				var newTablePrimaryColumn = newTable.tableMetaData.primaryKey;
 				var diffs = TABLES.UTIL.diff(newTable, oldTable, joinColumn);
 				
 				for(var diffIndex in diffs){							//For each detected different cell
 					var diff = diffs[diffIndex];
 					if(diff.column===newTable.tableMetaData.primaryKey){
-						LOG.create("Cannot change primary key value in table "+newTable.tableMetaData.id);
+						log("Cannot change primary key value in table "+newTable.tableMetaData.id);
 						continue;
 					}
 					//Left Table
@@ -291,15 +292,10 @@ var TABLES = (function(tables){
 						}
 					}
 				}
-				for(var rowIndex in newTable.rowMetaData){
-                    leftTable.rowMetaData[rowIndex] = OBJECT.extend(leftTable.rowMetaData[rowIndex] || {}, newTable.rowMetaData[rowIndex] || {}, TABLES.rowMetaDataDefinition);				    
-				}
-				if(newTable.tableMetaData.applyId!=undefined){
-				    leftTable.tableMetaData.applyId = newTable.tableMetaData.applyId;
-				}
 				return [leftTable, rightTable];
 			}, table1BI, table2BI);
 		};
+		
 		/**
 		 * Checks for user priviledge level and flags the table as readonly if < 15
 		 * 
@@ -309,7 +305,7 @@ var TABLES = (function(tables){
 		tables.checkTablePermissionsBI=function(tableBI, userPriviledgeB){			
 			return F.liftBI(function(table, userPriviledge){
 				if(!good()){
-					return chooseSignal();
+					return SIGNALS.chooseSignal();
 				}
 				var newTable =OBJECT.clone(table);
 				TABLES.UTIL.checkTablePermissions(newTable, userPriviledge);
@@ -328,7 +324,7 @@ var TABLES = (function(tables){
 		tables.sendWholeRowBI = function(tableBI){			
 			return F.liftBI(function(table){
 				if(!good()){
-					return chooseSignal();
+					return SIGNALS.chooseSignal();
 				}
 				return table;
 			}, function(table){
@@ -355,6 +351,60 @@ var TABLES = (function(tables){
 				return [newTable];
 			}, tableBI);
 		};
+		
+		/**
+		 * A fast single direction table filter.
+		 * Filters a tableB by calling the supplied filter callback for each row in table.
+		 * @param tableB
+		 * @param filterCallback (rowData, rowIndex) - function called for each row. Function should return false to filter out, true to not.
+		 * @returns tableB
+		 */ 
+		tables.filterRowsB = function(tableB, filterCallback){
+			
+			return tableB.liftB(function(table){
+				if(!good()){
+					return SIGNALS.chooseSignal();
+				}
+				
+				// Fast clone table before we remove rows.
+				var data = table.data;
+				var cellMetaData = table.cellMetaData;
+				var rowMetaData = table.rowMetaData;
+				
+				table.data = [];
+				table.cellMetaData = [];
+				table.rowMetaData = {};
+				
+				var new_table = OBJECT.clone(table);
+				
+				table.data = data;
+				table.cellMetaData = cellMetaData;
+				table.rowMetaData = rowMetaData;
+				
+				for(var rowIndex=0; rowIndex < table.data.length; rowIndex++){
+					
+					if(filterCallback(table.data[rowIndex], rowIndex)){
+						
+						// Add the row to the output
+						var rowPk = table.data[rowIndex][table.tableMetaData.primaryKey];
+						if(table.rowMetaData[rowPk] !== undefined){
+							new_table.rowMetaData[rowPk] = OBJECT.clone(table.rowMetaData[rowPk]);
+						}
+						
+						if(table.cellMetaData[rowIndex] !== undefined){
+							new_table.cellMetaData.push(OBJECT.clone(table.cellMetaData[rowIndex]));
+						}else{
+							new_table.cellMetaData.push({});
+						}
+						
+						new_table.data.push(OBJECT.clone(table.data[rowIndex]));
+					}
+				}
+				
+				return new_table;
+			});
+		};
+		
 		/**
 		 * Filters a tableBI by calling the supplied filter callback for each row in table.
 		 * Filtered rows are added back to table on upwards transform.
@@ -370,7 +420,7 @@ var TABLES = (function(tables){
 			
 			return F.liftBI(function(table){
 				if(!good()){
-					return chooseSignal();
+					return SIGNALS.chooseSignal();
 				}
 				
 				// Store pointer to source table so we can use on upwards transform.
@@ -381,21 +431,20 @@ var TABLES = (function(tables){
 				filterRows = [];
 				
 				// Collect rowPks of rows to remove
-				for(var rowIndex in newTable.data){
-					var rowPk = newTable.data[rowIndex][newTable.tableMetaData.primaryKey];
-					if(!filterCallback(newTable.data[rowIndex])){
-						filterRows.push(rowPk);
-					}
-				}
-				
 				// Remove rows from data and meta data
-				filterRows.reverse();
-				for(var index in filterRows){
-					var rowPk = filterRows[index];					
-					var rowIndex = TABLES.UTIL.findRowIndex(table, rowPk);
-					newTable.data.splice(rowIndex, 1);
-					newTable.cellMetaData.splice(rowIndex, 1);
-					OBJECT.delete(newTable.rowMetaData, rowPk);
+				var original_row_index = 0;
+				for(var rowIndex = 0; rowIndex < newTable.data.length; rowIndex++){
+					var rowPk = newTable.data[rowIndex][newTable.tableMetaData.primaryKey];
+					if(!filterCallback(newTable.data[rowIndex], original_row_index)){
+						
+						newTable.data.splice(rowIndex, 1);
+						newTable.cellMetaData.splice(rowIndex, 1);
+						OBJECT.delete(newTable.rowMetaData, rowPk);
+						
+						filterRows.push(rowPk);
+						rowIndex--;
+					}
+					original_row_index++;
 				}
 
 				return newTable;
@@ -422,10 +471,26 @@ var TABLES = (function(tables){
 					var rowPk = modifiedTable.data[rowIndex][sourceTable.tableMetaData.primaryKey];
 					var origRowIndex = TABLES.UTIL.findRowIndex(sourceTable, rowPk);
 					
-					upwardsClone.data[origRowIndex] =OBJECT.clone(modifiedTable.data[rowIndex]);
-					upwardsClone.cellMetaData[origRowIndex] =OBJECT.clone(modifiedTable.cellMetaData[rowIndex]);
-					upwardsClone.rowMetaData[rowPk] =OBJECT.clone(modifiedTable.rowMetaData[rowPk]);
+					if(origRowIndex !== false){
+						upwardsClone.data[origRowIndex] =OBJECT.clone(modifiedTable.data[rowIndex]);
+						upwardsClone.cellMetaData[origRowIndex] =OBJECT.clone(modifiedTable.cellMetaData[rowIndex]);
+						upwardsClone.rowMetaData[rowPk] =OBJECT.clone(modifiedTable.rowMetaData[rowPk]);
+					}
 				}
+				
+				// Insert any new rows
+				// Fix for 10066
+				for(var rowIndex in modifiedTable.data){
+					var rowPk = modifiedTable.data[rowIndex][sourceTable.tableMetaData.primaryKey];
+					var rowMeta = TABLES.UTIL.getRowMetaData(modifiedTable, rowPk, false);
+					if(rowMeta !== undefined && rowMeta.newRow === true) {
+						var newRowIndex = upwardsClone.data.length;
+						upwardsClone.data[newRowIndex] = OBJECT.clone(modifiedTable.data[rowIndex]);
+						upwardsClone.cellMetaData[newRowIndex] = OBJECT.clone(modifiedTable.cellMetaData[rowIndex]);
+						upwardsClone.rowMetaData[rowPk] = OBJECT.clone(modifiedTable.rowMetaData[rowPk]);
+					}
+				}
+				
 				return [upwardsClone];
 
 			}, tableBI);
@@ -439,23 +504,27 @@ var TABLES = (function(tables){
 			var newRowMetaData = {};
 			var newCellMetaData = [];
 			var newData = [];
+			var newColumnMetaData = {};
 			var columnNumber = 0;
+			
+			for(var rowIndex in table.data){	//Make sure that there is rowMetaData. After rotation rowMeta becomes columnMeta, and TableWidget wont render if there is no column meta data.
+				var pk = table.data[rowIndex][table.tableMetaData.primaryKey];
+				if(table.rowMetaData[pk]===undefined){
+					TABLES.UTIL.getRowMetaData(table, pk, true);
+				}
+			}
+			
 			for(var columnIndex in table.columnMetaData){
-				//LOG.create("Rotating: columnIndex- "+columnIndex);
 				for(var rowIndex in table.data){
 					var rowPk = TABLES.UTIL.findRowPk(table, rowIndex);
 					if(newData[columnNumber]==undefined){
 						newData[columnNumber] = {};
 					}
-						
 					newData[columnNumber][rowPk] =OBJECT.clone(table.data[rowIndex][columnIndex]);
-					
-					
 					if(newRowMetaData[columnNumber]==undefined){
 						newRowMetaData[columnNumber] =OBJECT.clone(table.columnMetaData[columnIndex]);
 						newRowMetaData[columnNumber]["rotatePk"] = columnNumber;
 					}
-
 					if(table.cellMetaData[rowIndex] && table.cellMetaData[rowIndex][columnIndex]){
 						if(newCellMetaData[columnNumber]==undefined){
 							newCellMetaData[columnNumber] = {};
@@ -476,11 +545,12 @@ var TABLES = (function(tables){
 			
 			var columnNumber = 0;
 			for(var columnIndex in table.columnMetaData){
+				if(columnIndex=="rotatePk"){
+					continue;
+				}
 				for(var rowIndex in table.data){
 					var rowPk = TABLES.UTIL.findRowPk(table, rowIndex);
-					
-					//LOG.create("rowPk: "+rowPk+" rowIndex: "+rowIndex);
-					
+
 					var rowId = table.rowMetaData[rowPk].id;
 					if(newData[columnNumber]==undefined){
 						newData[columnNumber] = {};
@@ -497,7 +567,7 @@ var TABLES = (function(tables){
 					
 					if(newColumnMetaData[rowId]==undefined && table.rowMetaData[rowPk]!=undefined){
 						newColumnMetaData[rowId] =OBJECT.clone(table.rowMetaData[rowPk]);
-						OBJECT.delete(newColumnMetaData[rowId], "rotatePk");
+						OBJECT.remove(newColumnMetaData[rowId], "rotatePk");
 					}
 				}				
 				columnNumber++;
@@ -509,7 +579,7 @@ var TABLES = (function(tables){
 			var sourceTable = undefined;
 			return F.liftBI(function(table){
 				if(!good()){
-					return SIGNALS.NOT_READY;
+					return SIGNALS.chooseSignal();
 				}
 				sourceTable = table;
 
@@ -537,11 +607,13 @@ var TABLES = (function(tables){
 				return [newTable];
 			}, tableBI);
 		};
-		tables.sortBI=function(tableBI, column){
+		
+		tables.sortBI=function(tableBI, column, unSortOnSet){
+			unSortOnSet = (unSortOnSet === undefined) ? true : unSortOnSet;
 			var sourceTable = undefined;
 			return F.liftBI(function(table){
 				if(!good()){
-					return SIGNALS.NOT_READY;
+					return SIGNALS.chooseSignal();
 				}
 				sourceTable = table;
 				var sortObj = {};
@@ -573,14 +645,18 @@ var TABLES = (function(tables){
 				return table;
 			},
 			function(tab){
-				var table =OBJECT.clone(tab);
+				if(!unSortOnSet){
+					return [tab];
+				}
+				
+				var table = OBJECT.clone(tab);
 				var newData = [];
 				var newCellMetaData = [];
 				
 				for(var rowIndex in sourceTable.data){
-					var rowPk = TABLES.findRowPk(sourceTable, rowIndex);
+					var rowPk = TABLES.UTIL.findRowPk(sourceTable, rowIndex);
 					for(var newRowIndex in table.data){
-						var newRowPk = TABLES.findRowPk(table, newRowIndex);
+						var newRowPk = TABLES.UTIL.findRowPk(table, newRowIndex);
 						if(rowPk===newRowPk){
 							newData.push(table.data[newRowIndex]);
 							newCellMetaData.push(table.cellMetaData[newRowIndex]);
@@ -588,17 +664,116 @@ var TABLES = (function(tables){
 						}
 					}
 				}
+				
+				for(var newRowIndex in table.data){
+					var newRowPk = TABLES.UTIL.findRowPk(table, newRowIndex);
+					var newRowMeta = TABLES.UTIL.getRowMetaData(table, newRowPk, false);
+					if(newRowMeta && newRowMeta.newRow){
+						newData.push(table.data[newRowIndex]);
+						newCellMetaData.push(table.cellMetaData[newRowIndex]);
+					}
+				}
+				
 				table.data = newData;
 				table.cellMetaData = newCellMetaData;
 				return [table];
 			}, tableBI);
 		};
 		
+		/**
+		 * Combines multiple columns into a single column.
+		 * Data from the columns is placed into an object in the new column.
+		 * 
+		 * @param tableBI - table to operate on
+		 * @param fromColumns - Array of columns to collapse
+		 * @param intoColumn - (String) name of column to collapse data into. Column should not already exist.
+		 */ 
+		tables.collapseColumnsBI = function(tableBI, fromColumns, intoColumn){
+			
+			if(!fromColumns.length){
+				throw 'fromColumns should be array';
+			}
+			
+			return F.liftBI(function(table){
+				// Down
+				if(!good()){
+					return SIGNALS.chooseSignal();
+				}
+				
+				table = OBJECT.clone(table);
+				
+				// Add new column
+				TABLES.UTIL.addColumn(table, intoColumn);
+				
+				// Combine data from columns into object
+				for(var rowIndex in table.data){
+					var rowData = table.data[rowIndex];
+					var cellData = {};
+					var cellMetaData = TABLES.UTIL.getCellMetaData(table, rowIndex, intoColumn, true);
+					
+					for(var key in fromColumns){
+						var columnId = fromColumns[key];
+						cellData[columnId] = rowData[columnId];
+						
+						var cellMetaDataFrom = TABLES.UTIL.getCellMetaData(table, rowIndex, columnId, false);
+						if(cellMetaDataFrom !== undefined){
+							table.cellMetaData[rowIndex][intoColumn] = jQuery.extend(cellMetaData, cellMetaDataFrom);
+						}
+					}
+					
+					rowData[intoColumn] = cellData;
+				}
+				
+				// Remove columns
+				for(var key in fromColumns){
+					var columnId = fromColumns[key];
+					TABLES.UTIL.removeColumn(table, columnId);
+				}
+				
+				return table;
+			}, 
+			function(table) {
+				// Up
+				
+				// Add back columns
+				for(var key in fromColumns){
+					var columnId = fromColumns[key];
+					TABLES.UTIL.addColumn(table, columnId);
+				}
+				
+				// Extract data from object back into columns
+				for(var rowIndex in table.data){
+					var rowData = table.data[rowIndex];
+					var cellData = rowData[intoColumn];
+					var cellMetaData = TABLES.UTIL.getCellMetaData(table, rowIndex, intoColumn, false);
+					
+					for(var key in fromColumns){
+						var columnId = fromColumns[key];
+						rowData[columnId] = cellData[columnId];
+						
+						if(cellMetaData !== undefined){
+							if(table.cellMetaData[rowIndex] === undefined){
+								table.cellMetaData[rowIndex] = {};
+							}
+							
+							table.cellMetaData[rowIndex][columnId] = OBJECT.clone(cellMetaData);
+						}
+					}
+				}
+				
+				// Remove added column
+				TABLES.UTIL.removeColumn(table, intoColumn);
+				
+				return [table]
+			}, 
+			tableBI);
+		};
 		
 		
 		if(tables.UTIL==undefined){
 			tables.UTIL = {};
 		}
+		console.log("Defined UTIL");
 		//UTIL:{
 			/**
 			 * Checks for user priviledge level and flags the table as readonly if < 15
@@ -698,8 +873,10 @@ var TABLES = (function(tables){
 			};
 			
 			tables.UTIL.findRowIndex = function(table, rowId){
-				for(var rowIndex in table.data){
-					if(table.data[rowIndex][table.tableMetaData.primaryKey]==rowId){
+				var pk = table.tableMetaData.primaryKey;
+				var l = table.data.length;
+				for(var rowIndex=0; rowIndex<l; rowIndex++){
+					if(table.data[rowIndex][pk]==rowId){
 						return rowIndex;
 					}
 				}
@@ -710,7 +887,18 @@ var TABLES = (function(tables){
                   rowCb(table.data[rowIndex], rowIndex);
               }  
             };
-			
+            
+            tables.UTIL.getRotatedTableMappings = function(table){
+            	var rowIds = Object.keys(table.columnMetaData);
+            	
+            	var columnIds = {};
+            	for(var rowPk in table.rowMetaData){
+            		columnIds[table.rowMetaData[rowPk].id] = rowPk;
+            	}
+            	// Return this back to front on purpose
+            	return {rowIds: columnIds, columnIds: rowIds};
+            };
+            
 			/**
 			 * Adds a new row to the table
 			 * Assigns default values to the data based on columnMetaData's defaultValue.
@@ -728,7 +916,12 @@ var TABLES = (function(tables){
 				if(newData==undefined){
 					var newData = {};
 					for(var columnIndex in table.columnMetaData){
-						newData[columnIndex] = table.columnMetaData[columnIndex].defaultValue;
+						var column_meta_data = table.columnMetaData[columnIndex];
+						if(column_meta_data.processor == TABLES.metaTagProcessorType.clientServerPair){		//clientServerPair
+							newData[columnIndex] = {server: column_meta_data.defaultValue, client: column_meta_data.defaultValue};
+						}else{
+							newData[columnIndex] = column_meta_data.defaultValue;
+						}
 					}
 				}
 				newData[table.tableMetaData.primaryKey] = rowPk;
@@ -779,11 +972,9 @@ var TABLES = (function(tables){
 				}
 				return table;
 			};
-			
 			tables.UTIL.isTable = function (table){
 				return table.tableMetaData!=undefined && table.rowMetaData!=undefined && table.columnMetaData!=undefined && table.data!=undefined;
 			};
-			
 			tables.UTIL.removeColumn = function(table, columnId){
 				
 				if(table==undefined){
@@ -927,7 +1118,7 @@ var TABLES = (function(tables){
 			
 			tables.UTIL.getMetaDataSet = function(table, rowIndex, columnIndex){
 				var cellMetaData = {};
-				if(table.cellMetaData[rowIndex] && table.cellMetaData[rowIndex][columnIndex]){
+				if(table.cellMetaData[rowIndex] !== undefined && table.cellMetaData[rowIndex][columnIndex] !== undefined){
 					cellMetaData = table.cellMetaData[rowIndex][columnIndex];
 				}
 				return {rowMetaData: table.rowMetaData[TABLES.UTIL.findRowPk(table, rowIndex)] || {}, columnMetaData: table.columnMetaData[columnIndex] || {}, cellMetaData:cellMetaData };
@@ -936,10 +1127,10 @@ var TABLES = (function(tables){
 				if(metaData.cellMetaData[property]!=undefined){
 					return metaData.cellMetaData[property];
 				}
-				else if(metaData.rowMetaData[property]!=undefined){
+				else if(metaData.rowMetaData[property]!==undefined){
 					return metaData.rowMetaData[property];
 				}
-				else if(metaData.columnMetaData[property]!=undefined){
+				else if(metaData.columnMetaData[property]!==undefined){
 					return metaData.columnMetaData[property];
 				}
 				
@@ -952,7 +1143,7 @@ var TABLES = (function(tables){
 				direction = dir==undefined?"down":"up";
 				LOG.create("////////// Table DEBUG \\\\\\\\\\\\\\\\\\\\\\\\"+direction+"))");
 				var tableId = table.tableMetaData.id || "";
-				LOG.create("TableID: "+tableId)+" "+direction;
+				LOG.create("TableID: "+tableId+" "+direction);
 				//LOG.create("Number of Rows "+table.data.length);
 				//LOG.create(table.columnMetaData);
 
@@ -982,6 +1173,7 @@ var TABLES = (function(tables){
 				return table;
 			};
 			tables.UTIL.diff=function(table1, table2, idColumn){
+				console.log("Object.keys tables.shared.js tables.UTIL.diff");
 				if(table1.data.length!=table2.data.length || Object.keys(table1.columnMetaData).length!=Object.keys(table2.columnMetaData).length){
 					LOG.create("Tables do not match, unable to run diff");
 					return [];
@@ -1082,43 +1274,6 @@ var TABLES = (function(tables){
 				return output;
 			};
 			
-			 /**
-		     * Creates an error tag and prepends it to the passed container.
-		     * It is important to call DOM.tidyErroredTags() after all error tags have been added.
-		     */
-		    tables.UTIL.createErroredTag = function(container, message){
-		    	var jcontainer = jQuery(container);
-		    	
-		    	// DIV container is required for Firefox because you cannot set position:absolute directly inside a <td>
-		    	var jdiv_container = jQuery('<div>', {'class':'errored_tag'});		
-		    	var jdiv_tag = jQuery('<div>', {'class':'errored_tag_container'});
-		    	jdiv_container.append(jdiv_tag);
-		    	
-		    	var jdiv_message = jQuery('<div>', {'class':'errored_tag_message'});
-		    	jdiv_tag.append(
-		    			jdiv_message,
-		    			jQuery('<div>', {'class':'errored_tag_tag'})
-		    			);
-		    	
-		    	jdiv_message.append(jQuery('<span>', {'class':'errored_tag_message_text', text:message}));
-		    	
-		    	jdiv_container.mouseover(function(){
-		    		jdiv_message.removeAttr('style');
-		    		jdiv_message.css('box-shadow', '1px 1px 5px #666666');
-		    		jdiv_tag.removeAttr('style');
-		    		jdiv_tag.css('z-index', 10);
-		    	});
-		    	
-		    	jdiv_container.mouseout(function(){
-		    		jdiv_tag.removeAttr('style');
-		    		jdiv_message.removeAttr('style');
-		    		
-		    		DOM.tidyErroredTags();
-		    	});
-		    	
-		    	jcontainer.prepend(jdiv_container);
-		    };
-			
 			/**
 			 * Injects server errors into a table's meta data.
 			 * This is used to combine server errors created by AviatSetError
@@ -1179,13 +1334,29 @@ var TABLES = (function(tables){
 						var row_pk = error.rowPk;
 						var column_id = error.columnId;
 						var row_index = TABLES.UTIL.findRowIndex(table, row_pk);
-						var cell_meta = TABLES.UTIL.getCellMetaData(table, row_index, column_id, true);
-						if(cell_meta !== undefined){
-							if(cell_meta.serverErrors === undefined){
-								cell_meta.serverErrors = [];
+						if(row_index !== false){
+							var cell_meta = TABLES.UTIL.getCellMetaData(table, row_index, column_id, true);
+							if(cell_meta !== undefined){
+								if(cell_meta.serverErrors === undefined){
+									cell_meta.serverErrors = [];
+								}
+								cell_meta.serverErrors.push(error.error);
 							}
-							cell_meta.serverErrors.push(error.error);
+						} else {
+							// Row index not found - maybe temp or calculated row, so store errors in rowMeta.
+							var row_meta = TABLES.UTIL.getRowMetaData(table, row_pk, true);
+							if(row_meta !== undefined){
+								if(row_meta.serverErrors === undefined){
+									row_meta.serverErrors = [];
+								}
+								
+								// Store column id so we can use it later
+								var newError = OBJECT.clone(error.error);
+								newError.columnId = column_id;
+								row_meta.serverErrors.push(newError);
+							}
 						}
+						
 						
 						break;
 					}
@@ -1298,668 +1469,6 @@ var TABLES = (function(tables){
 		  
 			return errors.join(', ');
 		};
-	
-	/**
-     * Removes overlaps in error tags.
-     */
-    tables.tidyErroredTags = function(){
-    	// Adjust tags so they don't overlap each other
-    	jQuery('.errored_tag_container').each(function() {
-    		
-    		var jtarget = jQuery(this);
-    	    var bounds = jtarget.offset();
-    	    bounds.right = bounds.left + jtarget.outerWidth();
-    	    bounds.bottom = bounds.top + jtarget.outerHeight();
-    	    
-    	    var max_overlap = 0;
-    	    jQuery('.errored_tag_container').not(jtarget).each(function() {
-    	    	
-    	    	var jother = jQuery(this);
-    	    	var pos = jother.offset();
-    	    	
-    	    	if(pos.left >= bounds.left && pos.left <= bounds.right
-    	    			&& pos.top >= bounds.top && pos.top <= bounds.bottom){
-    	    		
-    	    		// Overlap found, see if largest
-    	    		var overlap = (bounds.right - pos.left);
-    	    		if(overlap > max_overlap){
-    	    			max_overlap = overlap;
-    	    		}
-    	    	}
-    	    	
-    	    });
-    		
-    	    // Adjust width of target tag so it doesn't overlap
-    	    if(max_overlap > 0){
-    	    	jtarget.css('max-width', jtarget.outerWidth() - (max_overlap + 10));
-    	    }
-    	});
-    };
-	
-		/**
-	 * Handles changesets combining source data with modified data.
-	 * Also collects POST response server errors for a table, and re-applys them to following GET updates.
-	 * Removes server errors from cell if user modifies cell, or undoes changes.
-	 * Expects data to be formatted according to the table data structure. See TABLES object for details of structure.
-	 * 
-	 * @param tableSourceB - table{meta, data}
-	 * @param changeE - {rowPk, columnIndex, value}
-	 * @param applyE - {id: id of table apply, rowPks: [rowPks]} optional rowPks if applying only a selection or rows.
-	 * @param clearE - [rowPk, ...]
-	 * @param addE (optional) event with no value.
-	 * @param deleteE (optional) - [rowPk, ...]
-	 * @returns object {}
-	 */
-	tables.changeSetMerge = function(tableSourceB, changeE, applyE, clearE, addE, deleteE, emptyE, undoColumnE, deleteColumnE){
-		addE = addE || F.zeroE();
-		deleteE = deleteE || F.zeroE();
-		emptyE = emptyE|| F.zeroE();	
-		undoColumnE = undoColumnE || F.zeroE();	
-		deleteColumnE = deleteColumnE || F.zeroE();	
-	
-		// Filter data so it is always good
-		// --------------------------------
-		// Filter out all errors from source table
-		var sourceB = tableSourceB.filterNotGoodB();
-		
-		// Filter initial SIGNALS.NOT_READY from sourceB
-		var sourceE = sourceB.changes().filterNotGoodE();
-		// Apply
-		// -----
-		var applyInfoDefault = {id: -1};
-		var applyResultE = F.receiverE();
-		var applyResetE = applyResultE.mapE(function(){return applyInfoDefault;});
-		var applyInfoB = F.mergeE(applyResetE, applyE.mapE(function(value){
-			value.timeStamp = new Date().getTime();
-			return value;
-		})).startsWith(applyInfoDefault);
-		var applyEventE = F.mergeE(
-				applyE.mapE(function(){return SIGNALS.APPLY_STATES.APPLYING;}),
-				applyResultE.mapE(function(value){
-					return value ? SIGNALS.APPLY_STATES.SUCCESS : SIGNALS.APPLY_STATES.ERROR;
-				}));
-		// Handle general set errors
-		// -------------------------
-		// Create an event for any set ERROR
-		var set_errorE = tableSourceB.changes().filterE(function(val){
-			 SIGNALS.isSetErrored(val);
-			 return true;
-		});
-		// Combine last source data with error
-		var errored_sourceE = set_errorE.mapE(function(error){
-			var table = sourceB.valueNow();
-			if(!good(table)){
-				return SIGNALS.NOT_READY;
-			}
-			
-			// Check for updates for this node
-			var apply_id = applyInfoB.valueNow().id;
-			if(apply_id < 0 || error.applyId === undefined || error.applyId != apply_id){
-				return SIGNALS.NOT_READY;
-			}
-			
-			// Set error as a table error
-			if(table.tableMetaData.serverErrors === undefined){
-				table.tableMetaData.serverErrors = [];
-			}
-			table.tableMetaData.applyId = apply_id;
-			table.tableMetaData.serverErrors.push(error);
-			
-			return table;
-		}).filterNotGoodE();
-		
-		// Commands to update changeset and error cache
-		// --------------------------------------------
-
-		var command_sourceE = F.mergeE(sourceE, errored_sourceE).mapE(function(value){
-			return OBJECT.extend(value, {command: 'source'});
-		});
-		
-		var command_changeE = changeE.mapE(function(value){
-			return OBJECT.extend(value, {command: 'change'});
-		});
-		
-		var command_clearE = clearE.mapE(function(value){
-			return {command: 'clear', value: value};
-		});
-		
-		var command_addE = addE.mapE(function(){
-			return {command: 'add'};
-		});
-		
-		var command_deleteE = deleteE.mapE(function(value){
-			return {command: 'delete', value: value};
-		});
-		
-		var command_emptyE = emptyE.mapE(function(){
-			return {command: 'empty'};
-		});
-		
-		var command_undoColumnE = undoColumnE.mapE(function(value){
-			return {command: 'undoColumn', value: value};
-		});
-		
-		var command_deleteColumnE = deleteColumnE.mapE(function(value){
-			return {command: 'deleteColumn', value: value};
-		});
-		
-		var command_setE = F.mergeE(command_sourceE, command_changeE, command_clearE, command_addE, command_deleteE, command_emptyE, command_undoColumnE, command_deleteColumnE);
-
-		
-		// Process commands
-		var initial_data = {changeset: {}, errors: []};
-		var changeSetE = command_setE.collectE(initial_data, function(newVal, state){
-
-			// Check table is ready
-			if(!good(sourceB.valueNow())){
-				return state;
-			}
-
-			switch(newVal.command){
-			case 'empty':
-				// Empty both changeset and errors
-				state.changeset = {};
-				state.errors = [];
-				break;
-				
-			case 'source':
-				// Is source a response to an apply for this node?
-				var isApplyResponse = false;
-				var hasTableError = false;
-				var applyInfo = applyInfoB.valueNow();
-				var applyId = applyInfo.id;
-				var applyRowPks = applyInfo.rowPks;
-				if(applyId > 0 && newVal.tableMetaData.applyId !== undefined && newVal.tableMetaData.applyId == applyId){
-					// Yes this is a response to an apply.
-					isApplyResponse = true;
-					
-					// Do we have a table error?
-					if(newVal.tableMetaData.serverErrors !== undefined && newVal.tableMetaData.serverErrors.length > 0){
-						hasTableError = true;
-					}
-				}
-				
-				// Compare changeset to new source data
-				// If changeset value === server value remove from changeset
-				// If an apply response and changeset value !== server value, create an error for each field that wasn't set.
-				for(var rowPk in state.changeset){
-					
-					// If response to an apply - check we were applying this row
-					var applyingRow = false;
-					if(isApplyResponse){
-						if(applyRowPks === undefined){
-							applyingRow = true;
-						}else{
-							for(var i in applyRowPks){
-								if(applyRowPks[i] == rowPk){
-									applyingRow = true;
-									break;
-								}
-							}
-						}
-					}
-					
-					// Find row index
-					var rowIndex = TABLES.UTIL.findRowIndex(newVal, rowPk);
-					if(rowIndex !== false){
-						var rowData = newVal.data[rowIndex];
-							
-						for(var columnIndex in state.changeset[rowPk]){
-							
-							// Compare each cell value in changeset to source
-							if(rowData[columnIndex] == state.changeset[rowPk][columnIndex].value){
-								// Value is same as server, remove from changeset
-								OBJECT.delete(state.changeset[rowPk], columnIndex);
-								
-								// If not a response to an apply, remove any server error for this cell because it now matches the server
-								if(!isApplyResponse){
-									for(var i=0; i<state.errors.length; i++){
-										var error = state.errors[i];
-										
-										switch(error.type){
-										case 'cell':
-											if(error.rowPk == rowPk && error.columnId == columnIndex){
-												state.errors.splice(i, 1);
-												i--;
-											}
-											break;
-										}
-									}
-								}
-								
-							}else if(isApplyResponse){
-								// Value is not the same after an apply
-								var metaDataSet = TABLES.UTIL.getMetaDataSet(newVal, rowIndex, columnIndex);
-								
-								// Check we got an error for this cell
-								if(applyingRow && !hasTableError){
-									
-									var serverErrors = TABLES.UTIL.chooseMetaData("serverErrors", metaDataSet);
-									if(serverErrors === undefined || serverErrors.length === 0){
-										// No error
-										
-										// If a client server pair, remove from changeset because we can't really compare client value to server
-										// because they are expected to be different
-										var csPair = TABLES.UTIL.chooseMetaData(TABLES.metaTagProcessor, metaDataSet); //clientServerPair
-										if(csPair == TABLES.metaTagProcessorType.clientServerPair){
-											OBJECT.delete(state.changeset[rowPk], columnIndex);
-											
-										}else{
-											// Create an error
-											var cellMeta = TABLES.UTIL.getCellMetaData(newVal, rowIndex, columnIndex, true);
-											cellMeta.serverErrors = new Array();
-											cellMeta.serverErrors.push(SIGNALS.newError("Failed to set value on device RowIndex: "+rowIndex+" ColIndex:"+columnIndex, 0));
-										}
-									}
-								}
-							}
-						}
-						
-						// If no cells in row changeset then remove row
-						if(Object.keys(state.changeset[rowPk]).length == 0){
-							OBJECT.delete(state.changeset, rowPk);
-						}
-						
-					}else{
-						
-						// Row not found in table, but exists in changeset
-						// 1) It has been deleted from server
-						// 2) It is a locally added row
-						
-						// Is row an add?
-						if((rowPk + '').indexOf(TABLES.tempPkPrefix) != -1){
-							// Yes - added row
-							
-							// If response to apply, check that row applied without any error
-							if(isApplyResponse){
-								
-								// Check if we got an error for this row
-								if(applyingRow && !hasTableError){
-									var tempRowMeta = TABLES.UTIL.getTempRowMetaData(newVal, rowPk);
-									if(tempRowMeta === undefined || tempRowMeta.serverErrors === undefined || tempRowMeta.serverErrors.length === 0){
-										// No errors so row must have applied successfully - remove from changeset
-										OBJECT.delete(state.changeset, rowPk);
-									}
-								}
-							}
-							
-						}else{
-							// No - must be deleted from source - remove from changeset
-							OBJECT.delete(state.changeset, rowPk);
-						}
-					}
-				}
-				
-				if(isApplyResponse){
-					// Extract any errors from the server and cache them.
-					state.errors = TABLES.UTIL.extractServerErrors(newVal);
-					
-					// Reset applyId so we don't process response again
-					applyResultE.sendEvent(state.errors.length === 0);
-				}
-				break;
-			case 'change':
-				// Update changeset with change 
-				// Compare change to source data
-				var removeErrors = false;
-				var source_row_data = TABLES.UTIL.findRow(sourceB.valueNow(), newVal.rowPk);
-				if(source_row_data == false || source_row_data[newVal.columnIndex] != newVal.value){
-					if(state.changeset[newVal.rowPk] === undefined){
-						state.changeset[newVal.rowPk] = {};
-					}
-					
-					// Is newVal.value any different to current change?
-					if(state.changeset[newVal.rowPk][newVal.columnIndex] !== undefined 
-							&& state.changeset[newVal.rowPk][newVal.columnIndex].value != newVal.value){
-						// Yes - Remove errors
-						removeErrors = true;
-					}
-					
-					state.changeset[newVal.rowPk][newVal.columnIndex] = newVal;
-					
-				}else if(state.changeset[newVal.rowPk] !== undefined){
-					// Value is same as source, remove from changeset
-					OBJECT.delete(state.changeset[newVal.rowPk], newVal.columnIndex);
-					
-					// If no cells in row changeset then remove row
-					if(Object.keys(state.changeset[newVal.rowPk]).length == 0){
-						OBJECT.delete(state.changeset, newVal.rowPk);
-					}
-					
-					removeErrors = true;
-				}
-				
-				if(removeErrors){
-					// Find the row and column that changed and remove server error, if any
-					// Also remove any table error
-					for(var i=0; i<state.errors.length; i++){
-						var error = state.errors[i];
-						
-						switch(error.type){
-						case 'table':
-							state.errors.splice(i, 1);
-							i--;
-							break;
-						case 'row':
-							if(error.rowPk == newVal.rowPk){
-								state.errors.splice(i, 1);
-								i--;
-							}
-							break;
-						case 'cell':
-							if(error.rowPk == newVal.rowPk && error.columnId == newVal.columnIndex){
-								state.errors.splice(i, 1);
-								i--;
-							}
-							break;
-						}
-					}
-				}
-				
-				break;
-			case 'clear':
-				// Remove supplied rows from changeset
-				for(var index in newVal.value){
-					var rowPk = newVal.value[index];
-					OBJECT.delete(state.changeset, rowPk);
-				}
-				
-				// Clear any errors on supplied rows
-				// Also remove any table error
-				if(newVal.value.length){
-					for(var i=0; i<state.errors.length; i++){
-						var error = state.errors[i];
-						
-						switch(error.type){
-						case 'table':
-							state.errors.splice(i, 1);
-							i--;
-							break;
-						case 'row':
-						case 'cell':
-							if(arrayContains(newVal.value, error.rowPk, false)){
-								state.errors.splice(i, 1);
-								i--;
-							}
-							break;
-						}
-					}
-				}
-				
-				break;
-			case 'undoColumn':
-				// Remove all specific columns from changeset
-				for(var rowPk in state.changeset){
-					for(var index in newVal.value){
-						
-						// Remove change
-						OBJECT.delete(state.changeset[rowPk], newVal.value[index]);
-						if(Object.keys(state.changeset[rowPk]).length == 0){
-							OBJECT.delete(state.changeset, rowPk);
-						}
-					}
-				}
-				
-				// Remove errors if any
-				if(newVal.value.length){
-					for(var i=0; i<state.errors.length; i++){
-						var error = state.errors[i];
-						
-						switch(error.type){
-						case 'table':
-							state.errors.splice(i, 1);
-							i--;
-							break;
-						case 'row':
-							// TODO: not sure what to do about row errors
-							break;
-						case 'cell':
-							if(arrayContains(newVal.value, error.columnId, false)){
-								state.errors.splice(i, 1);
-								i--;
-							}
-							break;
-						}
-					}
-				}
-				
-				break;
-			case 'deleteColumn':
-				// Remove specific columnns from table
-				LOG.create("ServerUserDataMerge: caught deleteColumn event. This function is not yet supported.");
-				break;
-			case 'add':
-				var rowPk = TABLES.getNewPk();
-				var source_table = sourceB.valueNow();
-				var source_col_meta = source_table.columnMetaData;
-				var source_pk_column = source_table.tableMetaData.primaryKey;
-				
-				// Create new row in changeset
-				state.changeset[rowPk] = {};
-				state.changeset[rowPk][source_pk_column] = OBJECT.extend({}, TABLES.changeDefinition, {value: rowPk});
-				
-				// Fill columns of new row with default column values;
-				for(var columnIndex in source_col_meta){
-					
-					if(columnIndex != source_pk_column){
-						state.changeset[rowPk][columnIndex] = OBJECT.extend({}, TABLES.changeDefinition, {value: source_col_meta[columnIndex].defaultValue});
-					}
-				}
-				
-				break;
-			case 'delete':
-				var source_table = sourceB.valueNow();
-				var source_pk_column = source_table.tableMetaData.primaryKey;
-				
-				// Mark rows as deleted, if added row remove from changeset
-				for(var index in newVal.value){
-					var rowPk = newVal.value[index];
-					if((rowPk + '').startsWith(TABLES.tempPkPrefix)){
-						OBJECT.delete(state.changeset, rowPk);
-					}else{
-						if(state.changeset[rowPk] == undefined){
-							state.changeset[rowPk] = {};
-						}
-		
-						state.changeset[rowPk][source_pk_column] = {deleted:true};
-					}
-				}
-				
-				// Clear any errors on supplied rows
-				// Also remove any table error
-				if(newVal.value.length){
-					for(var i=0; i<state.errors.length; i++){
-						var error = state.errors[i];
-						
-						switch(error.type){
-						case 'table':
-							state.errors.splice(i, 1);
-							i--;
-							break;
-						case 'row':
-						case 'cell':
-							if(arrayContains(newVal.value, error.rowPk, false)){
-								state.errors.splice(i, 1);
-								i--;
-							}
-							break;
-						}
-					}
-				}
-				
-				break;
-			};
-			return state;
-		});
-		
-		var changedTableB = changeSetE.mapE(function(state){
-			var source_table = sourceB.valueNow();
-			if(!good(source_table)){
-				return SIGNALS.NOT_READY;
-			}
-			
-			// Clone source so we don't mess things up
-			var output =OBJECT.clone(source_table);	
-			var pk_column = output.tableMetaData.primaryKey;
-			
-			// Apply changeset to output
-			// -------------------------
-			
-			//Remove meta data for items removed from changeset
-			for(var rowPk in output.rowMetaData){
-				if(output.rowMetaData[rowPk].userChange!=undefined && output.rowMetaData[rowPk].userChange && state.changeset[rowPk]==undefined){
-					OBJECT.delete(output.rowMetaData[rowPk], "userChange");
-					var rowIndex = TABLES.UTIL.findRowIndex(output, rowPk);
-					for(var columnIndex in output.cellMetaData[rowIndex]){
-						if(output.cellMetaData[rowIndex][columnIndex].userChange){
-							OBJECT.delete(output.cellMetaData[rowIndex][columnIndex], "userChange");
-						}
-					}
-				}
-			}
-			
-			// Look for client server pair, and construct pair with server value.
-			for(var rowIndex in output.data){
-				for(var columnIndex in output.data[rowIndex]){
-					
-					if(columnIndex == output.tableMetaData.primaryKey){
-						continue;
-					}
-					
-					var metaDataSet = TABLES.UTIL.getMetaDataSet(output, rowIndex, columnIndex);
-					
-					var csPair = TABLES.UTIL.chooseMetaData(TABLES.metaTagProcessor, metaDataSet);//clientServerPair
-					var value = output.data[rowIndex][columnIndex];
-					if(csPair == TABLES.metaTagProcessorType.clientServerPair){
-						if(value.client === undefined && value.server === undefined){
-							output.data[rowIndex][columnIndex] = {client: undefined, server: value};
-						}else{
-							LOG.create('Client Server Pair passed in server data.');
-						}
-					}
-				}
-			}
-			
-			for(var rowPk in state.changeset){
-				
-				// Get output row for changeset row
-				var output_row = TABLES.UTIL.findRow(output, rowPk);
-				
-				// Check row exists
-				var addRow = false;
-				if(!output_row){
-					// Is row an add or has it been deleted from source?
-					if((rowPk + '').indexOf(TABLES.tempPkPrefix) == -1){
-						// Row doesn't exists in source, and is not an add - ignore changes
-						continue;
-					}else{
-						addRow = true;
-					}
-				}
-				
-				// Update row meta data
-				// --------------------
-				if(output.rowMetaData[rowPk] == undefined){
-					output.rowMetaData[rowPk] = OBJECT.extend({}, TABLES.rowMetaDataDefinition);
-				}
-				
-				output.rowMetaData[rowPk].userChange = true;
-				
-				// If row is deleted, update row meta data
-				if(state.changeset[rowPk][pk_column] && state.changeset[rowPk][pk_column].deleted){
-					output.rowMetaData[rowPk].deleted = true;
-				}else{
-				
-					// Apply data from changeset to output
-					// -----------------------------------
-					var row_index = TABLES.UTIL.findRowIndex(output, rowPk);
-					
-					if(row_index === false){
-						// Row doesn't exist
-						if(addRow === false){
-							LOG.create("Error, merge changset doesn't have a row and is not an add. Shouldn't get into this state");
-							continue;
-						}else{
-							// Create row data for added row
-							row_index = TABLES.UTIL.addRow(output, rowPk);
-							
-							// Check row was added
-							if(row_index === false){
-								continue;
-							}
-							
-							// Get created row
-							output_row = output.data[row_index];
-							output.rowMetaData[rowPk].newRow = true;
-						}
-					}
-					
-					if(output.cellMetaData[row_index] == undefined){
-						output.cellMetaData[row_index] = {};
-					}
-					
-					for(var columnIndex in state.changeset[rowPk]){
-						if(columnIndex == output.tableMetaData.primaryKey){
-							continue;
-						}
-						
-						var metaDataSet = TABLES.UTIL.getMetaDataSet(output, row_index, columnIndex);
-						output.columnMetaData[columnIndex].userChange = true;
-						var csPair = TABLES.UTIL.chooseMetaData(TABLES.metaTagProcessor, metaDataSet);//clientServerPair
-						
-						if(csPair == TABLES.metaTagProcessorType.clientServerPair){
-							output_row[columnIndex].client = state.changeset[rowPk][columnIndex].value;	
-						}
-						else{
-							// Update cell data from changeset
-							output_row[columnIndex] = state.changeset[rowPk][columnIndex].value;
-						}
-						// Update cell meta data
-						if(output.cellMetaData[row_index][columnIndex] == undefined){
-							output.cellMetaData[row_index][columnIndex] = OBJECT.extend({}, TABLES.cellMetaDataDefinition);
-						}
-						output.cellMetaData[row_index][columnIndex].userChange = true;
-						
-						if(addRow){
-							output.cellMetaData[row_index][columnIndex].newCell = true;
-						}
-					}
-				}
-			}
-			
-			// Apply cached server errors
-			// --------------------------
-			// If table data has any server errors, remove the server errors.
-			// Reasons for this are:
-			// 1) Errors may not be for this node, i.e. they are a response to another widget's apply operation. 
-			// 2) Errors may differ from the cache due to user interaction modifying the cache.
-			if(output.tableMetaData.serverErrors !== undefined){
-				delete output.tableMetaData['serverErrors'];
-			}
-			
-			for(var row_pk in output.rowMetaData){
-				if(output.rowMetaData[row_pk].serverErrors !== undefined){
-					delete output.rowMetaData[row_pk]['serverErrors'];
-				}
-			}
-			
-			for(var row_index in output.cellMetaData){
-				for(var column_id in output.cellMetaData[row_index]){
-					if(output.cellMetaData[row_index][column_id].serverErrors !== undefined){
-						delete output.cellMetaData[row_index][column_id]['serverErrors'];
-					}
-				}
-			}
-			
-			// Inject cached server errors into table data
-			TABLES.UTIL.injectServerErrors(output, state.errors);
-			
-			return output;
-		}).startsWith(SIGNALS.NOT_READY);
-		
-		return {changedTableB: changedTableB, applyEventE: applyEventE};
-	};
-
 	
 	return tables;
 })(TABLES || {});

@@ -1,19 +1,17 @@
 var TABLES = (function(tables, widgets){
-	
 	// Helper Functions
 	// ================
+	
 	if(tables.tableWidget === undefined){
 		tables.tableWidget = {};
 	}
-
+	
 	if(tables.WIDGETS === undefined){
 		tables.WIDGETS = {tableWidget: tables.tableWidget};
-	}	
-	
+	}
 	tables.WIDGETS.basicTableWidget = function(objectName, primaryKey, tableMetaData, columnMetaData, rowMetaData, cellMetaData){
 		return (function(instanceId, data, purgeData){
-			var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
-			
+			var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget		
 			objectName = objectName!=undefined?objectName:data.source;
 			return {
 				build:function(){
@@ -120,9 +118,10 @@ var TABLES = (function(tables, widgets){
 	   return new tables.WIDGETS.basicTableWidget(objectName, {readonly: true});
 	};
 	
-	
-	
-	
+	function isFunction(functionToCheck) {
+	 var getType = {};
+	 return functionToCheck && getType.toString.call(functionToCheck) === '[object Function]';
+	}
 	/**
 	 * Instantiates and returns a widget renderer based on the meta data provided (.renderer).
 	 * If widget renderer cannot be found a string widget renderer is returned.
@@ -137,6 +136,10 @@ var TABLES = (function(tables, widgets){
 		var dataType = TABLES.UTIL.chooseMetaData('dataType', metaData);
 		if(dataType===undefined || WIDGETS.renderers[dataType]===undefined){
 			dataType="string";
+		}
+		if(!WIDGETS.renderers[dataType]){
+			LOG.create("Cannot find definition for renderer "+dataType, WIDGETS.renderers);
+			return;
 		}
 		return new WIDGETS.renderers[dataType](renderer_id);
 	};
@@ -170,6 +173,7 @@ var TABLES = (function(tables, widgets){
 		
 		jcontainer.append(jtable);
 		jcontainer.append(jempty_message);
+		jcontainer.append(jQuery('<div>', {style: 'clear: both;'}));
 		return jcontainer.get(0);	
 	};
 
@@ -181,7 +185,7 @@ var TABLES = (function(tables, widgets){
 	 * @param tableB - (Behaviour) table data 
 	 * @returns Behaviour containing table data unmodified from tableB.
 	 */
-	tables.tableWidget.setupTableB = function(instanceId, tableB){
+	tables.tableWidget.setupTableB = function(instanceId, tableB, domTable){
 		var is_setup = false;
 		
 		return tableB.liftB(function(sourceTable){
@@ -193,7 +197,9 @@ var TABLES = (function(tables, widgets){
 			
 			// Build table header
 			// ==================
-			var domTable = DOM.get(instanceId+"_table");
+			if(!domTable){
+				domTable = DOM.get(instanceId+"_table");
+			}
 			
 			// Create row for column headings
 			var headerRow = DOM.create("tr", domTable.id+"_header");
@@ -270,7 +276,7 @@ var TABLES = (function(tables, widgets){
 		// Filter out all errors from source table
 		var sourceB = tableSourceB.filterNotGoodB();
 		
-		// Filter initial SIGNALS.NOT_READY from sourceB
+		// Filter initial NOT_READY from sourceB
 		var sourceE = sourceB.changes().filterNotGoodE();
 		
 		// Apply
@@ -284,9 +290,9 @@ var TABLES = (function(tables, widgets){
 		})).startsWith(applyInfoDefault);
 		
 		var applyEventE = F.mergeE(
-				applyE.mapE(function(){return AURORA.APPLY_STATES.APPLYING;}),
+				applyE.mapE(function(){return APPLY_STATES.APPLYING;}),
 				applyResultE.mapE(function(value){
-					return value ? AURORA.APPLY_STATES.SUCCESS : AURORA.APPLY_STATES.ERROR;
+					return value ? APPLY_STATES.SUCCESS : APPLY_STATES.ERROR;
 				}));
 		
 		// Handle general set errors
@@ -437,33 +443,9 @@ var TABLES = (function(tables, widgets){
 									}
 								}
 								
-							}else if(isApplyResponse){
-								// Value is not the same after an apply
-								var metaDataSet = TABLES.UTIL.getMetaDataSet(newVal, rowIndex, columnIndex);
-								
-								// Check we got an error for this cell
-								if(applyingRow && !hasTableError){
-									
-									var serverErrors = TABLES.UTIL.chooseMetaData("serverErrors", metaDataSet);
-									if(serverErrors === undefined || serverErrors.length === 0){
-										// No error
-										
-										// If a client server pair, remove from changeset because we can't really compare client value to server
-										// because they are expected to be different
-										var csPair = TABLES.UTIL.chooseMetaData(TABLES.metaTagProcessor, metaDataSet); //clientServerPair
-										if(csPair == TABLES.metaTagProcessorType.clientServerPair){
-											OBJECT.remove(state.changeset[rowPk], columnIndex);
-											
-										}else{
-											// Create an error
-											var cellMeta = TABLES.UTIL.getCellMetaData(newVal, rowIndex, columnIndex, true);
-											cellMeta.serverErrors = new Array();
-											cellMeta.serverErrors.push(new ERROR(0, "Failed to set value on device"));
-										}
-									}
-								}
 							}
 						}
+						
 						// If no cells in row changeset then remove row
 						if(Object.keys(state.changeset[rowPk]).length == 0){
 							OBJECT.remove(state.changeset, rowPk);
@@ -511,6 +493,7 @@ var TABLES = (function(tables, widgets){
 						applyResultE.sendEvent(true);
 					}
 				}
+				
 				break;
 			case 'change':
 				// Update changeset with change 
@@ -535,6 +518,7 @@ var TABLES = (function(tables, widgets){
 				}else if(state.changeset[newVal.rowPk] !== undefined){
 					// Value is same as source, remove from changeset
 					OBJECT.remove(state.changeset[newVal.rowPk], newVal.columnIndex);
+					
 					// If no cells in row changeset then remove row
 					if(Object.keys(state.changeset[newVal.rowPk]).length == 0){
 						OBJECT.remove(state.changeset, newVal.rowPk);
@@ -592,7 +576,7 @@ var TABLES = (function(tables, widgets){
 							break;
 						case 'row':
 						case 'cell':
-							if(ARRAYS.contains(newVal.value, error.rowPk, false)){
+							if(arrayContains(newVal.value, error.rowPk, false)){
 								state.errors.splice(i, 1);
 								i--;
 							}
@@ -629,7 +613,7 @@ var TABLES = (function(tables, widgets){
 							// TODO: not sure what to do about row errors
 							break;
 						case 'cell':
-							if(ARRAYS.contains(newVal.value, error.columnId, false)){
+							if(arrayContains(newVal.value, error.columnId, false)){
 								state.errors.splice(i, 1);
 								i--;
 							}
@@ -641,7 +625,7 @@ var TABLES = (function(tables, widgets){
 				break;
 			case 'deleteColumn':
 				// Remove specific columnns from table
-				LOG.create("ServerUserDataMerge: caught deleteColumn event. This function is not yet supported.");
+				log("ServerUserDataMerge: caught deleteColumn event. This function is not yet supported.");
 				break;
 			case 'add':
 				
@@ -658,7 +642,7 @@ var TABLES = (function(tables, widgets){
 				for(var columnIndex in source_col_meta){
 					
 					if(columnIndex != source_pk_column){
-						state.changeset[rowPk][columnIndex] = jQuery.extend({}, TABLES.changeDefinition, {value: source_col_meta[columnIndex].defaultValue});
+						state.changeset[rowPk][columnIndex] = jQuery.extend({}, TABLES.changeDefinition, {value: clone(source_col_meta[columnIndex].defaultValue)});
 					}
 				}
 				
@@ -695,7 +679,7 @@ var TABLES = (function(tables, widgets){
 							break;
 						case 'row':
 						case 'cell':
-							if(ARRAYS.contains(newVal.value, error.rowPk, false)){
+							if(arrayContains(newVal.value, error.rowPk, false)){
 								state.errors.splice(i, 1);
 								i--;
 							}
@@ -736,7 +720,8 @@ var TABLES = (function(tables, widgets){
 			}
 			
 			// Look for client server pair, and construct pair with server value.
-			for(var rowIndex in output.data){
+			var l = output.data.length;
+			for(var rowIndex=0; rowIndex<l; rowIndex++){
 				for(var columnIndex in output.data[rowIndex]){
 					
 					if(columnIndex == output.tableMetaData.primaryKey){
@@ -751,7 +736,7 @@ var TABLES = (function(tables, widgets){
 						if(value.client === undefined && value.server === undefined){
 							output.data[rowIndex][columnIndex] = {client: undefined, server: value};
 						}else{
-							LOG.create('Client Server Pair passed in server data.');
+							log('Client Server Pair passed in server data.');
 						}
 					}
 				}
@@ -794,7 +779,7 @@ var TABLES = (function(tables, widgets){
 					if(row_index === false){
 						// Row doesn't exist
 						if(addRow === false){
-							LOG.create("Error, merge changset doesn't have a row and is not an add. Shouldn't get into this state");
+							log("Error, merge changset doesn't have a row and is not an add. Shouldn't get into this state");
 							continue;
 						}else{
 							// Create row data for added row
@@ -889,14 +874,11 @@ var TABLES = (function(tables, widgets){
 			if(!good()){
 				return SIGNALS.NOT_READY;
 			}
-			
 			// Table
 			// -----
 			if(sourceTable.tableMetaData.tableLogic !== undefined){
-				console.log(sourceTable);
 				sourceTable.tableMetaData.tableLogic(sourceTable);
 			}
-			
 			if(sourceTable.tableMetaData.tableValidator !== undefined){
 				var validatorResult = sourceTable.tableMetaData.tableValidator(sourceTable);
 				if(validatorResult !== true){
@@ -920,7 +902,7 @@ var TABLES = (function(tables, widgets){
 						sourceTable.tableMetaData.rowLogic(rowIndex, rowPk, row, sourceTable);
 						
 						if(dataLength !== sourceTable.data.length){
-							LOG.create('Error, rowLogic should not add or remove rows. It should only process the existing data for the passed rowIndex');
+							log('Error, rowLogic should not add or remove rows. It should only process the existing data for the passed rowIndex');
 						}
 					}
 					
@@ -965,9 +947,11 @@ var TABLES = (function(tables, widgets){
 	 * anyValueChangedE - (Event) containing cellState of the changed cell.
 	 * anyFocusEventE - (Event) containing cellState of the changed cell.
 	 */ 
-	tables.tableWidget.renderTable = function(instanceId, tableB){
+	tables.tableWidget.renderTable = function(instanceId, tableB, domTable){
 		
-		var domTable = DOM.get(instanceId+"_table");
+		if(!domTable){
+			domTable = jQuery('#' + instanceId+"_table").get(0);
+		}
 		
 		// Selection Handling
 		// ==================
@@ -977,7 +961,7 @@ var TABLES = (function(tables, widgets){
 		jQuery(domTable).click(function(event){		
 			
 			// Find closest cell
-			var jtd = jQuery(event.target).closest('td, th');
+			var jtd = jQuery(event.target).closest("td[id^='"+instanceId+"'], th[id^='"+instanceId+"']");
 			if(jQuery(domTable).has(jtd)){
 				selectedE.sendEvent({target: jtd, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey});
 			}	
@@ -1026,6 +1010,9 @@ var TABLES = (function(tables, widgets){
 				selections = []; 
 			}else{
 				var table = tableB.valueNow();
+				if(!good(table)){
+					return [];
+				}
 				if(!table.tableMetaData.canSelect){
 					
 					// Selection not supported
@@ -1096,6 +1083,26 @@ var TABLES = (function(tables, widgets){
 				return SIGNALS.NOT_READY;
 			}
 			
+			// Perform render logic 
+			// --------------------
+			
+			if(sourceTable.tableMetaData.renderLogic !== undefined){
+				
+				// Collect up selected rowPks
+				var initialRowSelectionsByRowPk = [];
+				for(var rowIndex=0; rowIndex < sourceTable.data.length; rowIndex++){
+					var row = sourceTable.data[rowIndex];
+					var rowPk = row[sourceTable.tableMetaData.primaryKey];
+					var rowState = state.rowState[rowPk];
+					
+					if(rowState !== undefined && (selected.indexOf(rowState.domId) > -1)) {
+						initialRowSelectionsByRowPk.push(rowPk);
+					}
+				}
+				
+				sourceTable.tableMetaData.renderLogic(sourceTable, initialRowSelectionsByRowPk);
+			}
+			
 			// Overall state
 			// -------------
 			state.isErrorsDirty = false;
@@ -1111,21 +1118,21 @@ var TABLES = (function(tables, widgets){
 			if(state.tableState.horizontalOrientation === undefined){
 				state.tableState.horizontalOrientation = sourceTable.tableMetaData.horizontalOrientation;
 			}else if(state.tableState.horizontalOrientation !== sourceTable.tableMetaData.horizontalOrientation){
-				LOG.create("Table widget doesn't support dynamic horizontalOrientation");
+				log("Table widget doesn't support dynamic horizontalOrientation");
 			}
 			
 			// Set heading style
 			if(state.tableState.headingStyle === undefined){
 				state.tableState.headingStyle = sourceTable.tableMetaData.headingStyle;
 			}else if(state.tableState.headingStyle !== sourceTable.tableMetaData.headingStyle){
-				LOG.create("Table widget doesn't support dynamic headingStyle");
+				log("Table widget doesn't support dynamic headingStyle");
 			}
 			
 			// Set zebra style
 			if(state.tableState.zebraStyle === undefined){
 				state.tableState.zebraStyle = sourceTable.tableMetaData.zebraStyle || TABLES.metaTagZebraStyle.None;
 			}else if(sourceTable.tableMetaData.zebraStyle !== undefined && state.tableState.zebraStyle !== sourceTable.tableMetaData.zebraStyle){
-				LOG.create("Table widget doesn't support dynamic zebraStyle");
+				log("Table widget doesn't support dynamic zebraStyle");
 			}
 			
 			// Check table errors
@@ -1154,16 +1161,49 @@ var TABLES = (function(tables, widgets){
 				state.tableState.isStateDirty = true;
 			}
 			
+			// Check show change indicator
+			if(state.tableState.hideChangeColumn !== sourceTable.tableMetaData.hideChangeColumn){
+				state.tableState.hideChangeColumn = sourceTable.tableMetaData.hideChangeColumn || false;
+				state.tableState.isStateDirty = true;
+			}
+			
 			// Column states
 			// -------------
-			// 1st loop through existing column states, and remove those that are no longer needed 
+			// 1st create column order
+			state.columns.splice(0, state.columns.length);
+			
+			// a) use tableMetaData.columnOrder if set
+			var sourceColumnOrder = sourceTable.tableMetaData.columnOrder;
+			if(sourceColumnOrder !== undefined && sourceColumnOrder.length){
+				for(var index in sourceColumnOrder){
+					var columnId = sourceColumnOrder[index];
+					var columnMetaData = sourceTable.columnMetaData[columnId];
+					if(columnMetaData !== undefined && columnMetaData.visible !== false){
+						state.columns.push(columnId);
+					}
+				}
+			}
+			
+			// b) use property order in columnMetaData
+			for(var columnId in sourceTable.columnMetaData){
+				var columnMetaData = sourceTable.columnMetaData[columnId];
+				if(columnMetaData.visible !== false && state.columns.indexOf(columnId) === -1){
+					// There should be a column
+					state.columns.push(columnId);
+				}
+			}
+			
+			// 2nd loop through existing column states, and remove those that are no longer needed 
 			var removedColumnIds = new Array();
-			for(var columnId in state.columnState){
+			for(var i=0; i<state.columns.length; i++){
+				var columnId = state.columns[i];
 				var columnMetaData = sourceTable.columnMetaData[columnId];
 				var columnState = state.columnState[columnId];
 				
-				if(columnMetaData === undefined || columnMetaData.visible === false){
-					// Shouldn't be a column, but there is - remove it and clean up
+				if(columnState !== undefined &&
+					(columnMetaData === undefined || columnMetaData.visible === false || 
+						state.columns.indexOf(columnId) !== columnState.index)){
+					// Shouldn't be a column, but there is, Or column order was changed - remove it and clean up
 					
 					// Remove dom element
 					jQuery(columnState.domCell).remove();
@@ -1177,64 +1217,59 @@ var TABLES = (function(tables, widgets){
 				}
 			}
 			
-			// 2nd create or update column states
-			var c = -1;
-			for(var columnIndex in sourceTable.columnMetaData){
+			// 3rd create or update column states
+			for(var c=0; c<state.columns.length; c++){
+				var columnId = state.columns[c];
+				var columnMetaData = sourceTable.columnMetaData[columnId];
+				var columnState = state.columnState[columnId];					
+					
+				if(columnState === undefined){
+					// No column state, create state and dom element
+					columnState = {};
+					state.columnState[columnId] = columnState;
+					columnState.domId = domTable.id+"_header_" + String(columnId).makeDomIdSafe();
+					columnState.domCell = DOM.create("th", columnState.domId);
+					columnState.isDomDirty = true;
+					columnState.index = c;
+				}else{
+					// Column state exists - reset flags
+					columnState.isDomDirty = false;
+					columnState.isDataDirty = false;
+					columnState.isStyleDirty = false;
+				}
 				
-				var columnMetaData = sourceTable.columnMetaData[columnIndex];
-				var columnState = state.columnState[columnIndex];
+				// Compare meta data against state
+				if(columnState.name !== columnMetaData.name){
+					columnState.name = columnMetaData.name;
+					columnState.isDataDirty = true;
+				}
 				
-				if(columnMetaData.visible !== false){
-					// There should be a column
-					c++;
-					
-					if(columnState === undefined){
-						// No column state, create state and dom element
-						columnState = {};
-						state.columnState[columnIndex] = columnState;
-						columnState.domId = domTable.id+"_header_" + String(columnIndex).makeDomIdSafe();
-						columnState.domCell = DOM.create("th", columnState.domId);
-						columnState.isDomDirty = true;
-					}else{
-						// Column state exists - reset flags
-						columnState.isDomDirty = false;
-						columnState.isDataDirty = false;
-						columnState.isStyleDirty = false;
-					}
-					
-					// Compare meta data against state
-					if(columnState.name !== columnMetaData.name){
-						columnState.name = columnMetaData.name;
-						columnState.isDataDirty = true;
-					}
-					
-					// Handle width
-					if(columnState.width !== columnMetaData.width){
-						columnState.width = columnMetaData.width;
-						columnState.isStyleDirty = true;
-					}
-					
-					// Calculate class for column header
-					var classes = ["TableWidget_horizontalTableHeading"];
-										
-					if(columnMetaData.headingStyles !== undefined && columnMetaData.headingStyles.length){
-						classes = classes.concat(columnMetaData.headingStyles);
-					}
-					
-					if(columnMetaData.styles !== undefined && columnMetaData.styles.length){
-						classes = classes.concat(columnMetaData.styles);
-					}
-					
-					if((state.tableState.zebraStyle === TABLES.metaTagZebraStyle.Vertical ||
-							state.tableState.zebraStyle === TABLES.metaTagZebraStyle.Both)
-						&& (c % 2 === 0)){
-						classes.push('odd');
-					}
-					
-					if(!OBJECT.equals(columnState.classes, classes)){
-						columnState.classes = classes;
-						columnState.isStyleDirty = true;
-					}
+				// Handle width
+				if(columnState.width !== columnMetaData.width){
+					columnState.width = columnMetaData.width;
+					columnState.isStyleDirty = true;
+				}
+				
+				// Calculate class for column header
+				var classes = ["TableWidget_horizontalTableHeading"];
+									
+				if(columnMetaData.headingStyles !== undefined && columnMetaData.headingStyles.length){
+					classes = classes.concat(columnMetaData.headingStyles);
+				}
+				
+				if(columnMetaData.styles !== undefined && columnMetaData.styles.length){
+					classes = classes.concat(columnMetaData.styles);
+				}
+				
+				if((state.tableState.zebraStyle === TABLES.metaTagZebraStyle.Vertical ||
+						state.tableState.zebraStyle === TABLES.metaTagZebraStyle.Both)
+					&& (c % 2 === 0)){
+					classes.push('odd');
+				}
+				
+				if(!OBJECT.equals(columnState.classes, classes)){
+					columnState.classes = classes;
+					columnState.isStyleDirty = true;
 				}
 			}
 			
@@ -1311,7 +1346,7 @@ var TABLES = (function(tables, widgets){
 			
 			// 3nd create or update row states
 			var r = -1;
-			for(var rowIndex in sourceTable.data){
+			for(var rowIndex=0; rowIndex < sourceTable.data.length; rowIndex++){
 				var row = sourceTable.data[rowIndex];
 				var rowPk = row[sourceTable.tableMetaData.primaryKey];
 				var rowState = state.rowState[rowPk];
@@ -1332,6 +1367,10 @@ var TABLES = (function(tables, widgets){
 						
 						// Add cell for change indicator
 						rowState.domRow.appendChild(DOM.create("td", instanceId + "_" + String(rowPk + "_changeIndicator").makeDomIdSafe(), "changeIndicator"));
+						
+						if(state.tableState.hideChangeColumn){
+							jQuery(rowState.domRow).find('.changeIndicator').hide();
+						}
 						
 						// If vertical headings add cell for heading (tableState.headingStyle is not dynamic)
 						if(state.tableState.headingStyle === TABLES.metaTagHeadingStyle.Vertical){
@@ -1355,7 +1394,7 @@ var TABLES = (function(tables, widgets){
 					}
 					
 					// Check row name
-					if(sourceTable.tableMetaData.headingStyle === TABLES.metaTagHeadingStyle.Vertical && rowState.name !== rowMetaData.name){
+					if(sourceTable.tableMetaData.headingStyle === TABLES.metaTagHeadingStyle.Vertical && (rowMetaData !== undefined && rowState.name !== rowMetaData.name)){
 						rowState.name = rowMetaData.name;
 						rowState.isDataDirty = true;
 					}
@@ -1374,7 +1413,7 @@ var TABLES = (function(tables, widgets){
 					
 					// Check row error
 					var error = undefined; 
-					if(rowMetaData !== undefined){
+					if(rowMetaData !== undefined && !state.tableState.readonly){
 						error = rowMetaData.serverErrors !== undefined ? DATA.UTIL.extractServerErrorMessage(rowMetaData.serverErrors) : rowMetaData.localError;
 					}
 					
@@ -1442,8 +1481,9 @@ var TABLES = (function(tables, widgets){
 			for(var rowPk in state.cellState){
 				
 				var rowIndex = TABLES.UTIL.findRowIndex(sourceTable, rowPk);
-				if(rowIndex === false){
-					// Row no longer exists, remove cells
+				if(rowIndex === false ||
+						(sourceTable.rowMetaData[rowPk] !== undefined && sourceTable.rowMetaData[rowPk].visible === false)){
+					// Row no longer exists, or is invisible, remove cells
 					
 					for(var columnId in state.cellState[rowPk]){
 						
@@ -1461,13 +1501,21 @@ var TABLES = (function(tables, widgets){
 				}else if(removedColumnIds.length > 0){
 					// Row exists but there are columns to be removed
 					
-					for(var columnId in removedColumnIds){
+					for(var i=0; i<removedColumnIds.length; i++){
+						var columnId = removedColumnIds[i];
+						
 						// Collect cells to clean up
 						var cellState = state.cellState[rowPk][columnId];
 						cellStatesToRemove.push(cellState);
 								
 						// Remove cell state reference
 						OBJECT.remove(state.cellState[rowPk], columnId);
+					}
+					
+					// If all columns removed, remove row
+					if(Object.keys(state.cellState[rowPk]).length === 0){
+						// Remove row object from cellState
+						OBJECT.remove(state.cellState, rowPk);
 					}
 				}
 			}
@@ -1482,21 +1530,20 @@ var TABLES = (function(tables, widgets){
 					cellState.renderer.destroy();
 					cellState.renderer = undefined;
 				}else{
-					LOG.create("Error, renderer does not have a destroy method");
+					//log("Error, renderer does not have a destroy method");
 				}
 				
 				// Remove dom element
 				jQuery(cellState.domCell).remove();
 				cellState.domCell = undefined;
 				
-				// Remove events - TODO: check if we need to do something in flapjax
 				cellState.updateEventE = undefined;
 				cellState.focusEventE = undefined;
 			}
 			
 			// 3rd create or update cell states
 			var r = -1;
-			for(var rowIndex in sourceTable.data){
+			for(var rowIndex=0; rowIndex < sourceTable.data.length; rowIndex++){
 				
 				// If rowStatePk then we need to display row
 				if(state.rowStatePks[rowIndex] !== undefined){
@@ -1512,25 +1559,29 @@ var TABLES = (function(tables, widgets){
 					
 					// Quick check to see if any cell has an error
 					var rowHasError = false;
-					for(var columnId in state.columnState){
-						if(sourceTable.cellMetaData[rowIndex] && sourceTable.cellMetaData[rowIndex][columnId]
-						&& (sourceTable.cellMetaData[rowIndex][columnId].serverErrors || sourceTable.cellMetaData[rowIndex][columnId].localError)){
-							rowHasError = true;
-							break;
+					if(!state.tableState.readonly){
+						for(var columnId in state.columnState){
+							if(sourceTable.cellMetaData[rowIndex] 
+							&& sourceTable.cellMetaData[rowIndex][columnId]
+							&& sourceTable.cellMetaData[rowIndex][columnId].visible !== false
+							&& (sourceTable.cellMetaData[rowIndex][columnId].serverErrors || sourceTable.cellMetaData[rowIndex][columnId].localError)){
+								rowHasError = true;
+								break;
+							}
 						}
-					}
-					
-					if(rowHasError && state.tableState.headingStyle === TABLES.metaTagHeadingStyle.Vertical){
-						if(rowState.headingClasses.indexOf('error') === -1){
-							rowState.headingClasses.push('error');
-							rowState.isStyleDirty = true;
+						
+						if(rowHasError && state.tableState.headingStyle === TABLES.metaTagHeadingStyle.Vertical){
+							if(rowState.headingClasses.indexOf('error') === -1){
+								rowState.headingClasses.push('error');
+								rowState.isStyleDirty = true;
+							}
 						}
 					}
 					
 					// Loop required columns
 					var c = -1;
-					for(var columnId in state.columnState){
-						
+					for(var i=0; i<state.columns.length; i++){
+						var columnId = state.columns[i];
 						c++;
 						var cellState = state.cellState[rowPk][columnId];
 						var metaData = TABLES.UTIL.getMetaDataSet(sourceTable, rowIndex, columnId);
@@ -1543,6 +1594,7 @@ var TABLES = (function(tables, widgets){
 							cellState.domId = instanceId + "_" + String(rowPk + "_" + columnId).makeDomIdSafe();
 							cellState.domCell = DOM.create("td", cellState.domId);
 							cellState.isDomDirty = true;
+							cellState.isVisibleDirty = true;
 							
 							// Setup renderer
 							cellState.renderer = TABLES.tableWidget.chooseRenderer(instanceId, metaData, rowPk, columnId);
@@ -1570,15 +1622,15 @@ var TABLES = (function(tables, widgets){
 							cellState.isDataDirty = false;
 							cellState.isStateDirty = false;
 							cellState.isStyleDirty = false;
+							cellState.isVisibleDirty = false;
 						}
 						
-						var readonlyAdd = metaData.cellMetaData.newCell === true ? TABLES.UTIL.chooseMetaData('readonlyAdd', metaData) : undefined;
-						var readonly = (readonlyAdd !== undefined) ? readonlyAdd : (TABLES.UTIL.chooseMetaData('readonly', metaData) || state.tableState.readonly || false);
-						var visible = metaData.cellMetaData.visible;
+						var readonly = TABLES.UTIL.chooseMetaData('readonly', metaData) || state.tableState.readonly || false;
+						var visible = metaData.cellMetaData.visible === undefined ? true : metaData.cellMetaData.visible;
 						var disabled = TABLES.UTIL.chooseMetaData('disabled', metaData);
 						var deleted = TABLES.UTIL.chooseMetaData('deleted', metaData);
-						var error = metaData.cellMetaData.serverErrors !== undefined ? 
-								DATA.UTIL.extractServerErrorMessage(metaData.cellMetaData.serverErrors) : metaData.cellMetaData.localError;
+						var error = (!visible || readonly) ? undefined : (metaData.cellMetaData.serverErrors !== undefined ? 
+								DATA.UTIL.extractServerErrorMessage(metaData.cellMetaData.serverErrors) : metaData.cellMetaData.localError);
 						var rendererOptions = jQuery.extend({}, metaData.columnMetaData.rendererOptions, metaData.rowMetaData.rendererOptions, metaData.cellMetaData.rendererOptions);
 						
 						// Compare meta data against state
@@ -1589,7 +1641,7 @@ var TABLES = (function(tables, widgets){
 						
 						if(cellState.visible !== visible){
 							cellState.visible = visible;
-							cellState.isStateDirty = true;
+							cellState.isVisibleDirty = true;
 						}
 						
 						if(cellState.disabled !== disabled){
@@ -1614,9 +1666,10 @@ var TABLES = (function(tables, widgets){
 						}
 						
 						var value = sourceTable.data[rowIndex][columnId];
-						if(cellState.value !== value){
+						if(!OBJECT.equals(cellState.value, value)){
 							cellState.value = value;
 							cellState.isDataDirty = true;
+							
 						}
 						
 						// Calculate classes for cell	
@@ -1667,21 +1720,21 @@ var TABLES = (function(tables, widgets){
 			}
 			
 			return state;
-		}, tableB, selectedB, F.constantB({cellState:{}, rowState:{}, columnState:{}, tableState:{}, rowStatePks:{}}));
+		}, tableB, selectedB, F.constantB({cellState:{}, rowState:{}, columnState:{}, tableState:{}, rowStatePks:{}, columns:[]}));
 		
 		// Create change event handlers
-		var rowStatePksB = tableStateB.liftB(function(state){
+		var tableHashB = tableStateB.liftB(function(state){
 			if(!good()){
 				return SIGNALS.NOT_READY;
 			}
 			
-			return state.rowStatePks;
+			return {rowHash: state.rowStatePks, columnHash: state.columns.join()};
 		});
 		
-		var rowStatePksChangedE = F.mergeE(F.oneE(rowStatePksB.valueNow()), rowStatePksB.changes()).filterRepeatsE();
+		var tableHashChangedE = F.mergeE(F.oneE(tableHashB.valueNow()), tableHashB.changes()).filterRepeatsE();
 		
 		//This event catches changes from every renderer on the table
-		var anyValueChangedE = rowStatePksChangedE.snapshotE(tableStateB).mapE(function(state){
+		var anyValueChangedE = tableHashChangedE.snapshotE(tableStateB).mapE(function(state){
 			if(!good()){
 				return F.zeroE();
 			}
@@ -1700,7 +1753,7 @@ var TABLES = (function(tables, widgets){
 		
 		
 		// This event catches any focus change for every renderer on the table
-		var anyFocusEventE = rowStatePksChangedE.snapshotE(tableStateB).mapE(function(state){
+		var anyFocusEventE = tableHashChangedE.snapshotE(tableStateB).mapE(function(state){
 			if(!good()){
 				return F.zeroE();
 			}
@@ -1762,7 +1815,7 @@ var TABLES = (function(tables, widgets){
 					jTable.find('.changeIndicator').hide();
 				}else{
 					jEmptyMessage.hide();
-					jTable.find('.changeIndicator').show();
+					jTable.find('.changeIndicator').toggle(!state.tableState.hideChangeColumn);
 				}
 			}
 			
@@ -1774,16 +1827,17 @@ var TABLES = (function(tables, widgets){
 			}
 			
 			// Update columns
-			// --------------
+			// --------------	
 			var jheader = jQuery("#" + domTable.id + "_header");
-			var columnOrderDirty = false;
 			var columnStateLast = undefined;
-			for(var columnIndex in state.columnState){
+			var columnIndices = Object.keys(state.columnState);
+			var columnIndicesLength = columnIndices.length;
+			for(var c=0; c<columnIndicesLength; c++){
+				var columnIndex = columnIndices[c];
 				var columnState = state.columnState[columnIndex];
 				
 				// Insert or reorder columns
 				if(columnState.isDomDirty){
-					columnOrderDirty = true;
 					if(columnStateLast === undefined){
 						jheader.find('.spacer_cell').last().after(columnState.domCell);
 					}else{
@@ -1800,7 +1854,7 @@ var TABLES = (function(tables, widgets){
 					
 					// If headings are visible, then style them. Else style will be applied to first row of data
 					if(columnState.width !== undefined && state.tableState.headingStyle === TABLES.metaTagHeadingStyle.Horizontal){
-						jQuery(columnState.domCell).css('min-width', columnState.width);
+						jQuery(columnState.domCell).css('width', columnState.width);
 					}
 					
 					// Update classes
@@ -1815,11 +1869,11 @@ var TABLES = (function(tables, widgets){
 			
 			// Get row indices in order
 			var rowIndices = Object.keys(state.rowStatePks);
+			var rowIndicesLength = rowIndices.length;
 			
 			var rowOrderDirty = false;
 			var rowStateLast = undefined;
-			for(var i in rowIndices){
-				
+			for(var i=0; i<rowIndicesLength; i++){
 				var rowIndex = rowIndices[i];
 				var rowPk = state.rowStatePks[rowIndex];
 				var rowState = state.rowState[rowPk];
@@ -1840,7 +1894,7 @@ var TABLES = (function(tables, widgets){
 					// Update change indicator
 					var rowChanged = rowState.userChange === true;
 					var rowDeleted = rowState.deleted === true;
-					var j_change_indicator_td = jQuery('#' + rowState.domId).find('.changeIndicator');
+					var j_change_indicator_td = jQuery('#' + rowState.domId).find('.changeIndicator').first();
 
 					if(!rowDeleted && rowChanged && !j_change_indicator_td.hasClass('modified')){
 						// Not deleted, changed, and no indicator - add indicator
@@ -1872,7 +1926,7 @@ var TABLES = (function(tables, widgets){
 				if(rowState.isStateDirty){
 					
 					var j_row = jQuery('#' + rowState.domId);
-					var j_change_indicator_td = j_row.find('.changeIndicator');
+					var j_change_indicator_td = j_row.find('.changeIndicator').first();
 					
 					// Remove any existing row error if any
 					j_change_indicator_td.find('.errored_tag').remove();
@@ -1896,41 +1950,37 @@ var TABLES = (function(tables, widgets){
 			}
 			
 			
-			// Update cells
-			// ------------
-			
-			for(var i in rowIndices){
+			// Update cells layout
+			// -------------------
+			for(var i=0; i<rowIndicesLength; i++){
 				var rowIndex = rowIndices[i];
 				var rowPk = state.rowStatePks[rowIndex];
 				var rowState = state.rowState[rowPk];
 				
 				// Loop through cells in column order
 				var cellStateLast = undefined;
-				for(var columnId in state.columnState){
-					
+				for(var c=0; c<columnIndicesLength; c++){
+					var columnId = columnIndices[c];
 					var cellState = state.cellState[rowPk][columnId];
 					
 					// Insert or reorder cell
 					if(cellState.isDomDirty){
 						if(cellStateLast === undefined){
 							if(state.tableState.headingStyle === TABLES.metaTagHeadingStyle.Vertical){
-								jQuery('#' + rowState.domId).find('th').after(cellState.domCell);
+								jQuery('#' + rowState.domId).find('th').first().after(cellState.domCell);
 							}else{
-								jQuery('#' + rowState.domId).find('.changeIndicator').after(cellState.domCell);
+								jQuery('#' + rowState.domId).find('.changeIndicator').first().after(cellState.domCell);
 							}
 						}else{
 							jQuery('#' + cellStateLast.domId).after(cellState.domCell);
 						}
 					}
 					
-					// Update cell
+					// Update errors
 					if(cellState.isStateDirty){
 						
 						// Remove existing error tag if any
-						if(cellState.renderer.isErrored()){
-							// Remove old error tag
-							jQuery("#"+cellState.domId).find('.errored_tag').remove();
-						}
+						jQuery("#"+cellState.domId).find('.errored_tag').remove();
 						
 						// If local or server error, display error
 						if(cellState.error !== undefined && cellState.readonly !== true){
@@ -1946,6 +1996,15 @@ var TABLES = (function(tables, widgets){
 								};
 						
 						cellState.renderer.setState(rendererState);
+					}
+					
+					// Update visibility
+					if(cellState.isVisibleDirty){
+						if(cellState.visible){
+							jQuery(cellState.domCell).css('visibility', 'visible');
+						}else{
+							jQuery(cellState.domCell).css('visibility', 'hidden');
+						}
 					}
 					
 					// Update data, also set if state changed.
@@ -1974,8 +2033,44 @@ var TABLES = (function(tables, widgets){
 					total_error_count += rowState.errorCount;
 				}
 				
-				var j_change_indicator_td = jQuery('#' + rowState.domId).find('.changeIndicator');
+				var j_change_indicator_td = jQuery('#' + rowState.domId).find('.changeIndicator').first();
 				j_change_indicator_td.toggleClass("error", rowState.errorCount > 0);
+				
+				if(state.tableState.isStateDirty){
+					j_change_indicator_td.toggle(!state.tableState.hideChangeColumn);
+				}
+			}
+			
+			// Update cells value
+			// ------------------
+			for(var i=0; i<rowIndicesLength; i++){
+				var rowIndex = rowIndices[i];
+				var rowPk = state.rowStatePks[rowIndex];
+				var rowState = state.rowState[rowPk];
+				
+				// Loop through cells in column order
+				for(var c=0; c<columnIndicesLength; c++){
+					var columnId = columnIndices[c];
+					var cellState = state.cellState[rowPk][columnId];
+					
+					// Update renderer state
+					if(cellState.isStateDirty){
+						
+						var rendererState = {
+								readonly: cellState.readonly, 
+								disabled: cellState.disabled || cellState.deleted || false, 
+								errored: cellState.error !== undefined, 
+								options: cellState.rendererOptions || undefined
+								};
+						
+						cellState.renderer.setState(rendererState);
+					}
+					
+					// Update data, also set if state changed.
+					if(cellState.isStateDirty || cellState.isDataDirty){
+						cellState.renderer.setValue(cellState.value);
+					}
+				}
 			}
 			
 			if(state.isErrorsDirty){
@@ -2012,8 +2107,9 @@ var TABLES = (function(tables, widgets){
 	 * Useful for displaying table data
 	 */
 	tables.WIDGETS.tableWidget = function(instanceId, data){
-		var widgetDef = WIDGETS.get("PageToolbarWidget");
-		var toolbarWidget = new widgetDef(instanceId);
+		
+		var toolbarWidget = WIDGETS.instantiateWidget('PageToolbarWidget').widget;
+		console.log(Object.keys(toolbarWidget));
 		toolbarWidget.setDeleteDisabled(true);
 		toolbarWidget.setUndoDisabled(true);
 		toolbarWidget.setApplyDisabled(true);
@@ -2021,6 +2117,16 @@ var TABLES = (function(tables, widgets){
 		
 		
 		return {
+			/** Forces a DOM update.
+			 * TODO: Refactor page toolbar to get this info from table.
+			 * - like what object to listen to for scroll
+			 * - and marginTop
+			 */
+			update: function(marginTop){
+				toolbarWidget.setMarginTop(marginTop);
+				toolbarWidget.update();
+			},
+			
 			build:function(){
 				return TABLES.tableWidget.createDOMTable(instanceId, toolbarWidget);
 			},
@@ -2032,26 +2138,14 @@ var TABLES = (function(tables, widgets){
 				toolbarWidget.setFeedbackDefault();
 				toolbarWidget.setErrorCount(0);
 				toolbarWidget.load();
+				
 				var domTable = DOM.get(instanceId+"_table");
 				
 				var tableGoodB = tableBI.filterNotGoodB();
+				
 				// First Render
 				// ============
-				var toolbar_setupB = tableBI.liftB(function(sourceTable){
-					if(!good()){
-						return chooseSignal();
-					}
-					console.log("sourceTable");
-					console.log(sourceTable);
-					// If no adding or deleting, remove options from toolbar
-					toolbarWidget.toggleAddOption(sourceTable.tableMetaData.canAdd);
-					toolbarWidget.toggleDeleteOption(sourceTable.tableMetaData.canDelete);
-					// If table is readonly set hide toolbar options
-					var readonly = sourceTable.tableMetaData.readonly || false;				
-					toolbarWidget.toggleToolbarOptions(!readonly);
-			    	return sourceTable;
-				});
-				var firstRenderB = TABLES.tableWidget.setupTableB(instanceId, toolbar_setupB);
+				var firstRenderB = TABLES.tableWidget.setupTableB(instanceId, tableBI);
 				
 				// Merged data
 				// ===========
@@ -2059,7 +2153,8 @@ var TABLES = (function(tables, widgets){
 				var changeValueE = F.receiverE();
 				var undoE = F.receiverE();
 				var deleteE = F.receiverE();
- 
+				var emptyE = F.receiverE();
+				
 				// Combine local changes with server data
 				var changesetMerge = TABLES.tableWidget.changeSetMerge(
 						firstRenderB, 
@@ -2067,7 +2162,9 @@ var TABLES = (function(tables, widgets){
 						applyIdE, 
 						undoE, 
 						toolbarWidget.getAddClickE(), 
-						deleteE, undefined, undefined, undefined,  function (table) {
+						deleteE, 
+						emptyE, undefined, undefined,  function (table) {
+							
 							return table.tableMetaData === undefined || table.tableMetaData.showSendError !== false;
 						});//,
 						//F.zeroE()
@@ -2082,24 +2179,44 @@ var TABLES = (function(tables, widgets){
 				
 				// Show apply status in page toolbar
 				applyEventE.mapE(function(applyState){
-					if(applyState === AURORA.APPLY_STATES.APPLYING){
+					if(applyState === APPLY_STATES.APPLYING){
 						// We are updating server and waiting for response
 						toolbarWidget.setFeedbackUpdating();
 						
-					}else if(applyState === AURORA.APPLY_STATES.SUCCESS){
+					}else if(applyState === APPLY_STATES.SUCCESS){
 						// Server update was successful
 						toolbarWidget.setFeedbackSuccess();
 						
-					}else if(applyState === AURORA.APPLY_STATES.ERROR){
+					}else if(applyState === APPLY_STATES.ERROR){
 						// Server update was not successful
 						toolbarWidget.setFeedbackError();
 					}
-					
 				});
+				
 				
 				// Validation and Biz Logic
 				// ========================
 				var validatedDataB = TABLES.tableWidget.validateDataB(mergedDataB);
+				
+				// Toolbar Render
+				// ==============
+				var toolbar_setupB = validatedDataB.liftB(function(table){
+					if(!good()){
+						return chooseSignal();
+					}
+					
+					// If no adding or deleting, remove options from toolbar
+					toolbarWidget.toggleAddOption(table.tableMetaData.canAdd);
+					toolbarWidget.toggleDeleteOption(table.tableMetaData.canDelete);
+					
+					// If table is readonly set hide toolbar options
+					var readonly = table.tableMetaData.readonly || false;				
+			    	toolbarWidget.toggleToolbarOptions(!readonly);
+			    	// Restrict adding
+
+			    	var addEnabled = (table.tableMetaData.disableToolbarAdd === undefined || table.tableMetaData.disableToolbarAdd===false) && (table.tableMetaData.maxRows === undefined || table.tableMetaData.maxRows>table.data.length);
+			    	toolbarWidget.setAddDisabled(!addEnabled, table.tableMetaData.disableToolbarAdd);
+				});
 								
 				// Table Render
 				// ============
@@ -2123,9 +2240,12 @@ var TABLES = (function(tables, widgets){
 				
 				// Inform page we are loaded.
 				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
-					UI.widgetLoaded();
+					if(UI!==undefined && UI.widgetLoaded!==undefined){
+						UI.widgetLoaded();
+					}
 					toolbarWidget.update();
 				});
+				
 				// Apply
 			    // =====				
 				var changeSetB = validatedDataB.liftB(function(table){
@@ -2179,46 +2299,35 @@ var TABLES = (function(tables, widgets){
 					if(!good()){
 						return SIGNALS.NOT_READY;
 					}
-					UI.userChanges(instanceId, !clean);
+					if(UI!==undefined && UI.userChanges!==undefined){
+						UI.userChanges(instanceId, !clean);
+					}
 					toolbarWidget.setApplyDisabled(clean);
 					
 					return clean;
 				});
 				
 				toolbarWidget.getApplyClickE().snapshotE(validatedDataB).mapE(function(sourceTable){
-					var newTable = OBJECT.clone(sourceTable);
+					var newTable = clone(sourceTable);
 										
 					// Create unique id used to check set response
 					var apply_id = new Date().getTime();
 					applyIdE.sendEvent({id: apply_id});
 					newTable.tableMetaData.applyId = apply_id;
-					
 					// Set changes
 					tableBI.set(newTable);
 				});
+				
 				var toolbar_state_selected_rowsB = F.liftB(function(selectedRows){
 					if(!good(selectedRows)){
 						return SIGNALS.NOT_READY;
-					}		
+					}			    
 					var changeSet = rowChangeSetB.valueNow();
-					jQuery(".TablesSelectedRow").each(function(index, value){
-						var id = value.id.replace(instanceId+"_", "");
-						if(!ARRAYS.contains(selectedRows, id, false)){
-							jQuery("#"+instanceId+"_"+id).removeClass("TablesSelectedRow");
-							jQuery("#"+instanceId+"_"+id).find('td, th').removeClass("TablesSelectedCell");
-						}
-					});
 			    	var changeMatch = false;
 			    	
 			    	for(var index in selectedRows){
 			    		var selectedRow = selectedRows[index];
-			    		if(!jQuery("#"+instanceId+"_"+selectedRow).hasClass("TablesSelectedRow")){
-			    			jQuery("#"+instanceId+"_"+selectedRow).addClass("TablesSelectedRow");
-			    			
-			    			// Add selection also to <td> because of IE 10 redraw bug.
-			    			jQuery("#"+instanceId+"_"+selectedRow).find('td, th').toggleClass("TablesSelectedCell", true);
-			    		}
-			    		if(good(changeSet) && changeSet[selectedRow]!=undefined){
+			    		if(good(changeSet) && changeSet[selectedRow]!==undefined){
 			    			changeMatch = true;
 			    		}
 			    	}
@@ -2226,26 +2335,84 @@ var TABLES = (function(tables, widgets){
 			    }, rowSelectionsByRowPkB);
 				
 			    
-				// Undo and Delete
-				// ===============
+				// Undo
+				// ====
+				// If tableMetaData.canSelect is false then undo applies to the whole table.
+				// Else it applies to the selected row.
+				var UNDO_MODES = {ALL: 1, SELECTED: 2};
+				var undoModeB = tableGoodB.liftB(function(value){
+					if(!good()){
+						return SIGNALS.NOT_READY;
+					}
+					
+					if(value.tableMetaData.canSelect === false){
+						return UNDO_MODES.ALL;
+					}
+					return UNDO_MODES.SELECTED;
+				});
 				
-			    // Update delete and undo on the page toolbar
-				toolbar_state_selected_rowsB.liftB(function(value){
+				var undoModeChangeE = undoModeB.changes().filterRepeatsE();
+				var undoSetE = toolbarWidget.getUndoClickE().snapshotE(tableGoodB).filterE(function(table){return good(table) && table.tableMetaData.horizontalOrientation;});
+				var undoActionE = undoModeChangeE.mapE(function(undoMode){
+					
+					switch(undoMode){
+			    	case UNDO_MODES.SELECTED:
+			    		return undoSetE.snapshotE(rowSelectionsByRowPkB).mapE(function(value){
+							undoE.sendEvent(value);
+						});
+			    		break;
+			    	case UNDO_MODES.ALL:
+			    		return undoSetE.mapE(function(){ emptyE.sendEvent(true) });
+			    		break;
+			    	default:
+			    		return F.zeroE();
+			    	}
+					
+				}).switchE();
+				
+				// Update undo on the page toolbar
+				F.liftB(function(undoMode, selected_rows, clean){
 			    	if(!good()){
 			    		return SIGNALS.NOT_READY;
 			    	}
-			    	toolbarWidget.setDeleteDisabled(value.delete_disabled); 
-		    		toolbarWidget.setUndoDisabled(value.undo_disabled);
-			    });
-				var undoSetE = toolbarWidget.getUndoClickE().snapshotE(tableGoodB).filterE(function(table){return good(table) && table.tableMetaData.horizontalOrientation;});
-				undoSetE.snapshotE(rowSelectionsByRowPkB).mapE(function(value){
-					undoE.sendEvent(value);
+			    	
+			    	switch(undoMode){
+			    	case UNDO_MODES.SELECTED:
+			    		toolbarWidget.setUndoDisabled(selected_rows.undo_disabled);
+			    		break;
+			    	case UNDO_MODES.ALL:
+			    		toolbarWidget.setUndoDisabled(clean);
+			    		break;
+			    	}
+			    	
+			    }, undoModeB, toolbar_state_selected_rowsB, cleanB);
+				
+				undoModeChangeE.mapE(function(undoMode){
+					if(!good()){
+						return;
+					}
+					
+					toolbarWidget.setUndoStyle(undoMode === UNDO_MODES.ALL);
 				});
-
+				
+				// Delete
+				// ======
+				
 				var deleteSetE = toolbarWidget.getDeleteClickE().snapshotE(tableGoodB).filterE(function(table){return good(table) && table.tableMetaData.horizontalOrientation;});
 				deleteSetE.snapshotE(rowSelectionsByRowPkB).mapE(function(value){
 					deleteE.sendEvent(value);
 				});
+				
+				// Update delete on the page toolbar
+				toolbar_state_selected_rowsB.liftB(function(value){
+			    	if(!good()){
+			    		return SIGNALS.NOT_READY;
+			    	}
+			    	
+			    	toolbarWidget.setDeleteDisabled(value.delete_disabled); 
+			    });
+				
+				return {cleanB: cleanB};
 			},
 			
 			destroy: function(){
@@ -2289,13 +2456,15 @@ var TABLES = (function(tables, widgets){
 				
 				// Inform page we are loaded.
 				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
-					UI.widgetLoaded();
+					if(UI!==undefined && UI.widgetLoaded!==undefined){
+						UI.widgetLoaded();
+					}
 				});
 				
 				// Apply
 				// =====
 				anyValueChangedE.mapE(function(change){
-					var new_table = OBJECT.clone(validatedDataB.valueNow());
+					var new_table = clone(validatedDataB.valueNow());
 					if(!good(new_table)){
 						return;
 					}
@@ -2320,7 +2489,6 @@ var TABLES = (function(tables, widgets){
 					// Create unique id used to check set response
 					var apply_id = new Date().getTime();
 					new_table.tableMetaData.applyId = apply_id;
-					
 					// Send changes
 					tableBI.set(new_table);					
 				});
@@ -2331,6 +2499,236 @@ var TABLES = (function(tables, widgets){
 		};
 	};
 	
+	
+	/**
+	 * A readonly table wraped in a paging system that limits no. of visible rows.
+	 * Supports only single direction tables, not bi-directional.
+	 */ 
+	tables.WIDGETS.pagedTableWidget = function(instanceId, data){	
+		
+		var UPDATE_DEFAULT = true;
+		var show_update = data ? data.updateOption : false;
+		var update_sendE = F.receiverE();
+		var update_checkbox = new WIDGETS.renderers.Checkbox(instanceId + '_checkbox');
+		
+		return {
+			getUpdateE : function(){
+				return show_update ? update_sendE : F.zeroE();
+			},
+			
+			getUpdateB : function(){
+				return show_update ? update_sendE.startsWith(UPDATE_DEFAULT) : F.constantB(UPDATE_DEFAULT);
+			},
+			
+			load : function(tableB){
+				
+				// Update blocking
+				// ===============
+				if(show_update){
+					var tooltip_checked = 'Uncheck to stop table data updating';
+					var tooltip_unchecked = 'Check to enable table data updates';
+					var update_state = {
+						readonly: false,
+						disabled: false,
+						errored: false,
+						options: {label: 'Update', tooltip: tooltip_checked}
+					};
+					update_checkbox.load();
+					update_checkbox.setState(update_state);
+					
+					update_checkbox.setValue(true);
+					
+					var updateE = update_checkbox.getValueE();
+					updateE.mapE(function(value){
+						update_state.options.tooltip = value ? tooltip_checked : tooltip_unchecked;
+						update_checkbox.setState(update_state);
+						
+						update_sendE.sendEvent(value);
+					});
+				}
+				
+				// Paging
+				// ======
+				var limitE = F.receiverE();
+				var limitB = limitE.startsWith(100);
+				
+				var start_rangeE = F.receiverE();				
+				var start_rangeB = start_rangeE.startsWith(0);
+				
+				var last_filters = undefined;
+				var range_setB = F.liftB(function(table, start, limit){
+					if(!good()){
+						return chooseSignal();
+					}
+					
+					// Check start is valid, adjust if not.
+					var total = table.data.length;
+					if(total === 0 && start !== 0){
+						// No data, set start to zero
+						start_rangeE.sendEvent(0);
+						
+					}else if(start >= total && total > 0){
+						
+						// Start is bigger than data, set to last page
+						var pages = Math.floor(total / limit);
+						var remainder = total % limit;
+						if(remainder === 0){
+							pages -= 1;
+						}
+						start_rangeE.sendEvent(pages * limit);
+					}else if(!OBJECT.equals(table.tableMetaData.filters, last_filters)){
+						
+						// Filters changed, so go back to first page
+						last_filters = table.tableMetaData.filters;
+						start_rangeE.sendEvent(0);
+					}
+					
+					return table;
+				}, tableB, start_rangeB, limitB);
+				
+				// Filter 
+				var filterCallback = function(rowData, rowIndex){
+					var start = start_rangeB.valueNow();
+					var end = start + limitB.valueNow();
+					if(rowIndex >= start && rowIndex < end){
+						return true;
+					}
+					
+		        	return false;
+		        }
+				
+				var limitedB = TABLES.filterRowsB(range_setB, filterCallback);
+				
+				// Display range
+				limitedB.liftB(function(table){
+					var source_table = range_setB.valueNow();
+					if(!good(table, source_table)){
+						return;
+					}
+					
+					var start = start_rangeB.valueNow();
+					var end = start + limitB.valueNow();
+					var total = source_table.data.length;
+					
+					if(total > 0){
+						start += 1;
+					}
+					
+					if(end > total){
+						end = total;
+					}
+					
+					var range_string = start + ' - ' + end + ' of ' + total;
+					var jtop = jQuery('#' + instanceId + '_paging_top');
+					var jbottom = jQuery('#' + instanceId + '_paging_bottom');
+					jtop.find('.table_paging_numbers').text(range_string);
+					jbottom.find('.table_paging_numbers').text(range_string);
+					
+					// Hide if empty message is displayed
+					var hidden = table.tableMetaData.emptyMessage !== undefined;
+					jtop.toggle(!hidden);
+					jbottom.toggle(!hidden);
+				});
+				
+				// Calculate no of pages needed.
+				var pagesB = F.liftB(function(table, limit){
+					if(!good()){
+						return SIGNALS.NOT_READY;
+					}
+					
+					var total = table.data.length;
+					var pages = Math.ceil(total / limit);
+					return pages === 1 ? 0 : pages;
+				}, range_setB, limitB).filterRepeatsB();
+								
+				// Create clickable page no.s
+				var pages_updatedB = pagesB.liftB(function(pages){
+					if(!good()){
+						return SIGNALS.NOT_READY;
+					}
+					
+					var limit = limitB.valueNow();
+					
+					var jcontainer = jQuery('#' + instanceId + '_paging_pages');
+					jcontainer.empty();
+					for(var i=0; i<pages; i++){
+						var jlink = jQuery('<li>', {class: 'table_paging_link'}).text(i + 1);
+						jcontainer.append(jlink);
+						
+						var startB = F.constantB(i * limit);
+						jlink.fj('clicksE').snapshotE(startB).mapE(function(start){
+							start_rangeE.sendEvent(start);
+							jQuery('#' + instanceId + '_paging_top').get(0).scrollIntoView();
+						});
+					}
+					
+					return pages;
+				});
+				
+				// Highlight selected page
+				F.liftB(function(updated, start, limit){
+					if(!good()){
+						return SIGNALS.NOT_READY;
+					}
+					
+					var page = Math.floor(start / limit) + 1;
+					jQuery('#' + instanceId + '_paging_pages').find('li.table_paging_link.selected').removeClass('selected');
+					jQuery('#' + instanceId + '_paging_pages').find('li:nth-child(' + page + ')').addClass('selected');
+					
+				}, pages_updatedB, start_rangeB, limitB);
+				
+				
+				// First Render
+				// ============
+				var firstRenderB = TABLES.tableWidget.setupTableB(instanceId, limitedB);
+				
+				// Biz Logic (no validation on user change performed).
+				// =========
+				var validatedDataB = TABLES.tableWidget.validateDataB(firstRenderB);
+				
+				// Table Render
+				// ============
+				var second_render = tables.tableWidget.renderTable(instanceId, validatedDataB);
+				
+				// Get output data from render
+				var secondRenderB = second_render.renderedB;
+				
+				// Inform page we are loaded.
+				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
+					if(UI!==undefined && UI.widgetLoaded!==undefined){
+						UI.widgetLoaded();
+					}
+				});
+			},
+			
+			build : function(){
+				var jcheckbox;
+				if(show_update){
+					jcheckbox = jQuery(update_checkbox.build());
+					jcheckbox.css('float', 'right');
+				}else{
+					jcheckbox = jQuery('<span>');
+				}
+				
+				return jQuery('<div>', {class: 'table_paging_container'}).append(
+					jQuery('<div>', {id: instanceId + '_paging_top', class: 'table_paging_top'}).append(
+							jQuery('<span>', {class:'table_paging_numbers', style: 'margin-top: 6px;'}),
+							jcheckbox,
+							jQuery('<div>', {style: 'clear: both;'})
+						),
+					TABLES.tableWidget.createDOMTable(instanceId),
+					jQuery('<div>', {id: instanceId + '_paging_bottom', class:'table_paging_bottom'}).append(
+							jQuery('<span>', {class: 'table_paging_numbers'}),
+							jQuery('<ul>', {id: instanceId + '_paging_pages', class: 'table_paging_links'}),
+							jQuery('<div>', {style: 'clear: both;'})
+						)
+					).get(0);
+			},
+			
+			destroy : function(){
+			}
+		};
+	};
 	
 	return tables;
 })(TABLES || {}, WIDGETS);
