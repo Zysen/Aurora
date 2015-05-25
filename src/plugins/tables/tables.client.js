@@ -642,7 +642,7 @@ var TABLES = (function(tables, widgets){
 				for(var columnIndex in source_col_meta){
 					
 					if(columnIndex != source_pk_column){
-						state.changeset[rowPk][columnIndex] = jQuery.extend({}, TABLES.changeDefinition, {value: clone(source_col_meta[columnIndex].defaultValue)});
+						state.changeset[rowPk][columnIndex] = jQuery.extend({}, TABLES.changeDefinition, {value: OBJECT.clone(source_col_meta[columnIndex].defaultValue)});
 					}
 				}
 				
@@ -2240,7 +2240,7 @@ var TABLES = (function(tables, widgets){
 				
 				// Inform page we are loaded.
 				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
-					if(UI!==undefined && UI.widgetLoaded!==undefined){
+					if(window.UI!==undefined && UI.widgetLoaded!==undefined){
 						UI.widgetLoaded();
 					}
 					toolbarWidget.update();
@@ -2299,7 +2299,7 @@ var TABLES = (function(tables, widgets){
 					if(!good()){
 						return SIGNALS.NOT_READY;
 					}
-					if(UI!==undefined && UI.userChanges!==undefined){
+					if(window.UI!==undefined && UI.userChanges!==undefined){
 						UI.userChanges(instanceId, !clean);
 					}
 					toolbarWidget.setApplyDisabled(clean);
@@ -2308,7 +2308,7 @@ var TABLES = (function(tables, widgets){
 				});
 				
 				toolbarWidget.getApplyClickE().snapshotE(validatedDataB).mapE(function(sourceTable){
-					var newTable = clone(sourceTable);
+					var newTable = OBJECT.clone(sourceTable);
 										
 					// Create unique id used to check set response
 					var apply_id = new Date().getTime();
@@ -2456,7 +2456,7 @@ var TABLES = (function(tables, widgets){
 				
 				// Inform page we are loaded.
 				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
-					if(UI!==undefined && UI.widgetLoaded!==undefined){
+					if(window.UI!==undefined && UI.widgetLoaded!==undefined){
 						UI.widgetLoaded();
 					}
 				});
@@ -2464,7 +2464,7 @@ var TABLES = (function(tables, widgets){
 				// Apply
 				// =====
 				anyValueChangedE.mapE(function(change){
-					var new_table = clone(validatedDataB.valueNow());
+					var new_table = OBJECT.clone(validatedDataB.valueNow());
 					if(!good(new_table)){
 						return;
 					}
@@ -2695,7 +2695,7 @@ var TABLES = (function(tables, widgets){
 				
 				// Inform page we are loaded.
 				secondRenderB.changes().filterE(function(value){ return good(); }).onceE().mapE(function(){
-					if(UI!==undefined && UI.widgetLoaded!==undefined){
+					if(window.UI!==undefined && UI.widgetLoaded!==undefined){
 						UI.widgetLoaded();
 					}
 				});

@@ -1,16 +1,39 @@
-var qs = require('querystring');
-var crypto = require('crypto');                                
+console.log("Starting Aurora");
+
 const https = require('https'),
 http = require('http'),
-fs = require('fs'),
-path = require('path'),
-util = require('util'),               
-mime = require('mime'),
-lib_url = require('url'),
-WebSocketServer = require('websocket').server;
-//require('buffertools').extend();
+httpLib = http;
+fs = require('fs');
 
 var configPath = (process.argv.length>2)?process.argv[2]:__dirname+"/config.json";
+var configChangedE = FILE.watchE(configPath).delayE(1000);
+//fs.unwatchFile(configPath)
+var config = JSON.parse(fs.readFileSync(configPath, 'utf8').replaceAll("\r", "").replaceAll("\n", ""));
+var configE = F.mergeE(F.oneE(), configChangedE).mapE(function(){
+	try{
+		return fs.readFileSync(configPath, 'utf8').replaceAll("\r", "").replaceAll("\n", "");
+	}
+	catch(e){console.log("Config Error");console.log(e);}
+}).filterUndefinedE().filterRepeatsE().mapE(function(configStr){
+	try{
+		console.log("Loading Config");
+		config = JSON.parse(configStr);
+		return config;}
+	catch(e){console.log("Config Parse Error");console.log(e);}
+});
+if(config.path!==undefined){
+	console.log("Changing to "+config.path);
+    process.chdir(config.path);
+}
+
+const path = require('path'),
+util = require('util'),
+mime = require('mime'),
+lib_url = require('url'),
+qs = require('querystring'),
+crypto = require('crypto');  
+
+WebSocketServer = require('websocket').server;
 
 var DATA = {};
 var AUTHENTICATION = {};
@@ -18,21 +41,9 @@ var AUTHENTICATION = {};
 var HTTP = (function(http, dataManager, authentication){
     http.SID_STRING = 'sesh';
     var TIMEOUT = 3*60*1000;
-    
-    var config = JSON.parse(fs.readFileSync(configPath));
     var themeHtml = fs.readFileSync(__dirname + "/themes/"+config.theme+"/index.html", 'utf8');
     var theme404 = fs.readFileSync(__dirname + "/themes/"+config.theme+"/404.html", 'utf8');
     var faviconExists = fs.existsSync(__dirname + "/themes/"+config.theme+"/favicon.ico");
-    
-    if(config.path!==undefined && process.cwd()!==config.path){
-	    try {
-	      process.chdir(config.path);
-	      console.log('New directory: ' + process.cwd());
-	    }
-	    catch (err) {
-	      console.log('chdir: ' + err);
-	    }
-    }
     
     var httpReqE = F.receiverE();
     var websocketRequestE = F.receiverE();   
@@ -45,47 +56,133 @@ var HTTP = (function(http, dataManager, authentication){
     var midRequestCallbacksE = F.receiverE();
     var midRequestCallbacksB = midRequestCallbacksE.collectE({callbacks: []}, function(callback, state){state.callbacks.push(callback);return state;}).startsWith(SIGNALS.NOT_READY);
     http.addMidRequestCallback = function(cb){midRequestCallbacksE.sendEvent(cb);};    
-    
-    var httpServer = HTTP.startHTTPServerE(config.httpPort, httpReqE);
-    if(config.forceSSL!==true){
-        var webSocket = HTTP.createWebSocket(httpServer, websocketRequestE);
-    }
-    if(fs.existsSync(__dirname+"/data/privatekey.pem") && fs.existsSync(__dirname+"/data/certificate.pem")){
-        LOG.create("Starting HTTPS Server on port "+config.sslPort);    
-        var httpsServer = HTTP.startHTTPSServerE(config.sslPort, httpReqE);
-        var secureWebsocket = HTTP.createWebSocket(httpsServer, websocketRequestE);
-    }
+
+    var configureHttp = function(config){
+    	if(config.httpPort===undefined){
+    		console.log("HTTP Not configured");
+    		return;
+    	}
+    	console.log("Configuring new http server");
+    	http.httpServer = HTTP.startHTTPServerE(config.httpPort, httpReqE);
+    	if(config.forceSSL!==true){
+    		http.websocketServer = HTTP.createWebSocket(http.httpServer, websocketRequestE);
+    	}
+    };
+    var configureHttps = function(config){
+    	if(config.sslPort===undefined){
+    		console.log("SSL has not been configured");
+			return;
+		}
+		var pemPath = config.sslPemfile!==undefined&&fs.existsSync(config.sslPemfile)?config.sslPemfile:__dirname+"/data/privatekey.pem";
+		var privKeyPath = config.sslPrivkey!==undefined&&fs.existsSync(config.sslPrivkey)?config.sslPrivkey:__dirname+"/data/certificate.pem";
+		if(fs.existsSync(pemPath) && fs.existsSync(privKeyPath)){
+	        LOG.create("Starting HTTPS Server on port "+config.sslPort);    
+	        var options = {
+	            key: fs.readFileSync(privKeyPath, 'utf8'),
+	            cert: fs.readFileSync(pemPath, 'utf8')
+	        };
+	        //TODO Handle the config option sslUseSslv3
+	        if(config.sslCipherList!==undefined){
+	        	options.ciphers = config.sslCipherList;
+	        }
+	        http.httpsServer = HTTP.startHTTPSServerE(config.sslPort, httpReqE, options);
+	        http.secureWebsocket = HTTP.createWebSocket(http.httpsServer, websocketRequestE);
+	    }
+		else{
+			console.log("SSL has been configured but the certificate and key cannot be found at "+pemPath+" "+privKeyPath);
+		}
+    };
+    configE.mapE(function(config){
+    	console.log("New Config");
+    	if(http.websocketServer!==undefined){http.websocketServer.shutDown();}	
+    	if(http.httpServer!==undefined){
+    		console.log("Closing existing http server");
+    		http.httpServer.on('close', function(){http.httpServer = undefined; configureHttp(config);});
+	    	http.httpServer.close();
+    		http.httpServer.shutdown();
+    		
+    	}
+    	else{configureHttp(config);}
+    	if(http.secureWebsocketServer!==undefined){http.secureWebsocketServer.shutDown();}
+    	if(http.httpsServer!==undefined){
+    		console.log("Closing existing https server");
+    		http.httpsServer.on('close', function(){http.httpsServer = undefined; configureHttps(config);});
+    		http.httpsServer.close();
+    		http.httpsServer.shutdown();
+    		
+    	}
+    	else{configureHttps(config);}
+    });
     
     LOG.create("Aurora version "+AURORA.VERSION);
     LOG.create('Server started');
     
+    
+    
+    var responseHeadersDef = (function(){
+    	var headers = {"Server":["CTR Portal"], "Date":[(new Date()).toGMTString()]};
+    	return {
+    		set:function(name, value){
+    			if(headers[name]!==undefined){
+    				headers[name].push(value);
+    			}
+    			else{
+    				headers[name] = [value];
+    			}
+    		},
+    		get:function(name){
+    			if(headers[name]!==undefined){
+    				if(headers[name].length===1){
+    					return headers[name][0];
+    				}
+    				else{
+    					return headers[name];
+    				}
+    			}
+    		},
+    		toClient: function(){
+    			var newHeaders = [];
+    			for(var name in headers){
+    				for(var index in headers[name]){
+    					newHeaders.push([name, headers[name][index]]);
+    				}
+    			}
+    			return newHeaders;
+    		}
+    		
+    	};
+    });
+    
     http.httpPreRequestE = httpReqE.mapE(function(arg){
-    	//console.log("httpPreRequestE");
-    	var responseHeaders = {"Server":"CTR Portal", "Date: ":(new Date()).toGMTString()};
+    	var responseHeaders = responseHeadersDef();
     	var request = arg.request;
         var response = arg.response;
         
         request.url = lib_url.parse(request.url);
-
+		try{
+			request.query = request.url.query===undefined?{}:qs.parse(request.url.query);
+       	}
+       	catch(e){
+       		console.log("HTTP Query Error, unable to parse using qs. "+e);
+       	}
         //Build list of cookies
         var cookies = {};
         request.headers.cookie && request.headers.cookie.split(';').forEach(function( cookie ) {
             var parts = cookie.split('=');
             cookies[parts[0].trim()] = (parts[1] || '').trim();
         });
-
+       // console.log("httpPreRequestE: "+cookies.sesh);
         var userId = undefined;
         var groupId = undefined;
         var newTokenPair = undefined;
         //Create session token
-       
-        console.log(cookies[http.SID_STRING]);
         if(cookies[http.SID_STRING]===undefined || (!cookies[http.SID_STRING].contains("-"))){    //TODO: Handle the case where the server reboots but a client still has an active auth token in session
             //var tokenPair = AUTHENTICATION.createNewTokenSeriesPair(AUTHENTICATION.sessionTableB.valueNow(), 10);
             LOG.create("Creating new token");
             newTokenPair = {token: crypto.randomBytes(10).toString("hex"), seriesId: crypto.randomBytes(10).toString("hex")};
             cookies[http.SID_STRING] = newTokenPair.token+"-"+newTokenPair.seriesId;
-            response.setHeader('Set-Cookie',http.SID_STRING+'='+cookies[http.SID_STRING]+'; Path=/;');
+            responseHeaders.set('Set-Cookie',http.SID_STRING+'='+cookies[http.SID_STRING]+'; Path=/;');
+            //console.log("2 Setting token to "+cookies[http.SID_STRING]);
         }
         else{
             var row = TABLES.UTIL.findRow(authentication.sessionTableB.valueNow(), cookies[http.SID_STRING].split("-")[0]);
@@ -93,9 +190,25 @@ var HTTP = (function(http, dataManager, authentication){
                 userId = row.userId;
                 groupId = row.groupId;
             }
+            else{
+            	console.log("Token exists but cant find you in database "+cookies[http.SID_STRING]);
+            	responseHeaders.set('Set-Cookie',http.SID_STRING+'=;gambit=; Path=/;');
+            	//Recreate a new token
+            	//newTokenPair = {token: crypto.randomBytes(10).toString("hex"), seriesId: crypto.randomBytes(10).toString("hex")};
+                //cookies[http.SID_STRING] = newTokenPair.token+"-"+newTokenPair.seriesId;
+                //responseHeaders.set('Set-Cookie',http.SID_STRING+'='+cookies[http.SID_STRING]+'; Path=/;');
+                //console.log("1 Setting token to "+cookies[http.SID_STRING]);
+            }
         }
+        //console.log("Client: "+groupId+" "+cookies[http.SID_STRING]+" "+request.url.pathname);
         request.url.pathname = (request.url.pathname==="/")?"/"+config.defaultPage:request.url.pathname.replaceAll("../", "");
-        return {host: request.headers.host, url:request.url, encrypted: request.client.encrypted, cookies: cookies, userId: userId, groupId: groupId, request: request, response: response, newTokenPair:newTokenPair, responseHeaders:responseHeaders};
+        var ret = {host: request.headers.host, url:request.url, encrypted: request.client.encrypted, cookies: cookies, userId: userId, groupId: groupId, request: request, response: response, newTokenPair:newTokenPair, responseHeaders:responseHeaders};
+        if(cookies.sesh!==undefined){
+        	var sp = cookies.sesh.split("-");
+        	ret.token = sp[0];
+        	ret.seriesId = sp[1];
+        }
+        return ret;
     });
     
     http.newTokenE = http.httpPreRequestE.filterE(function(req){
@@ -108,7 +221,7 @@ var HTTP = (function(http, dataManager, authentication){
     
     http.httpMidRequestE = http.httpPreRequestE.mapE(function(state){
         var preReqCallBacks = preRequestCallbacksB.valueNow();
-        if(preReqCallBacks[index]!==SIGNALS.NOT_READY){
+        if(preReqCallBacks!==SIGNALS.NOT_READY){
             for(var index in preReqCallBacks.callbacks){
                 var val = preReqCallBacks.callbacks[index](state);
                 if(val===false){
@@ -124,7 +237,7 @@ var HTTP = (function(http, dataManager, authentication){
     
     http.httpRequestE = http.httpMidRequestE.mapE(function(state){
         var midReqCallBacks = midRequestCallbacksB.valueNow();
-        if(midReqCallBacks[index]!==SIGNALS.NOT_READY){
+        if(midReqCallBacks!==SIGNALS.NOT_READY){
             for(var index in midReqCallBacks.callbacks){
                 var val = midReqCallBacks.callbacks[index](state);
                 if(val===false){
@@ -137,7 +250,7 @@ var HTTP = (function(http, dataManager, authentication){
         }
         return state;
     }).filterUndefinedE();
-    
+
     
     
     http.httpRequestE.mapE(function(requestData){
@@ -150,6 +263,10 @@ var HTTP = (function(http, dataManager, authentication){
         if (config.forceSSL===true && requestData.encrypted===undefined) {
             var port = config.sslPort===443?"":":"+config.sslPort;
             HTTP.redirect(response, 'https://' + requestData.host.replace(":"+config.httpPort, port) + requestData.url.path);
+        }
+        else if(requestData.url.pathname==="/client.min.js"){		//This is needed for the sourcemap
+        	responseHeaders.set('X-SourceMap',"/client.js.map");
+        	HTTP.sendFile(__dirname + "/client.min.js", request, response, responseHeaders);
         }
         else if(faviconExists && requestData.url.pathname==="/favicon.ico"){
         	HTTP.sendFile(__dirname + "/themes/"+config.theme+"/favicon.ico", request, response, responseHeaders);
@@ -569,21 +686,10 @@ var DATA = (function(dataManager, aurora, http){
 
 
 var STORAGE = (function(storage, aurora){
-    
-	
-	
-	
-	
-	
-	
-	
-	
 	var updateTable = function(objectName, primaryKey, columns, inputE, data, writeTableCB){
 		var pushBackE = F.receiverE();
         var initialTable = TABLES.parseTable(objectName, primaryKey, data, columns);
         var tableUpdateE = F.mergeE(pushBackE, inputE).collectE(initialTable, function(update, table){
-        	console.log("Update");
-        	console.log(update);
             if(!TABLES.UTIL.isTable(update)){
                 update = (update instanceof Array)?update:[update];
                 for(var index in update){
@@ -651,10 +757,7 @@ var STORAGE = (function(storage, aurora){
         }, tableUpdateE.startsWith(initialTable));
         return tableBI;
 	};
-	
-	
-	
-	
+
     storage.createJSONTableBI = function(objectName, primaryKey, columns, inputE){
         var path = __dirname+"/data/"+objectName+".json";
         inputE = inputE || F.zeroE();
@@ -676,9 +779,49 @@ var STORAGE = (function(storage, aurora){
 })(STORAGE || {}, AURORA);
 
 var AURORA = (function(aurora, http){
-    
-    aurora.pluginsLoadedE = F.receiverE();
+	aurora.uncaughtExceptionCallbacks = [];		//Any uncaught exception, can be trapped with these callbacks
+	aurora.exitCallbacks = [];			//Callbacks that occur during graceful shutdown.
+	aurora.pluginsLoadedE = F.receiverE();
 
-    return aurora;
+	aurora.addUncaughtExceptionCallback = function(cb){aurora.uncaughtExceptionCallbacks.push(cb);};
+	aurora.addExitCallback = function(cb){aurora.exitCallbacks.push(cb);};
+	
+	return aurora;
 }(AURORA || {}, HTTP));
+
+process.on('uncaughtException', function (err) {
+	console.log("Aurora Error Handler");
+	
+	for(var index in AURORA.uncaughtExceptionCallbacks){
+		AURORA.uncaughtExceptionCallbacks[index]();
+	}
+	console.log(err);
+	console.log(err.stack);
+	try{
+		fs.writeFile(__dirname+"aurora-crash.log", "NodeJS: "+err+" \n"+err.stack, function(){
+			fs.exists("/var/log/", function(exists){
+				if(exists){
+					fs.writeFile("/var/log/aurora-crash.log", "NodeJS: "+err+" \n"+err.stack, function(){
+						process.exit();
+					});
+				}
+			});
+		});
+		
+	}
+	catch(e){console.log("Unable to write to log... shutdown");process.exit();}
+});
+
+process.on('exit', function (){
+  console.log('Goodbye!');
+});
+  
+process.on( 'SIGINT', function() {
+	console.log( "\nGracefully shutting down from SIGINT (Ctrl-C)" );
+	for(var index in AURORA.exitCallbacks){
+		AURORA.exitCallbacks[index]();
+	}
+	process.exit();
+});
+
 

@@ -14,7 +14,7 @@ var OBJECT = (function(obj){
 	    else if (source instanceof Object || typeof(source)=="object") {
 	       	var copy = {};
 	        for (var attr in source) {
-	            if (source.hasOwnProperty(attr)){copy[attr] = obj.clone(source[attr])};
+	            if (source.hasOwnProperty(attr)){copy[attr] = obj.clone2(source[attr])};
 	        }
 	        return copy;
 	    }else if(typeof(source) === 'string'){
@@ -39,7 +39,7 @@ var OBJECT = (function(obj){
 		if(source instanceof Array) {
 	        var copy = [];
 	        for (var i = 0; i < source.length; i++) {
-	            copy[i] = clone(source[i]);
+	            copy[i] = obj.clone(source[i]);
 	        }
 	        return copy;
 	    }else if(typeof(source) === 'string'){

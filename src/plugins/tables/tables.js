@@ -203,7 +203,7 @@ var TABLES = (function(tables){
 		 * @returns
 		 */
 		formatData: function(tableId, primaryKey, data){			
-			var table = clone(tableDef);
+			var table = OBJECT.clone(tableDef);
 			table.tableMetaData.primaryKey = primaryKey;
 			table.tableMetaData.id = tableId;
 			
@@ -225,7 +225,7 @@ var TABLES = (function(tables){
 					
 					// Create column from key
 					if(table.columnMetaData[key] == undefined){
-						var column_meta = clone(columnMetaDataDef);
+						var column_meta = OBJECT.clone(columnMetaDataDef);
 						column_meta.id = key;
 						column_meta.name = key.replaceAll('_', ' ').toProperCase();
 						column_meta.dataType = typeof value;
@@ -259,14 +259,14 @@ var TABLES = (function(tables){
 		},
 		
 		create:function(table, tableMetaData, columnMetaData, rowMetaData, cellMetaData, data){
-			var table = clone(tableDef);
+			var table = OBJECT.clone(tableDef);
 			
-			table.tableMetaData = tableMetaData || clone(table.tableMetaData);
-			table.columnMetaData = columnMetaData || clone(table.columnMetaData);
-			table.rowMetaData = rowMetaData || clone(table.rowMetaData);
-			table.cellMetaData = cellMetaData || clone(table.cellMetaData);
+			table.tableMetaData = tableMetaData || OBJECT.clone(table.tableMetaData);
+			table.columnMetaData = columnMetaData || OBJECT.clone(table.columnMetaData);
+			table.rowMetaData = rowMetaData || OBJECT.clone(table.rowMetaData);
+			table.cellMetaData = cellMetaData || OBJECT.clone(table.cellMetaData);
 			
-			table.data = clone(data);
+			table.data = OBJECT.clone(data);
 			
 			return table;
 		},
@@ -304,7 +304,7 @@ var TABLES = (function(tables){
 				sourceTable1 = table1;
 				sourceTable2 = table2;
 				
-				var newTable = clone(table1);
+				var newTable = OBJECT.clone(table1);
 				newTable.tableMetaData.id ="("+table1.tableMetaData.id+"+"+table2.tableMetaData.id+")";
 				log("Table Downwards for "+newTable.tableMetaData.id);
 				newTable.data = [];
@@ -313,23 +313,23 @@ var TABLES = (function(tables){
 //					newTable.tableMetaData.id = joinDescriptor;
 //				}
 
-				var table2NewColumns = clone(table2.columnMetaData);
+				var table2NewColumns = OBJECT.clone(table2.columnMetaData);
 				OBJECT.remove(table2NewColumns, joinColumn);
 				jQuery.extend(newTable.columnMetaData, table2NewColumns);
 
 				for(var row1Index in table1.data){
 					for(var row2Index in table2.data){
 						if(table1.data[row1Index][joinColumn]===table2.data[row2Index][joinColumn]){
-							var table2Row = clone(table2.data[row2Index]);
+							var table2Row = OBJECT.clone(table2.data[row2Index]);
 							OBJECT.remove(table2Row, joinColumn);
-							newTable.data[newTable.data.length] = jQuery.extend(clone(table1.data[row1Index]), table2Row);//.splice(table2indexColumn, 1)
+							newTable.data[newTable.data.length] = jQuery.extend(OBJECT.clone(table1.data[row1Index]), table2Row);//.splice(table2indexColumn, 1)
 						}
 					}
 				}
 				return newTable;
 			}, function(newTable, oldTable){
-				var leftTable = clone(sourceTable1);
-				var rightTable = clone(sourceTable2);
+				var leftTable = OBJECT.clone(sourceTable1);
+				var rightTable = OBJECT.clone(sourceTable2);
 				
 				log("Table Upwards for "+newTable.tableMetaData.id);
 				var newTablePrimaryColumn = newTable.tableMetaData.primaryKey;
@@ -370,7 +370,7 @@ var TABLES = (function(tables){
 				if(!good()){
 					return chooseSignal();
 				}
-				var newTable = clone(table);
+				var newTable = OBJECT.clone(table);
 				TABLES.UTIL.checkTablePermissions(newTable, userPriviledge);
 				return newTable;
 			}, function(table){
@@ -390,7 +390,7 @@ var TABLES = (function(tables){
 				}
 				return table;
 			}, function(table){
-				var newTable = clone(table);
+				var newTable = OBJECT.clone(table);
 				for(var rowIndex in newTable.data){
 					var rowPk = TABLES.UTIL.findRowPk(newTable, rowIndex);
 					var found = false;
@@ -435,7 +435,7 @@ var TABLES = (function(tables){
 				sourceTable = table;
 				
 				// Clone table before we remove rows.
-				var newTable = clone(table);
+				var newTable = OBJECT.clone(table);
 				filterRows = [];
 				
 				// Collect rowPks of rows to remove
@@ -460,7 +460,7 @@ var TABLES = (function(tables){
 			}, function(modifiedTable){
 				
 				// Clone table before we add back removed rows
-				var upwardsClone = clone(modifiedTable);
+				var upwardsClone = OBJECT.clone(modifiedTable);
 				
 				// Insert rows that were removed
 				// Note that this will overwrite data from modifiedTable, but that's ok cause we add that back in next code block
@@ -468,9 +468,9 @@ var TABLES = (function(tables){
 					var rowPk = filterRows[index];					
 					var rowIndex = TABLES.UTIL.findRowIndex(sourceTable, rowPk);
 					
-					upwardsClone.data[rowIndex] = clone(sourceTable.data[rowIndex]);
-					upwardsClone.cellMetaData[rowIndex] = clone(sourceTable.cellMetaData[rowIndex]);
-					upwardsClone.rowMetaData[rowPk] = clone(sourceTable.rowMetaData[rowPk]);
+					upwardsClone.data[rowIndex] = OBJECT.clone(sourceTable.data[rowIndex]);
+					upwardsClone.cellMetaData[rowIndex] = OBJECT.clone(sourceTable.cellMetaData[rowIndex]);
+					upwardsClone.rowMetaData[rowPk] = OBJECT.clone(sourceTable.rowMetaData[rowPk]);
 				}
 				
 				// Insert changes from modifiedTable
@@ -480,9 +480,9 @@ var TABLES = (function(tables){
 					var rowPk = modifiedTable.data[rowIndex][sourceTable.tableMetaData.primaryKey];
 					var origRowIndex = TABLES.UTIL.findRowIndex(sourceTable, rowPk);
 					
-					upwardsClone.data[origRowIndex] = clone(modifiedTable.data[rowIndex]);
-					upwardsClone.cellMetaData[origRowIndex] = clone(modifiedTable.cellMetaData[rowIndex]);
-					upwardsClone.rowMetaData[rowPk] = clone(modifiedTable.rowMetaData[rowPk]);
+					upwardsClone.data[origRowIndex] = OBJECT.clone(modifiedTable.data[rowIndex]);
+					upwardsClone.cellMetaData[origRowIndex] = OBJECT.clone(modifiedTable.cellMetaData[rowIndex]);
+					upwardsClone.rowMetaData[rowPk] = OBJECT.clone(modifiedTable.rowMetaData[rowPk]);
 				}
 				return [upwardsClone];
 
@@ -506,11 +506,11 @@ var TABLES = (function(tables){
 						newData[columnNumber] = {};
 					}
 						
-					newData[columnNumber][rowPk] = clone(table.data[rowIndex][columnIndex]);
+					newData[columnNumber][rowPk] = OBJECT.clone(table.data[rowIndex][columnIndex]);
 					
 					
 					if(newRowMetaData[columnNumber]==undefined){
-						newRowMetaData[columnNumber] = clone(table.columnMetaData[columnIndex]);
+						newRowMetaData[columnNumber] = OBJECT.clone(table.columnMetaData[columnIndex]);
 						newRowMetaData[columnNumber]["rotatePk"] = columnNumber;
 					}
 
@@ -518,12 +518,12 @@ var TABLES = (function(tables){
 						if(newCellMetaData[columnNumber]==undefined){
 							newCellMetaData[columnNumber] = {};
 						}
-						newCellMetaData[columnNumber][rowPk] = clone(table.cellMetaData[rowIndex][columnIndex]);
+						newCellMetaData[columnNumber][rowPk] = OBJECT.clone(table.cellMetaData[rowIndex][columnIndex]);
 					}
 				}
 				columnNumber++;
 			}
-			var newTable = TABLES.create(table, clone(table.tableMetaData), clone(table.rowMetaData), newRowMetaData, newCellMetaData, newData);
+			var newTable = TABLES.create(table, OBJECT.clone(table.tableMetaData), OBJECT.clone(table.rowMetaData), newRowMetaData, newCellMetaData, newData);
 			return newTable;	
 		},
 		rotateReverse:function(table){
@@ -546,24 +546,24 @@ var TABLES = (function(tables){
 					if(newData[columnNumber]==undefined){
 						newData[columnNumber] = {};
 					}
-					newData[columnNumber][rowId] = clone(table.data[rowIndex][columnIndex]);
+					newData[columnNumber][rowId] = OBJECT.clone(table.data[rowIndex][columnIndex]);
 					
 					if(newCellMetaData[columnNumber]==undefined){
 						newCellMetaData[columnNumber] = {};
 					}
 					
 					if(table.cellMetaData[rowIndex]!=undefined && table.cellMetaData[rowIndex][columnIndex]!=undefined){
-						newCellMetaData[columnNumber][rowId] = clone(table.cellMetaData[rowIndex][columnIndex]);
+						newCellMetaData[columnNumber][rowId] = OBJECT.clone(table.cellMetaData[rowIndex][columnIndex]);
 					}
 					
 					if(newColumnMetaData[rowId]==undefined && table.rowMetaData[rowPk]!=undefined){
-						newColumnMetaData[rowId] = clone(table.rowMetaData[rowPk]);
+						newColumnMetaData[rowId] = OBJECT.clone(table.rowMetaData[rowPk]);
 						OBJECT.remove(newColumnMetaData[rowId], "rotatePk");
 					}
 				}				
 				columnNumber++;
 			}
-			var newTable = TABLES.create(table, clone(table.tableMetaData), newColumnMetaData, clone(table.columnMetaData), newCellMetaData, newData);
+			var newTable = TABLES.create(table, OBJECT.clone(table.tableMetaData), newColumnMetaData, OBJECT.clone(table.columnMetaData), newCellMetaData, newData);
 			return newTable;	
 		},
 		rotateBI: function(tableBI){
@@ -634,7 +634,7 @@ var TABLES = (function(tables){
 				return table;
 			},
 			function(tab){
-				var table = clone(tab);
+				var table = OBJECT.clone(tab);
 				var newData = [];
 				var newCellMetaData = [];
 				

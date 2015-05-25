@@ -39,16 +39,16 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
         return message.command===aurora.COMMANDS.UPDATE_TOKEN && message.data.token!=undefined;
     }).mapE(function(messagePacket){
         aurora.token = messagePacket.data.token;
-        if(messagePacket.data.expiry!==undefined){
-            var date = new Date();
-            date.setTime(messagePacket.data.expiry);    //TODO: Apply timezone offset   -(date.getTimezoneOffset()*60000)
-            document.cookie="sesh="+messagePacket.data.cookie+"; expires="+date.toGMTString()+"; path=/";      //Thu, 18 Dec 2013 12:00:00 GMT
-        }
-        else{
-            document.cookie="sesh="+messagePacket.data.cookie+"; path=/"; 
-        }
-        console.log(document.cookie);
-        return {userId: messagePacket.data.userId, groupId: messagePacket.data.groupId};
+        //What if client and server clocks are different?
+        //if(false && messagePacket.data.expiry!==undefined){
+        //    var date = new Date();
+        //    date.setTime(messagePacket.data.expiry);    //TODO: Apply timezone offset   -(date.getTimezoneOffset()*60000)
+        //    document.cookie="sesh="+messagePacket.data.cookie+"; expires="+date.toGMTString()+"; path=/";      //Thu, 18 Dec 2013 12:00:00 GMT
+        //}
+        //else{
+        	document.cookie="sesh="+messagePacket.data.cookie+"; path=/"; 
+        //}
+        return {userId: messagePacket.data.userId, groupId: messagePacket.data.groupId}
     }).startsWith({userId: -1, groupId: 1});
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
@@ -148,9 +148,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                         return chooseSignal();
                     }
                     var newTable = OBJECT.clone(table);
-                    newTable.tableMetaData.readonly = true;
                     //newTable.columnMetaData.expiry.renderer = WIDGETS.renderers.TimestampDiff;
                     newTable.columnMetaData.expiry.dataType = "TimestampDiff";
+                    newTable.tableMetaData.readonly = true;
                     return newTable;
                 },function(table){
                     return [table];
@@ -268,7 +268,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                F.liftB(function(connected, authTokenSent){
                    if(good(connected) && connected===true){
                       LOG.create("LOgging Out");
-                      AURORA.sendToServer({command: AURORA.COMMANDS.UNAUTHENTICATE, data: {command: AURORA.COMMANDS.UNAUTHENTICATE,token: getCookie("sesh")}}); 
+                      AURORA.sendToServer({command: AURORA.COMMANDS.UNAUTHENTICATE, data: {command: AURORA.COMMANDS.UNAUTHENTICATE,token: cookies.getCookie("sesh")}}); 
                       document.cookie = 'sesh=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
                    }
                },aurora.connectedB, aurora.authTokenRequestE.startsWith(SIGNALS.NOT_READY));

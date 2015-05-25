@@ -1,17 +1,15 @@
 var AUTHENTICATION = (function(authentication, http){
     DATA.httpMessageInE = F.zeroE();
 
-    var activeSessionExpiry = 30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
+    var activeSessionExpiry = 120000;//30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
     var sessionExpiryClean = 30000;   //How often to check for expired session tokens
     var persistentSessionExpiry = 2419200000;  //How long a persistent token should last.
-
     
     var customLoginReceiverE = F.receiverE();
     authentication.customLogin = function(token, seriesId, userId, groupId, rememberMe, clientId, connection){
+    	//console.log({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
         customLoginReceiverE.sendEvent({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
     };
-
-    
 
     authentication.GROUPS = {PUBLIC:0, ADMINISTRATOR: 1};
 
@@ -29,8 +27,6 @@ var AUTHENTICATION = (function(authentication, http){
         password:{name: "Password", type: "password"},
         groupId:{name: "Group Id", type: "number"}
     }).sendToClients("AURORA_USERS", AURORA.DATATYPE.UTF8);
-
-
 
     var passwordLoginE = http.userAuthenticationE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE && packet.data.data.password!==undefined;}).mapE(function(dataPacket){
         var clientId = dataPacket.clientId;
@@ -62,9 +58,9 @@ var AUTHENTICATION = (function(authentication, http){
             LOG.create("Password Authentication Success");
             return {user: currentUser, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: dataPacket.connection};
         }
-        else {
+        else{
             return {connection: dataPacket.connection, message: (foundUser===true && currentUser===undefined)?"Incorrect Password":"Unable to find user in database"};
-            }
+        }
     }).mapE(function(packet){
         if(packet.user!==undefined){
             packet.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTHENTICATE, data: {message:"Successfully Logged In!"}}));
@@ -75,9 +71,7 @@ var AUTHENTICATION = (function(authentication, http){
         }
     }).filterUndefinedE();
     //HTTP and WebSocket Logout Event
-    var logoutCommandE = F.mergeE(http.httpRequestE.filterE(function(packet){return packet.url==="/logout";}), http.userAuthenticationE.filterE(function(packet){return packet.command===AURORA.COMMANDS.UNAUTHENTICATE;})).mapE(function(packet){
-        return {clientId: packet.clientId, token: packet.token, logout:true};
-    });    
+    authentication.logoutE = F.mergeE(http.httpRequestE.filterE(function(packet){return packet.url.pathname==="/logout";}), http.userAuthenticationE.filterE(function(packet){return packet.command===AURORA.COMMANDS.UNAUTHENTICATE;}));    
     var expiredSessionsCleanE = F.timerE(sessionExpiryClean).mapE(function(){return {cleanExpiry: true};});
     var sessionTableUpE = F.receiverE();
     try{
@@ -86,16 +80,13 @@ var AUTHENTICATION = (function(authentication, http){
     catch(e){
     	var sessionTable = TABLES.parseTable("sessionTable", "token", [], {token:{name:"Token", type: "string"},userId:{name:"User Id", type: "number"},groupId:{name:"Group Id", type: "number"},seriesId:{name:"Series Id", type: "number"},instances:{name:"Instances", type: "array"},expiry:{name:"Expiry", type: "datetime"},persistent:{name:"persistent", type: "boolean"}});    
     }
-    var sessionTableStateE = F.mergeE(HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), F.mergeE(customLoginReceiverE, passwordLoginE).tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}}, function(taggedPacket, state){
+    var sessionTableStateE = F.mergeE(authentication.logoutE.tagE("LOGOUT"), HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), F.mergeE(customLoginReceiverE, passwordLoginE).tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}}, function(taggedPacket, state){
         //Todo maintain a clientId to token map.
         //Use this to close properly.
     	var sessionTable = state.sessionTable;
         var clientMap = state.clientMap;
         var update = taggedPacket.value;
-       // console.log("SessionTable");
-       // console.log(taggedPacket);
-       // console.log(state);
-       // console.log("");
+       // console.log(taggedPacket.tag+"1 "+sessionTable.data.length);
         switch(taggedPacket.tag){
             case "TABLE_UP":{
                 //TODO: rebuild clientMap;
@@ -120,14 +111,19 @@ var AUTHENTICATION = (function(authentication, http){
                 }
                 break;
             }
+            case "LOGOUT":{   
+            	TABLES.UTIL.removeRow(sessionTable, update.token);
+                break;
+            }
             case "PASSWORD_LOGIN":{
                 var row = TABLES.UTIL.findRow(sessionTable, update.token);
-                if(row && update.clientId && update.user){                      //User Login
-                    row.userId = update.user.userId;
+                if(row && update.user){                      //User Login
+                	//console.log(row);
+                	row.userId = update.user.userId;
                     row.groupId = update.user.groupId;
                     row.persistent = update.rememberMe;
                     row.expiry = DATE.getTime()+(update.rememberMe?persistentSessionExpiry:activeSessionExpiry);
-                    if(update.connection){
+                    if(update.connection && update.clientId){
                     	update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));
                     }
                 }
@@ -139,18 +135,17 @@ var AUTHENTICATION = (function(authentication, http){
                     if(!ARRAYS.contains(row.instances, update.clientId)){
                         row.instances.push(update.clientId);    
                     }
-                    var tokenPair = AUTHENTICATION.createNewTokenSeriesPair(sessionTable, 10, update.seriesId);
-                    row.token = tokenPair.token;
-                    row.expiry = DATE.getTime()+(row.persistent?persistentSessionExpiry:activeSessionExpiry);
+                    //var tokenPair = AUTHENTICATION.createNewTokenSeriesPair(sessionTable, 10, update.seriesId);
+                   // row.token = tokenPair.token;
+                   // row.expiry = DATE.getTime()+(row.persistent?persistentSessionExpiry:activeSessionExpiry);
                     
-                    for(var index in row.instances){
-                        clientMap[row.instances[index]] = row.token;
-                    }
-
+                    //for(var index in row.instances){
+                      //  clientMap[row.instances[index]] = row.token;
+                    //}
                     //TODO: Should this token re create happen on each HTTP request? What does this mean for http security?
-                    //TODO: Add longer expiry if remember me login has happened.
-                    //, expiry:row.expiry                
-                    update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {message: "Successfully Logged In!", cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));   
+                    //TODO: Add longer expiry if remember me login has happened.      
+                    
+                    //update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {message: "Successfully Logged In!", cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));   
                 }
                 else if(update.seriesId!==undefined){   //Invalid token, possible token theft.
                     var deleteTokens = TABLES.UTIL.findRows(sessionTable, "seriesId", update.seriesId);
@@ -181,14 +176,15 @@ var AUTHENTICATION = (function(authentication, http){
                 LOG.create("Session table updater, unhandled TAG");
             }
         }
+        //console.log("sessionTable");
+        //console.log(sessionTable.data);
+        //console.log(taggedPacket.tag+"2 "+sessionTable.data.length);
+        //console.log(sessionTable.data);
         return {sessionTable:sessionTable, clientMap: clientMap};
     });//.mapE(function(state){return state.sessionTable;});
     
-    authentication.usersTableBI = usersTableBI;
-    
     authentication.sessionTableE = sessionTableStateE.mapE(function(state){return state.sessionTable;});
     authentication.sessionTableB = authentication.sessionTableE.startsWith(SIGNALS.NOT_READY);
-    
     authentication.clientMapB = sessionTableStateE.mapE(function(state){return state.clientMap;}).startsWith(SIGNALS.NOT_READY);;
     
     F.liftBI(function(table){
@@ -197,9 +193,8 @@ var AUTHENTICATION = (function(authentication, http){
         sessionTableUpE.sendEvent(table);
     }, authentication.sessionTableB).sendToClients("AURORA_SESSIONS", AURORA.DATATYPE.UTF8);
     
+    /*
     authentication.sessionTableE.calmE(1000).mapE(function(){
-        
-    	return; //Do not cache old sessions
     	var table = authentication.sessionTableB.valueNow();
         var newTable = [];
         for(var rowIndex in table.data){
@@ -211,13 +206,13 @@ var AUTHENTICATION = (function(authentication, http){
         }
         //LOG.create("Writing sessions to file");
         try{
-        fs.writeFileSync(__dirname+"/data/aurora.sessions.json", JSON.stringify(newTable), 'utf8');
+            fs.writeFileSync(__dirname+"/data/aurora.sessions.json", JSON.stringify(newTable), 'utf8');
         }
         catch(e){
         	console.log(e);
         }
     });
-    
+    */
     authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "dataSource", {
         dataSource:{name: "Data Source", type: "string"},
         groups:{name: "Groups", type: "map"},

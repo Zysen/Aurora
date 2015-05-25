@@ -26,13 +26,16 @@
  */
 
 goog['require']("LOG");
-
+var CKEDITOR = undefined;
 var COOKIES = (function(cookieLib){
 	cookieLib.getCookie = function(name) {
       var value = "; " + document.cookie;
       var parts = value.split("; " + name + "=");
       if (parts.length == 2) return parts.pop().split(";").shift();
     };
+    cookieLib.remove = function( name ) {
+    	document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+	};
     return cookieLib;
 }(COOKIES || {}));
 
@@ -49,34 +52,42 @@ var WIDGETS = (function(widgets, OBJECT){
 		widgetTypes[key] = obj;
 		return obj;
 	};
+		
+	//TODO: Deprecated, this is legacy.
+	widgets.instantiateWidget = function(widget_name, args){
+    	// Find definition
+    	if(widgetTypes[widget_name]==undefined){
+			LOG.create("Unable to find definition for widget "+widget_name);
+			return;
+		}
+    	widgetInstanceCount[widget_name] = (widgetInstanceCount[widget_name] == undefined) ? 1 : ++widgetInstanceCount[widget_name];
+		var widgetType = widgetTypes[widget_name];
+		var instanceId = widget_name+widgetInstanceCount[widget_name];
+		var cleanup = [];
+		var widget = new widgetType(instanceId, arguments, cleanup);
+		return {instanceId:instanceId, widget:widget, cleanup:cleanup};
+	};
+    
 	widgets.inflateWidgets = function(element, inflatedWidgetSet){
 		if(inflatedWidgetSet==undefined){
 			inflatedWidgetSet = [];
 		}
 
 		if(element.className!=undefined && typeof(element.className)==="string" && element.className.startsWith("widget_")){
-			var widgetName = element.className.replace("widget_", "");
-			if(widgetTypes[widgetName]==undefined){
-				LOG.create("Unable to find definition for widget "+widgetName);
-				return;
-			}
-			if(widgetInstanceCount[widgetName]==undefined){
-				widgetInstanceCount[widgetName] = 0;
-			}
-			widgetInstanceCount[widgetName]++;
-	    	
-	    	var instanceId = widgetName+widgetInstanceCount[widgetName];
-	    	var arguments = {};
+			var widget_name = element.className.replace("widget_", "");
+			
+			var arguments = {};
 	    	if(element.title!=undefined&&element.title.length>0){
 	        try{arguments = JSON.parse(element.title.replaceAll("'", '"'));}
 			catch(e){LOG.create("Unable to parse JSON from widget title arguments");LOG.create(e);}
 			}
-			var widgetType = widgetTypes[widgetName];
-			
-			var cleanUp = [];
-			var widget = new widgetType(instanceId, arguments, cleanUp);	
-			
-			var wBuild = widget.build();			
+			console.log("widgets inflatWidgets");
+			var inflated = widgets.instantiateWidget(widget_name, arguments);
+			if(inflated===undefined){
+				return;
+			}
+
+			var wBuild = inflated.widget.build();			
 			if(!wBuild){
 			 wBuild = DOM.create("span");
 			}
@@ -87,8 +98,8 @@ var WIDGETS = (function(widgets, OBJECT){
 				elementParent.replaceChild(wBuild, element);
 			}
 
-			widgetInstances[instanceId] = {widget: widget, widgetName:widgetName, instanceId:instanceId, element:elementParent, cleanUp:cleanUp};
-			inflatedWidgetSet.push(widgetInstances[instanceId]);
+			widgetInstances[inflated.instanceId] = {widget: inflated.widget, widget_name:widget_name, instanceId:inflated.instanceId, element:elementParent, cleanUp:inflated.cleanUp};
+			inflatedWidgetSet.push(widgetInstances[inflated.instanceId]);
 		}
 		for(var i=0; i<element.children.length;i++){
 			widgets.inflateWidgets(element.children[i], inflatedWidgetSet);
@@ -98,8 +109,13 @@ var WIDGETS = (function(widgets, OBJECT){
 	widgets.deflateWidgets = function(element){
 		for(var instanceId in widgetInstances){
 			if(widgetInstances[instanceId].element==element || DOM.elementIsDescendant(element, widgetInstances[instanceId].element)){
-				widgetInstanceCount[widgetInstances[instanceId].widgetName]--;
-				widgetInstances[instanceId].widget.destroy();
+				widgetInstanceCount[widgetInstances[instanceId].widget_name]--;
+				if(widgetInstances[instanceId].widget.destroy){
+					widgetInstances[instanceId].widget.destroy();
+				}
+				else{
+					console.log("Cannot cleanup widget "+instanceId+", no destory method can be found.");
+				}
 				for(var index in widgetInstances[instanceId].cleanUp){
 					widgetInstances[instanceId].cleanUp[index].purge();	
 				}
@@ -112,18 +128,25 @@ var WIDGETS = (function(widgets, OBJECT){
 			inflatedWidgetSet = widgetInstances;
 		}
 		for(var index in inflatedWidgetSet){
-			inflatedWidgetSet[index].widget.load();
+			if(inflatedWidgetSet[index].widget.load){
+				inflatedWidgetSet[index].widget.load();
+			}
+			else if(inflatedWidgetSet[index].widget.loader){	//Legacy support
+				inflatedWidgetSet[index].widget.loader();
+			}
 		}
 	};
 	widgets.get = function(key){
 		return widgetTypes[key];
 	};
+	
 	return widgets;
 }(WIDGETS || {}, OBJECT));
 
 var AURORA = (function(aurora, F, cookies){
 	aurora.settings = {scriptPath: parent.window.location.origin+"/"};
 	var sendToServerE = F.receiverE();
+	var changePageE = F.receiverE();
 	var cookie = cookies.getCookie("sesh").split("-");
     aurora.token = cookie[0];
 	
@@ -134,11 +157,16 @@ var AURORA = (function(aurora, F, cookies){
 	});
 	//Create a documents and a window behaviour. That is NOT_READY until onload fires.
 
-	aurora.pageNameE = F.extractEventE(window, 'popstate').skipFirstE().mapE(function(ev){
-		var pageName = document.URL.replace(aurora.settings.scriptPath, '');
-		return (ev.state && ev.state.page)?ev.state.page:(pageName.length==0?aurora.settings.defaultPage:pageName);
+	aurora.pageNameE = F.mergeE(changePageE, 
+		F.extractEventE(window, 'popstate').skipFirstE().mapE(function(ev){	//TODO: Check skipFirst doesn't effect Firefox.
+			var pageName = document.URL.replace(aurora.settings.scriptPath, '');
+			return (ev.state && ev.state.page) ? ev.state.page : pageName;
+		})
+	).mapE(function(pageName){
+		return pageName.length ? pageName : aurora.settings.defaultPage;
 	});	
-	aurora.pageNameB = aurora.pageNameE.startsWith(SIGNALS.NOT_READY);
+	
+	aurora.pageNameB = aurora.pageNameE.startsWith(window.location.pathname.substring(1));
 	aurora.dataUpdateE = F.mergeE(sendToServerE, aurora.pageNameE.mapE(function(pageName){return {command: aurora.COMMANDS.REQUEST_PAGE, data: pageName};}));
 	
 	aurora.connectionStatusE = aurora.sendToClientE.filterE(function(packet){
@@ -192,8 +220,7 @@ var AURORA = (function(aurora, F, cookies){
 	aurora.pageBuiltE = aurora.sendToClientE.filterE(function(message){
 		return message.command==aurora.RESPONSES.PAGE;
 	}).mapE(function(response){
-		if(CKEDITOR && CKEDITOR.instances.content){
-			console.log(CKEDITOR.instances.content.destroy)
+		if(CKEDITOR!=null && CKEDITOR.instances.content){
 			CKEDITOR.instances.content.destroy();
 		}
 		WIDGETS.deflateWidgets(DOM.get("content"));
@@ -220,6 +247,16 @@ var AURORA = (function(aurora, F, cookies){
 	aurora.sendEvent = function(channelID, data){
 		aurora.sendToServer({command: AURORA.COMMANDS.UPDATE_DATA,key:channelID, data: data});
 	};
+	
+	aurora.changePage = function(page){
+		//if(history){
+			//history.pushState(page, page, page);
+		//}
+		//console.log("Changing page to "+page);
+		window.location = page;
+		//changePageE.sendEvent(page);
+		return false;
+	};
 
 	return aurora;
 }(AURORA || {}, F, COOKIES));
@@ -235,7 +272,6 @@ var DATA = (function(dataManager, F, aurora){
 		return aurora.sendToClientE.filterE(function(message){
 			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
 		}).mapE(function(messagePacket){return messagePacket.data;});
-		return requests[instanceId];
 	};
 	
 	dataManager.requestE = function(instanceId, objectName){
@@ -264,12 +300,12 @@ var DATA = (function(dataManager, F, aurora){
 			if(newState.command==="update"){	//Whole table
 				state = newState.data;
 			}
-			else if(newState==="chunk"){		//Chunk of table
+			//else if(newState==="chunk"){		//Chunk of table
 				//TODO: Add new chunks to state
-			}
-			else if(newState==="change"){		//Changeset for table
+			//}
+			//else if(newState==="change"){		//Changeset for table
 				//TODO: Run through change set add changes to state
-			}
+			//}
 			return state;
 		});
 		
@@ -329,7 +365,6 @@ var DATA = (function(dataManager, F, aurora){
 				 }
 				 return false;
 			}).mapE(function(packet){
-				console.log(packet);
 				return {data: packet.data};
 			});
 		 };
@@ -388,7 +423,7 @@ var DATA = (function(dataManager, F, aurora){
 			reconnected = true;
 		}
 		if(typeof(WebSocket)!="undefined"){
-			webSocket = new WebSocket((location.protocol==="https:"?"wss":"ws")+'://'+location.hostname+(location.port ? ':'+location.port: ''), 'aurora_channel');
+			webSocket = new WebSocket((location.protocol==="https:"?"wss":"ws")+'://'+location.hostname+(location.port ? ':'+location.port: '')+'/ie10fix', 'aurora_channel');	//IE10 requires something after the main address.
 		    dataManager.webSocket = webSocket;
 		    webSocket.onopen = function () {
 		    	LOG.create("Websocket connection established");
@@ -454,13 +489,3 @@ var DATA = (function(dataManager, F, aurora){
 	dataManager.connect();
 	return dataManager;
 }(DATA || {}, F, AURORA));
-
-window.changePage = function(page){
-	onsole.log("ChangePage");
-	console.log(page);
-	if(history){
-		history.pushState(page, page, page);
-	}
-	AURORA.sendToServer({command: AURORA.COMMANDS.REQUEST_PAGE, data: page});
-	return false;
-};
