@@ -1,22 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>WebApp TestBed</title>
+<title>Aurora</title>
 <script type="text/javascript" src="/client.js"></script>
 <style type="text/css" media="all">@import "/style.css";</style>  
 {HEAD}                                    
 </head>
 <body>
-<div id="maincontainer">
-    <div id="menu">
-            <ul>
-                <li><a href="/home" onclick="return changePage('/home');">Home</a></li>
-                <li><a href="/admin" onclick="return changePage('/admin');">Administration</a></li>
-                <li><a href="/logout" onclick="return changePage('/logout');">Logout</a></li>
-            </ul>
-        </div>
-    <div id="content">{CONTENT}</div> 
-    <div id="footer">Footer</div>
+<div id="header">
+	<div id="menu">
+	    <ul>
+	        <li><a href="/home" onclick="return changePage('/home');">Home</a></li>
+	        <li><a href="/docs" onclick="return changePage('/docs');">Documentation</a></li>
+	        <li><a href="/chat" onclick="return changePage('/chat');">Chat</a></li>
+	        <li><a href="/share" onclick="return changePage('/share');">File Sharing</a></li>
+	        <li><a href="/admin" onclick="return changePage('/admin');">Administration</a></li>
+	        <li><a href="/logout" onclick="return changePage('/logout');">Logout</a></li>
+	    </ul>
+	</div>
+	<div id="savePage" style="position: absolute; top: 0px; right: 0px;"><div class="widget_EditPage">&nbsp;</div><div class="widget_dayz_playersOnRadar"></div></div>
 </div>
+<div id="content">{CONTENT}</div> 
 </body>
 </html>
