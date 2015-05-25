@@ -268,11 +268,34 @@ var DATA = (function(dataManager, F, aurora){
 	
 	dataManager.sendToServer = aurora.sendEvent; 
 	
-	dataManager.receiveE = function(instanceId, objectName){
-		return aurora.sendToClientE.filterE(function(message){
+	dataManager.receiveE = function(instanceId, objectName, binaryPlugin, binaryChannel){
+
+		var binaryStreamE = aurora.sendToClientE.filterE(function(message){
+			if(message.command===undefined && message instanceof ArrayBuffer){
+				
+				var key = new Uint16Array(message, undefined, 2);
+				//console.log("Possible AB 2", key[0]+"==="+binaryPlugin+" && "+key[1]+"==="+binaryChannel,(key[0]===binaryPlugin&&key[1]===binaryChannel));
+				return key[0]===binaryPlugin&&key[1]===binaryChannel;
+			}
+			return false;
+		}).mapE(function(ab){
+			return ab.slice(4);
+		});
+
+		var textStream = aurora.sendToClientE.filterE(function(message){
 			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
 		}).mapE(function(messagePacket){return messagePacket.data;});
+
+		return F.mergeE(binaryStreamE, textStream);
 	};
+	
+	
+	
+	
+	
+	
+	
+	
 	
 	dataManager.requestE = function(instanceId, objectName){
 		referenceCount[objectName] = referenceCount[objectName]==undefined?1:(referenceCount[objectName]+1);
@@ -353,8 +376,10 @@ var DATA = (function(dataManager, F, aurora){
 		}
 	};
 	
-	dataManager.getChannelE = function(instanceId, channelId){
-		 var channelE = dataManager.receiveE(instanceId, channelId);
+	dataManager.getChannelE = function(instanceId, pluginKey, channelId){
+		var pluginId = aurora.plugins[pluginKey];
+		var newKey = pluginKey + "_" + (channelId || "");
+		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId || 1);
 		 channelE.filterCommandsE = function(){
 			 var args = arguments;
 			 return channelE.filterE(function(packet){
@@ -368,8 +393,22 @@ var DATA = (function(dataManager, F, aurora){
 				return {data: packet.data};
 			});
 		 };
-		 channelE.send = function(command, data){
-			 dataManager.sendToServer(channelId, {command: command, data: data});
+		 var littleEndian = true;
+		 channelE.send = function(data){
+		 	if(typeof(data) === "object"){
+		 		data = JSON.stringify(data);
+		 	}
+		 	if(data instanceof ArrayBuffer || typeof(data) === "string"){
+				var wsProtocol = new DataView(new ArrayBuffer(4));
+				wsProtocol.setUint16(0, pluginId, littleEndian);
+				wsProtocol.setUint16(2, channelId, littleEndian);
+		 		var blob = new Blob([wsProtocol, data]);
+		 		dataManager.sendToServer(newKey, blob);
+		 	}
+		 	else{
+		 		console.log("Error, channelE.send Unknown type "+typeof(data)+" cannot send data");
+		 	}
+			
 		 };
 		 return channelE;
 	};
@@ -442,30 +481,20 @@ var DATA = (function(dataManager, F, aurora){
 		    webSocket.onerror = function (error) {
 		        aurora.sendToClient({command: aurora.COMMANDS.CONNECTION_STATUS, data: aurora.STATUS.ERRORED});
 		    };
+		    
 		    //Messages from server to GUI
 		    webSocket.onmessage = function (packet) {
-		    //	try{
+		    	var reader = new FileReader();
+			    reader.onload = function() {
+				   aurora.sendToClient(reader.result);
+				};
+		    	try{
 		    	    if(packet.data instanceof Blob){
-                        var fileReader = new FileReader();
-                        fileReader.onload = function() {
-                            //console.log("");
-                            //console.log(this.result);
-                            aurora.sendToClient(extractData(this.result));
-                        };
-                        //fileReader.readAsArrayBuffer(packet.data);
-                        
-                        
-                       // LOG.create(packet.data);
-                        
-                        fileReader.readAsBinaryString(packet.data, "utf8");
-                        //fileReader.readAsText(packet.data, "utf8");
-                        //console.log(packet.data);
+						reader.readAsArrayBuffer(packet.data);
 		    	    }
-		    	    else{
-		    	    	
+		    	    else{  	
 		    	        aurora.sendToClient(JSON.parse(packet.data));
 		    	    }
-			/*
 		    	}
 				catch(e){
 					aurora.sendToClient(aurora.ERRORS.DATA_UPDATE_PARSE(e));
@@ -473,7 +502,7 @@ var DATA = (function(dataManager, F, aurora){
 					LOG.create(e);
 					console.log(packet.data);
 				}
-				*/
+				
 		    };
 		}else{
 			LOG.create("Sorry but your browser does not support WebSockets");	
@@ -484,8 +513,21 @@ var DATA = (function(dataManager, F, aurora){
 			LOG.create("Unabled to send data, WebSocket has not been initialized");
 			return;
 		}
-		webSocket.send(JSON.stringify({token: aurora.token, message:packet}));
+		if(packet.data instanceof ArrayBuffer || packet.data instanceof Blob){
+			webSocket.send(packet.data);
+		}
+		else{
+			webSocket.send(JSON.stringify({token: aurora.token, message:packet}));	//TODO: Sending the token in the message? Thats secure.
+		}
     });
 	dataManager.connect();
 	return dataManager;
 }(DATA || {}, F, AURORA));
+
+window.changePage = function(page){
+	if(history){
+		history.pushState(page, page, page);
+	}
+	AURORA.sendToServer({command: AURORA.COMMANDS.REQUEST_PAGE, data: page});
+	return false;
+};

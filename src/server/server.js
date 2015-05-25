@@ -250,8 +250,6 @@ var HTTP = (function(http, dataManager, authentication){
         }
         return state;
     }).filterUndefinedE();
-
-    
     
     http.httpRequestE.mapE(function(requestData){
         var request = requestData.request;
@@ -334,12 +332,11 @@ var HTTP = (function(http, dataManager, authentication){
     http.wsConnectionOpenE.mapE(function(packet){  //Sideeffects and updaters go here.
         packet.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.VERSION, data: AURORA.VERSION}));
     });
-
-    
-    
-    
     
     http.wsEventE = F.receiverE();
+    http.wsBinaryUpdate = http.wsEventE.filterE(function(e){
+    	return e.data!==undefined;
+    });
     
     http.wsConnectionOpenE.mapE(function(packet){
         
@@ -347,7 +344,12 @@ var HTTP = (function(http, dataManager, authentication){
             http.wsEventE.sendEvent(SIGNALS.newError("Websocket Connection Error: "+error));
         });
         packet.connection.on('message', function(message){
-            http.wsEventE.sendEvent({message: message, clientId:packet.clientId, connection:packet.connection});
+        	if(message.type==="binary"){
+        		http.wsEventE.sendEvent({data: message.binaryData, clientId:packet.clientId, connection:packet.connection});
+        	}
+        	else{
+            	http.wsEventE.sendEvent({message: message, clientId:packet.clientId, connection:packet.connection});
+           }
         });
         packet.connection.on('close', function(reasonCode, description) {
             //OBJECT.delete(connections, id); 
@@ -406,28 +408,37 @@ var HTTP = (function(http, dataManager, authentication){
     return http;
 }(HTTP || {}, DATA, AUTHENTICATION));
 
-
-
-
-
-
-
-
 var DATA = (function(dataManager, aurora, http){
-	
 	//Handle client Data Channel signals.
-	dataManager.receiveE = function(channelID){
-		return http.websocketE.filterE(function(packet){
-			return (packet.data.command!==undefined && packet.data.command===AURORA.COMMANDS.UPDATE_DATA && packet.data.key===channelID);
+	dataManager.receiveE = function(pluginKey, pluginId, channelId){
+		var binaryStreamE = http.wsBinaryUpdate.filterE(function(packet){
+			if(packet.data.command===undefined && Buffer.isBuffer(packet.data)){
+				return packet.data.readUInt16LE(0)===pluginId && packet.data.readUInt16LE(2) === channelId;
+			}
+			return false;
 		}).mapE(function(packet){
+			return {connection: packet.connection, token: packet.token, data:packet.data.slice(4)};
+		});
+		
+		var textStreamE = http.websocketE.filterE(function(packet){
+			return (packet.data.command!==undefined && packet.data.command===AURORA.COMMANDS.UPDATE_DATA && packet.data.key===pluginKey);
+		}).mapE(function(packet){	
 			return {connection: packet.connection, token: packet.token, data:packet.data.data};
 		});
+		
+		return F.mergeE(textStreamE, binaryStreamE);
 	};
     
 	dataManager.sendToClient = function(connection, channelID, data){
-    	connection.sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: channelID, data: data}));
+    	if(Buffer.isBuffer(data)){
+        	var byteUpdateCommand = ('"'+AURORA.COMMANDS.UPDATE_DATA+'","'+channelID+'"').toByteArray();
+            var command = byteUpdateCommand.concat(value);
+            connection.sendBytes(new Buffer(command));
+        }
+        else{
+           connection.sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: channelID, data: data}));
+        }	
     };
-    
     
 	dataManager.connectionsB = F.mergeE(http.wsConnectionCloseE, http.wsConnectionOpenE).collectE({}, function(packet, connections){
         if(packet.close!==undefined && connections[packet.clientId]!==undefined){
@@ -453,7 +464,6 @@ var DATA = (function(dataManager, aurora, http){
 		var dataBI = dataSourcesB.valueNow()[packet.data.key].sendEvent(packet.data.data);
 		return {connection: packet.connection, token: packet.token, data:packet.data.data};
 	});
-    
     
     dataManager.dataRegE = F.mergeE(http.wsConnectionCloseE, http.dataRegistrationE).collectE({}, function(websocketPacket, dataReg){  
         var clientId = websocketPacket.clientId; 
@@ -498,15 +508,10 @@ var DATA = (function(dataManager, aurora, http){
                 }
             }
         }
-        //LOG.create("Data Reg Updated "+clientId);
-        //LOG.create(dataReg);
         return dataReg;
     });
     dataManager.dataRegB = dataManager.dataRegE.startsWith(SIGNALS.NOT_READY);
 
-
-
-    
     //Determine who to send this data to.
     dataManager.sendData = function(key, value, type){
         var DATA_REG = dataManager.dataRegB.valueNow();        
@@ -516,6 +521,7 @@ var DATA = (function(dataManager, aurora, http){
                 var clientId = DATA_REG[key][index];
                 if(connections[clientId]!=undefined){
                     if(type==="binary"){
+                        console.log("dataManager.sendData");
                         var byteUpdateCommand = ('"'+AURORA.COMMANDS.UPDATE_DATA+'","'+key+'"').toByteArray();
                         var command = byteUpdateCommand.concat(value);
                         connections[clientId].sendBytes(new Buffer(command));
@@ -540,7 +546,6 @@ var DATA = (function(dataManager, aurora, http){
             });
         }
         else if(data instanceof F.Behavior){
-        	
             F.liftB(function(key, value, type){
                 dataManager.sendData(key, value, type);
             }, F.constantB(key), data, F.constantB(type));
@@ -606,7 +611,7 @@ var DATA = (function(dataManager, aurora, http){
     		tableBI.sendEvent(state);
     	});
     	*/
-    }
+    };
     
     
     
@@ -655,9 +660,12 @@ var DATA = (function(dataManager, aurora, http){
         return TABLES.parseTable("dataSources", "key", newData, {index: {name: "Index", type: "number"}, key:{name: "Key", type: "string"}});
     }).startsWith(SIGNALS.NOT_READY).sendToClients("AURORA_DATASOURCES", AURORA.DATATYPE.UTF8);
     
-    dataManager.getChannelE = function(channelId){
-		 var channelE = dataManager.receiveE(channelId);
+    dataManager.getChannelE = function(pluginKey, channelId){
+		var pluginId = aurora.plugins[pluginKey];
+		var newKey = pluginKey + "_" + (channelId || "");
+		 var channelE = dataManager.receiveE(newKey, pluginId, channelId || 1);
 		 channelE.filterCommandsE = function(){
+		 	return F.zeroE();
 			 var args = arguments;
 			 return channelE.filterE(function(packet){
 				 for(var index in args){
@@ -670,12 +678,28 @@ var DATA = (function(dataManager, aurora, http){
 				return {connection: packet.connection, token: packet.token, data: packet.data.data};
 			});
 		 };
-		 channelE.send = function(connection, command, data){
-			 dataManager.sendToClient(connection, channelId, {
-			     command : command,
-			     data : data
-			 });
+		 channelE.send = function(data, connection){
+		 	if(typeof(data)==="object"){
+			 	data = JSON.stringify(data);
+			 }
+			 if(typeof(data)==="string"){
+			 	data = new Buffer(data);
+			 }
+			 if(Buffer.isBuffer(data)){
+			 	var channelProtocolBuf = new Buffer(4);
+			 	channelProtocolBuf.writeUInt16LE(pluginId, 0);
+			 	channelProtocolBuf.writeUInt16LE(channelId, 2);
+			 	
+			 	var buf = Buffer.concat([channelProtocolBuf, data]);
+		     	if(connection!==undefined){
+		     		connection.sendBytes(buf);
+		     	}
+		    	else{
+		    		 dataManager.sendData(newKey, buf, "binary");
+		    	}
+			 }
 		 };
+
 		 return channelE;
 	};
     return dataManager;
@@ -807,7 +831,6 @@ process.on('uncaughtException', function (err) {
 				}
 			});
 		});
-		
 	}
 	catch(e){console.log("Unable to write to log... shutdown");process.exit();}
 });
