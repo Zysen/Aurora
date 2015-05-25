@@ -160,7 +160,7 @@ var clientCSSFiles = [ "../themes/" + theme + "/style.css",
 "plugins/tables/tables.css" ];
 
 var serverBuildFiles = [ "server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/arrays.js", "shared/string.js", "shared/date.js",
-        "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "server/aurora.server.js", "plugins/tables/tables.shared.js", "server/http.library.js",
+        "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js",
         "server/server.js", "server/authentication.server.js"
 // "plugins/stats/stats.server.js",
 // "plugins/debug/debug.server.js",
@@ -180,15 +180,16 @@ if(target=="libs"){
 
 
 var plugins = [];
-
 updateVersion();
+
+var pluginAllocatorCount = 1;
+var pluginAllocation = {};
 
 // Include plugins
 fs.readdir("plugins", function(err, files) {
 	if (err) {
 		throw err;
 	}
-
 	plugins = files;
 	var widgetCode = [];
 	for ( var index in files) {
@@ -196,6 +197,7 @@ fs.readdir("plugins", function(err, files) {
 		if (ARRAYS.contains(ignorePlugins, plugin)) {
 			continue;
 		}
+		pluginAllocation[plugin] = pluginAllocatorCount++;
 		var pluginDir = fs.readdirSync("plugins/" + plugin + "/");
 		for ( var fileIndex in pluginDir) {
 			var fullPath = "plugins/" + plugin + "/" + pluginDir[fileIndex];
@@ -235,15 +237,15 @@ fs.readdir("plugins", function(err, files) {
 				serverBuildFiles.push("../themes/" + theme + "/" + themeDir[index]);
 			}
 		}
-
+		
+		var pluginAllocatorCode = "var AURORA = (function(aurora){aurora.plugins="+JSON.stringify(pluginAllocation)+";return aurora;}(AURORA || {}));\n\n";
 		clientBuildFiles = clientBuildFiles.concat(widgetCode);
 
-		
 		console.log("Target: " + target);
 
 		// Build client.js
 		var clientFile = "client.js";
-		var concatenated = concatenate(sharedBuildFiles, clientBuildFiles);
+		var concatenated = pluginAllocatorCode+concatenate(sharedBuildFiles, clientBuildFiles);
 		if (target !== "fast") {
 			var lintPassed = lintCheck(concatenated, clientFile, {
 			    white : true,
@@ -261,7 +263,7 @@ fs.readdir("plugins", function(err, files) {
 
 		// Build server.js
 		var serverFile = "../server.js";
-		var concatenated = concatenate(sharedBuildFiles, serverBuildFiles);
+		var concatenated = pluginAllocatorCode+concatenate(sharedBuildFiles, serverBuildFiles);
 		if (target !== "fast") {
 			var lintPassed = lintCheck(concatenated, serverFile, {
 			    white : true,
