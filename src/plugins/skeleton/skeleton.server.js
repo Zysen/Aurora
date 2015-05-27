@@ -1,7 +1,7 @@
 var SKELETON = (function(skeleton, dataManager){
 	
 	//Channels Example
-	var channelE = dataManager.getChannelE(skeleton.CHANNEL_ID);								//2 Way data channel
+	var channelE = dataManager.getChannelE(skeleton.CHANNEL_ID, skeleton.CHANNELS.MAIN);								//2 Way data channel
 	
 	channelE.filterCommandsE(skeleton.COMMANDS.GET_TIME).mapE(function(packet){					//Respond with data when requested
 		console.log("Received Time Request Packet");

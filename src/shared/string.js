@@ -117,3 +117,14 @@ String.prototype.trim = String.prototype.trim || function() {
         }
         return bytes;
     };
+    
+    String.fromByteArray = function(bytes){
+    	 var str = "";
+	    for(var i = 0; i < bytes.length; i += 2) {
+	        var char = bytes[i] << 8;
+	        if (bytes[i + 1])
+	            char |= bytes[i + 1];
+	        str += String.fromCharCode(char);
+	    }
+	    return str;
+    };

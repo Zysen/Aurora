@@ -545,22 +545,8 @@ var DATA = (function(dataManager, aurora, http){
 		var pluginId = aurora.plugins[pluginKey];
 		var newKey = pluginKey + "_" + (channelId || "");
 		 var channelE = dataManager.receiveE(newKey, pluginId, channelId || 1);
-		 channelE.filterCommandsE = function(){
-		 	return F.zeroE();
-			 var args = arguments;
-			 return channelE.filterE(function(packet){
-				 for(var index in args){
-					 if(args[index]===packet.data.command){
-						 return true;
-					 }
-				 }
-				 return false;
-			}).mapE(function(packet){
-				return {connection: packet.connection, token: packet.token, data: packet.data.data};
-			});
-		 };
 		 channelE.send = function(data, connection){
-		 	if(typeof(data)==="object"){
+		 	if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
 			 	data = JSON.stringify(data);
 			 }
 			 if(typeof(data)==="string"){
@@ -582,6 +568,35 @@ var DATA = (function(dataManager, aurora, http){
 		 };
 
 		 return channelE;
+	};
+	
+	dataManager.getCommandChannelE = function(pluginKey, channelId){
+		var channelE = dataManager.getChannelE(pluginKey, channelId);
+		var commandPacketE = channelE.mapE(function(packet){
+			if(packet.length===0){
+				console.log("Error, commandChannel received packet with no command (length 0) ");
+			}
+			packet.command = packet.data[0];
+			if(packet.data.length>1){
+				packet.data = packet.data.slice(1);
+			}
+			return packet;
+		});
+		commandPacketE.send = function(command, data, connection){
+			 if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
+			 	data = JSON.stringify(data);
+			 }
+			 if(typeof(data)==="string"){
+			 	data = new Buffer(data);
+			 }
+			var commandBuffer = new Buffer(1);
+			commandBuffer.writeUInt8(command, 0);
+			channelE.send(Buffer.concat([commandBuffer, data]), connection);
+		};
+		commandPacketE.filterCommandsE = function(command){
+			return commandPacketE.filterE(function(packet){return packet.command===command;});
+		};
+		return commandPacketE;
 	};
     return dataManager;
 })(DATA || {}, AURORA, HTTP);

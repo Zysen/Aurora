@@ -224,7 +224,7 @@ var AURORA = (function(aurora, F, cookies){
 }(AURORA || {}, F, COOKIES));
 
 
-var DATA = (function(dataManager, F, aurora){
+var DATA = (function(dataManager, F, aurora, binary){
 	var referenceCount = {};
 	var requests = {};	
 	
@@ -342,37 +342,47 @@ var DATA = (function(dataManager, F, aurora){
 		var pluginId = aurora.plugins[pluginKey];
 		var newKey = pluginKey + "_" + (channelId || "");
 		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId || 1);
-		 channelE.filterCommandsE = function(){
-			 var args = arguments;
-			 return channelE.filterE(function(packet){
-				 for(var index in args){
-					 if(args[index]===packet.command){
-						 return true;
-					 }
-				 }
-				 return false;
-			}).mapE(function(packet){
-				return {data: packet.data};
-			});
-		 };
 		 var littleEndian = true;
 		 channelE.send = function(data){
-		 	if(typeof(data) === "object"){
+		 	if(data===undefined){
+				data = new ArrayBuffer(0);
+			}
+		 	else if(typeof(data) === "object" && (!data instanceof ArrayBuffer && !data instanceof Blob)){
 		 		data = JSON.stringify(data);
 		 	}
-		 	if(data instanceof ArrayBuffer || typeof(data) === "string"){
-				var wsProtocol = new DataView(new ArrayBuffer(4));
-				wsProtocol.setUint16(0, pluginId, littleEndian);
-				wsProtocol.setUint16(2, channelId, littleEndian);
-		 		var blob = new Blob([wsProtocol, data]);
+		 	if(data instanceof ArrayBuffer || data instanceof Blob){// || typeof(data) === "string"){
+		 		var blob = new Blob([binary.toUInt16ArrayBuffer([pluginId, channelId]), data]);
 		 		dataManager.sendToServer(newKey, blob);
 		 	}
 		 	else{
 		 		console.log("Error, channelE.send Unknown type "+typeof(data)+" cannot send data");
 		 	}
-			
 		 };
 		 return channelE;
+	};
+	
+	dataManager.getCommandChannelE = function(instanceId, pluginKey, channelId){
+		var channelE = dataManager.getChannelE(instanceId, pluginKey, channelId);
+		var commandPacketE = channelE.mapE(function(packet){
+			return {command: new Uint8Array(packet, undefined, 1)[0], data: packet.slice(1)};
+		});
+
+		commandPacketE.send = function(command, data){
+			if(data===undefined){
+				data = new ArrayBuffer(0);
+			}
+			else if(typeof(data) === "object" && !(data instanceof ArrayBuffer || data instanceof Blob)){
+		 		data = JSON.stringify(data);
+		 	}
+			var commandAb = binary.toUInt8ArrayBuffer(command);
+			channelE.send(new Blob([commandAb, data]));
+		};
+		
+		commandPacketE.filterCommandsE = function(command){
+			return commandPacketE.filterE(function(packet){return packet.command===command;});
+		};
+		
+		return commandPacketE;
 	};
 	
 	function extractData(str){
@@ -484,7 +494,7 @@ var DATA = (function(dataManager, F, aurora){
     });
 	dataManager.connect();
 	return dataManager;
-}(DATA || {}, F, AURORA));
+}(DATA || {}, F, AURORA, BINARY));
 
 window.changePage = function(page){
 	if(history){
