@@ -1,4 +1,4 @@
-var TABLES = (function(tables, widgets){
+var TABLES = (function(tables, widgets, aurora){
 	// Helper Functions
 	// ================
 	
@@ -263,7 +263,6 @@ var TABLES = (function(tables, widgets){
 	 * @returns object {}
 	 */
 	tables.tableWidget.changeSetMerge = function(tableSourceB, changeE, applyE, clearE, addE, deleteE, emptyE, undoColumnE, deleteColumnE, showErrorsFunc){
-		
 		addE = addE || F.zeroE();
 		deleteE = deleteE || F.zeroE();
 		emptyE = emptyE|| F.zeroE();	
@@ -290,9 +289,9 @@ var TABLES = (function(tables, widgets){
 		})).startsWith(applyInfoDefault);
 		
 		var applyEventE = F.mergeE(
-				applyE.mapE(function(){return APPLY_STATES.APPLYING;}),
+				applyE.mapE(function(){return aurora.APPLY_STATES.APPLYING;}),
 				applyResultE.mapE(function(value){
-					return value ? APPLY_STATES.SUCCESS : APPLY_STATES.ERROR;
+					return value ? aurora.APPLY_STATES.SUCCESS : aurora.APPLY_STATES.ERROR;
 				}));
 		
 		// Handle general set errors
@@ -334,7 +333,7 @@ var TABLES = (function(tables, widgets){
 		var command_changeE = changeE.mapE(function(value){
 			return jQuery.extend(value, {command: 'change'});
 		});
-		
+
 		var command_clearE = clearE.mapE(function(value){
 			return {command: 'clear', value: value};
 		});
@@ -360,7 +359,6 @@ var TABLES = (function(tables, widgets){
 		});
 		
 		var command_setE = F.mergeE(command_sourceE, command_changeE, command_clearE, command_addE, command_deleteE, command_emptyE, command_undoColumnE, command_deleteColumnE);
-		
 		// Process commands
 		var initial_data = {changeset: {}, errors: []};
 		var changeSetE = command_setE.collectE(initial_data, function(newVal, state){
@@ -497,10 +495,10 @@ var TABLES = (function(tables, widgets){
 				break;
 			case 'change':
 				// Update changeset with change 
-				
 				// Compare change to source data
 				var removeErrors = false;
 				var source_row_data = TABLES.UTIL.findRow(sourceB.valueNow(), newVal.rowPk);
+				
 				if(source_row_data == false || !OBJECT.equals(source_row_data[newVal.columnIndex], newVal.value)){
 					if(state.changeset[newVal.rowPk] === undefined){
 						state.changeset[newVal.rowPk] = {};
@@ -718,7 +716,6 @@ var TABLES = (function(tables, widgets){
 					}
 				}
 			}
-			
 			// Look for client server pair, and construct pair with server value.
 			var l = output.data.length;
 			for(var rowIndex=0; rowIndex<l; rowIndex++){
@@ -855,7 +852,6 @@ var TABLES = (function(tables, widgets){
 			
 			// Inject cached server errors into table data
 			TABLES.UTIL.injectServerErrors(output, state.errors);
-			
 			return output;
 		}).startsWith(SIGNALS.NOT_READY);
 		
@@ -932,7 +928,6 @@ var TABLES = (function(tables, widgets){
 					}
 				}
 			}
-			
 			return sourceTable;
 		});
 	};
@@ -1750,8 +1745,6 @@ var TABLES = (function(tables, widgets){
 			return F.mergeE.apply(this, updateEvents);
 		}).switchE().filterUndefinedE();
 		
-		
-		
 		// This event catches any focus change for every renderer on the table
 		var anyFocusEventE = tableHashChangedE.snapshotE(tableStateB).mapE(function(state){
 			if(!good()){
@@ -1786,7 +1779,6 @@ var TABLES = (function(tables, widgets){
 			if(!good()){
 				return SIGNALS.NOT_READY;
 			}
-			
 			// Count up all errors so we can update page toolbar
 			var total_error_count = 0;
 			
@@ -1956,13 +1948,11 @@ var TABLES = (function(tables, widgets){
 				var rowIndex = rowIndices[i];
 				var rowPk = state.rowStatePks[rowIndex];
 				var rowState = state.rowState[rowPk];
-				
 				// Loop through cells in column order
 				var cellStateLast = undefined;
 				for(var c=0; c<columnIndicesLength; c++){
 					var columnId = columnIndices[c];
 					var cellState = state.cellState[rowPk][columnId];
-					
 					// Insert or reorder cell
 					if(cellState.isDomDirty){
 						if(cellStateLast === undefined){
@@ -1978,7 +1968,6 @@ var TABLES = (function(tables, widgets){
 					
 					// Update errors
 					if(cellState.isStateDirty){
-						
 						// Remove existing error tag if any
 						jQuery("#"+cellState.domId).find('.errored_tag').remove();
 						
@@ -2008,7 +1997,7 @@ var TABLES = (function(tables, widgets){
 					}
 					
 					// Update data, also set if state changed.
-					if(cellState.isStateDirty || cellState.isDataDirty){
+					if((cellState.isStateDirty || cellState.isDataDirty)){	// && (!cellState.isDomDirty)
 						cellState.renderer.setValue(cellState.value);
 					}
 					
@@ -2109,7 +2098,6 @@ var TABLES = (function(tables, widgets){
 	tables.WIDGETS.tableWidget = function(instanceId, data){
 		
 		var toolbarWidget = WIDGETS.instantiateWidget('PageToolbarWidget').widget;
-		console.log(Object.keys(toolbarWidget));
 		toolbarWidget.setDeleteDisabled(true);
 		toolbarWidget.setUndoDisabled(true);
 		toolbarWidget.setApplyDisabled(true);
@@ -2179,15 +2167,15 @@ var TABLES = (function(tables, widgets){
 				
 				// Show apply status in page toolbar
 				applyEventE.mapE(function(applyState){
-					if(applyState === APPLY_STATES.APPLYING){
+					if(applyState === aurora.APPLY_STATES.APPLYING){
 						// We are updating server and waiting for response
 						toolbarWidget.setFeedbackUpdating();
 						
-					}else if(applyState === APPLY_STATES.SUCCESS){
+					}else if(applyState === aurora.APPLY_STATES.SUCCESS){
 						// Server update was successful
 						toolbarWidget.setFeedbackSuccess();
 						
-					}else if(applyState === APPLY_STATES.ERROR){
+					}else if(applyState === aurora.APPLY_STATES.ERROR){
 						// Server update was not successful
 						toolbarWidget.setFeedbackError();
 					}
@@ -2227,7 +2215,7 @@ var TABLES = (function(tables, widgets){
 				var anyValueChangedE = render_output.anyValueChangedE;
 				var anyFocusEventE = render_output.anyFocusEventE;
 				var rowSelectionsByRowPkB = render_output.rowSelectionsByRowPkB;
-				
+
 				// Pass events up to mergeset
 				anyValueChangedE.mapE(function(value){
 					changeValueE.sendEvent(value);
@@ -2362,7 +2350,7 @@ var TABLES = (function(tables, widgets){
 						});
 			    		break;
 			    	case UNDO_MODES.ALL:
-			    		return undoSetE.mapE(function(){ emptyE.sendEvent(true) });
+			    		return undoSetE.mapE(function(){ emptyE.sendEvent(true); });
 			    		break;
 			    	default:
 			    		return F.zeroE();
@@ -2592,10 +2580,9 @@ var TABLES = (function(tables, widgets){
 					var end = start + limitB.valueNow();
 					if(rowIndex >= start && rowIndex < end){
 						return true;
-					}
-					
+					}	
 		        	return false;
-		        }
+		       };
 				
 				var limitedB = TABLES.filterRowsB(range_setB, filterCallback);
 				
@@ -2731,4 +2718,4 @@ var TABLES = (function(tables, widgets){
 	};
 	
 	return tables;
-})(TABLES || {}, WIDGETS);
+})(TABLES || {}, WIDGETS, AURORA);

@@ -773,7 +773,6 @@ var TABLES = (function(tables){
 		if(tables.UTIL==undefined){
 			tables.UTIL = {};
 		}
-		console.log("Defined UTIL");
 		//UTIL:{
 			/**
 			 * Checks for user priviledge level and flags the table as readonly if < 15
