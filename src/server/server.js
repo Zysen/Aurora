@@ -256,7 +256,7 @@ var HTTP = (function(http, dataManager, authentication){
         var response = requestData.response;
         var responseHeaders = requestData.responseHeaders;
         var blockedUrls = ["/src", "/server.js", "/data", "/node_modules"];
-        var responseHead =  {'Content-Type': 'text/html; charset=utf-8'}; 
+        
         //Force SSL
         if (config.forceSSL===true && requestData.encrypted===undefined) {
             var port = config.sslPort===443?"":":"+config.sslPort;
@@ -273,7 +273,7 @@ var HTTP = (function(http, dataManager, authentication){
             HTTP.sendFile(__dirname + "/resources/pages/"+requestData.url.pathname.replace("/request/getPage/", "")+".html", request, response, responseHeaders);
         }
         else if (fs.existsSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")) { 
-            response.writeHead(200, responseHead);
+            response.writeHead(200, responseHeaders.toClient());
             response.write(themeHtml.replace("{CONTENT}", fs.readFileSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")).replace("{HEAD}", ''), 'utf8');
             response.end();                                                                                                                                                                     
         }
@@ -292,14 +292,14 @@ var HTTP = (function(http, dataManager, authentication){
                 HTTP.readDirectory(response, requestData.url.pathname);
             }
             else{
-            	response.writeHead(404, responseHead);
+            	response.writeHead(404, responseHeaders.toClient());
                 response.write(themeHtml.replace("{CONTENT}", theme404).replace("{HEAD}", ''), 'utf8');
                 response.end();
             }
         }
         else{
             LOG.create("Cannot find requested file "+requestData.url.pathname);
-            response.writeHead(404, responseHead);
+            response.writeHead(404, responseHeaders.toClient());
             response.write(themeHtml.replace("{CONTENT}", theme404).replace("{HEAD}", ''), 'utf8');
             response.end();
         }
@@ -410,8 +410,8 @@ var HTTP = (function(http, dataManager, authentication){
 
 var DATA = (function(dataManager, aurora, http){
 	//Handle client Data Channel signals.
-	dataManager.receiveE = function(pluginKey, pluginId, channelId){
-		var binaryStreamE = http.wsBinaryUpdate.filterE(function(packet){
+	var receiveE = function(pluginKey, pluginId, channelId){
+		return http.wsBinaryUpdate.filterE(function(packet){
 			if(packet.data.command===undefined && Buffer.isBuffer(packet.data)){
 				return packet.data.readUInt16LE(0)===pluginId && packet.data.readUInt16LE(2) === channelId;
 			}
@@ -419,14 +419,6 @@ var DATA = (function(dataManager, aurora, http){
 		}).mapE(function(packet){
 			return {connection: packet.connection, token: packet.token, data:packet.data.slice(4)};
 		});
-		
-		var textStreamE = http.websocketE.filterE(function(packet){
-			return (packet.data.command!==undefined && packet.data.command===AURORA.COMMANDS.UPDATE_DATA && packet.data.key===pluginKey);
-		}).mapE(function(packet){	
-			return {connection: packet.connection, token: packet.token, data:packet.data.data};
-		});
-		
-		return F.mergeE(textStreamE, binaryStreamE);
 	};
     
 	dataManager.sendToClient = function(connection, channelID, data){
@@ -452,7 +444,7 @@ var DATA = (function(dataManager, aurora, http){
     
     var dataSourceRegisterE = F.receiverE();
     var dataSourcesE = dataSourceRegisterE.collectE({}, function(update, dataSources){
-        dataSources[update.key] = update.data;
+        dataSources[update.key] = update;
         return dataSources;
     });
     var dataSourcesB = dataSourcesE.startsWith(SIGNALS.NOT_READY);
@@ -464,8 +456,9 @@ var DATA = (function(dataManager, aurora, http){
 		var dataBI = dataSourcesB.valueNow()[packet.data.key].sendEvent(packet.data.data);
 		return {connection: packet.connection, token: packet.token, data:packet.data.data};
 	});
-    
-    dataManager.dataRegE = F.mergeE(http.wsConnectionCloseE, http.dataRegistrationE).collectE({}, function(websocketPacket, dataReg){  
+    var dataRegR = F.receiverE(); 
+    dataManager.registrationRequestE = dataRegR;
+    dataManager.dataRegE = F.mergeE(dataManager.registrationRequestE, http.wsConnectionCloseE, http.dataRegistrationE).collectE({}, function(websocketPacket, dataReg){  
         var clientId = websocketPacket.clientId; 
         if(websocketPacket.close!==undefined){
             for(var key in dataReg){
@@ -510,7 +503,7 @@ var DATA = (function(dataManager, aurora, http){
         }
         return dataReg;
     });
-    dataManager.dataRegB = dataManager.dataRegE.startsWith(SIGNALS.NOT_READY);
+    dataManager.dataRegB = dataManager.dataRegE.printE("USER Data Source Registration").startsWith(SIGNALS.NOT_READY);
 
     //Determine who to send this data to.
     dataManager.sendData = function(key, value, type){
@@ -534,28 +527,9 @@ var DATA = (function(dataManager, aurora, http){
         }
     };
 
-    //Catch object updates and send them to the client
-    dataSourceRegisterE.mapE(function(packet){
-        var data = packet.data;
-        var key = packet.key;
-        var type = packet.type;
-         var DATA=dataSourcesB.valueNow();
-        if(data instanceof F.EventStream){
-            data.mapE(function(value){
-                dataManager.sendData(key, value, type);
-            });
-        }
-        else if(data instanceof F.Behavior){
-            F.liftB(function(key, value, type){
-                dataManager.sendData(key, value, type);
-            }, F.constantB(key), data, F.constantB(type));
-            dataManager.sendData(key, DATA[key].valueNow(), type);
-        }
-    });
-
-    dataManager.register = function(key, data, type){  
+    dataManager.register = function(key,  pluginId, channelId){  
         LOG.create("Registering data source "+key);
-        dataSourceRegisterE.sendEvent({key:key, data:data, type:type});
+        dataSourceRegisterE.sendEvent({key:key, pluginId:pluginId, channelId:channelId});
     };
 
     dataManager.setValue = function(key, value){ 
@@ -571,49 +545,6 @@ var DATA = (function(dataManager, aurora, http){
             LOG.create("Attempt to set "+key+" no sendEvent function");
         }
     };
-
-    //Easy registration methods
-    F.EventStream.prototype.sendToClients = function(key, type){
-        dataManager.register(key, this, (type===undefined)?AURORA.DATATYPE.UTF8:type);
-        return this;
-    };
-    F.Behavior.prototype.sendToClients = F.EventStream.prototype.sendToClients;
-
-    F.Behavior.prototype.sendTableToClients = function(key, type){
-    	var channelE = dataManager.getChannelE(key);
-    	var pushBackE = F.receiverE();
-    	/*
-    	var tableBI = this.liftBI(function(table){
-    		if(good()){
-    			//TODO: Maybe send chunk or changeset instead.
-    		//	For each interested party
-    			//	channelE.send(currentConnection, "update", table);
-    		}
-    	}, function(table){
-    		pushBackE.sendEvent(table);
-    	});
-    	
-    	channelE.collectE(initialTable, function(newState, state){
-    		if(newState.command===undefined){
-    			return newState;
-    		}
-    		if(newState.command==="update"){	//Whole table
-    			state = newState.data;
-    		}
-    		else if(newState==="chunk"){		//Chunk of table
-    			//TODO: Add new chunks to state
-    		}
-    		else if(newState==="change"){		//Changeset for table
-    			//TODO: Run through change set add changes to state
-    		}
-    		return state;
-    	}).mapE(function(state){
-    		tableBI.sendEvent(state);
-    	});
-    	*/
-    };
-    
-    
     
     //Authentication and Data Tables
     var dataRegTableE = dataManager.dataRegE.mapE(function(dataReg){
@@ -646,40 +577,14 @@ var DATA = (function(dataManager, aurora, http){
              dataSources:{name:"Data Sources", type:"list"}
         })};
     });
-
-    dataManager.clientDataSourceUsageTableB = dataRegTableE.mapE(function(tables){return tables.usersDataSources;}).startsWith(SIGNALS.NOT_READY);
-    dataManager.dataSourceUserUsageTableB = dataRegTableE.mapE(function(tables){return tables.sourcesAdminTable;}).startsWith(SIGNALS.NOT_READY);
-    dataManager.dataSourceUserUsageTableB.sendToClients("AURORA_DATASOURCESADMIN", AURORA.DATATYPE.UTF8);
-    
-    dataSourceRegisterE.mapE(function(dataSources){
-        var newData = [];
-        var count = 0;
-        for(var key in dataSources){
-            newData.push({index: ++count, key: key});
-        }
-        return TABLES.parseTable("dataSources", "key", newData, {index: {name: "Index", type: "number"}, key:{name: "Key", type: "string"}});
-    }).startsWith(SIGNALS.NOT_READY).sendToClients("AURORA_DATASOURCES", AURORA.DATATYPE.UTF8);
-    
-    dataManager.getChannelE = function(pluginKey, channelId){
-		var pluginId = aurora.plugins[pluginKey];
-		var newKey = pluginKey + "_" + (channelId || "");
-		 var channelE = dataManager.receiveE(newKey, pluginId, channelId || 1);
-		 channelE.filterCommandsE = function(){
-		 	return F.zeroE();
-			 var args = arguments;
-			 return channelE.filterE(function(packet){
-				 for(var index in args){
-					 if(args[index]===packet.data.command){
-						 return true;
-					 }
-				 }
-				 return false;
-			}).mapE(function(packet){
-				return {connection: packet.connection, token: packet.token, data: packet.data.data};
-			});
-		 };
+	
+	dataManager.getChannelE = function(pluginKey, channelId, tagName){
+		var pluginId = typeof(pluginKey)==="number"?pluginKey:aurora.plugins[pluginKey];
+		var newKey = tagName!==undefined?tagName:(pluginKey + "_" + (channelId===undefined?"":channelId));
+		var channelE = receiveE(newKey, pluginId, channelId===undefined?1:channelId);
+		 dataManager.register(newKey, pluginId, channelId);	//Register the existence of this data source.
 		 channelE.send = function(data, connection){
-		 	if(typeof(data)==="object"){
+		 	if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
 			 	data = JSON.stringify(data);
 			 }
 			 if(typeof(data)==="string"){
@@ -692,16 +597,87 @@ var DATA = (function(dataManager, aurora, http){
 			 	
 			 	var buf = Buffer.concat([channelProtocolBuf, data]);
 		     	if(connection!==undefined){
-		     		connection.sendBytes(buf);
+		     		if(typeof(connection)==="string"){
+		     			connection = dataManager.connectionsB.valueNow()[connection];
+		     		}
+		     		if(connection!==undefined && typeof(connection)==="object" && connection.sendBytes!==undefined){
+		     			connection.sendBytes(buf);
+		     		}
 		     	}
 		    	else{
 		    		 dataManager.sendData(newKey, buf, "binary");
 		    	}
 			 }
 		 };
-
 		 return channelE;
 	};
+	
+	dataManager.getCommandChannelE = function(pluginKey, channelId, tagName){
+		var channelE = dataManager.getChannelE(pluginKey, channelId, tagName);
+		var commandPacketE = channelE.mapE(function(packet){
+			if(packet.length===0){
+				console.log("Error, commandChannel received packet with no command (length 0) ");
+			}
+			packet.command = packet.data[0];
+			if(packet.data.length>1){
+				packet.data = packet.data.slice(1);
+			}
+			return packet;
+		});
+		commandPacketE.send = function(command, data, connection){
+			 if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
+			 	data = JSON.stringify(data);
+			 }
+			 if(typeof(data)==="string"){
+			 	data = new Buffer(data);
+			 }
+			var commandBuffer = new Buffer(1);
+			commandBuffer.writeUInt8(command, 0);
+			channelE.send(Buffer.concat([commandBuffer, data]), connection);
+		};
+		commandPacketE.filterCommandsE = function(command){
+			return commandPacketE.filterE(function(packet){return packet.command===command;});
+		};
+		return commandPacketE;
+	};
+	
+    //Easy registration methods
+    F.EventStream.prototype.sendToClients = function(key, channelId, tagName){
+    	var channelE = dataManager.getChannelE(key, channelId, tagName);
+    	this.mapE(function(data){
+    		channelE.send(data);
+    	});
+    };
+    F.Behavior.prototype.sendToClients = function(key, channelId, tagName){
+    	var channelE = dataManager.getChannelE(key, channelId, tagName);
+		var objectBI = F.liftBI(function(packet){channelE.send(packet);return packet;},function(data){return [data];}, this);
+		channelE.mapE(function(data){objectBI.sendEvent(data);});
+		return objectBI;
+    };
+	
+	//Data Registration and User data registration
+	var dataRegChannelE = dataManager.getCommandChannelE(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_REG);
+	dataRegChannelE.mapE(function(packet){
+		packet.data = JSON.parse(packet.data.toString());
+		packet.data.command = packet.command;
+		packet.data.key = packet.data.pluginKey+"_"+packet.data.channelId;
+		dataRegR.sendEvent(packet);
+	});
+	
+	dataManager.clientDataSourceUsageTableB = dataRegTableE.mapE(function(tables){return tables.usersDataSources;}).startsWith(SIGNALS.NOT_READY);
+    dataManager.dataSourceUserUsageTableB = dataRegTableE.mapE(function(tables){return tables.sourcesAdminTable;}).startsWith(SIGNALS.NOT_READY);
+    dataManager.dataSourceUserUsageTableB.sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.AURORA_DATASOURCES_USER);
+    
+    dataSourcesE.mapE(function(dataSources){
+        var newData = [];
+        for(var key in dataSources){
+            newData.push(dataSources[key]);
+        }
+        //console.log(dataSources);
+        return TABLES.parseTable("dataSources", "key", newData, {key: {name: "Key", type: "string"}, pluginId:{name: "Plugin", type: "int"}, channelId:{name: "Channel", type: "int"}});
+    }).startsWith(SIGNALS.NOT_READY).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATASOURCES);
+    
+	
     return dataManager;
 })(DATA || {}, AURORA, HTTP);
 
@@ -813,26 +789,46 @@ var AURORA = (function(aurora, http){
 	return aurora;
 }(AURORA || {}, HTTP));
 
+function get_lines(filename, lineFrom, lineTo, callback) {
+    var lines = fs.readFileSync(filename, 'utf8').split("\n");
+    console.log("From: "+(Math.max(0, lineFrom))+", To: "+lineTo);
+	callback(lines.slice(Math.max(0, lineFrom), lineTo));
+}
+
 process.on('uncaughtException', function (err) {
 	console.log("Aurora Error Handler");
 	
 	for(var index in AURORA.uncaughtExceptionCallbacks){
 		AURORA.uncaughtExceptionCallbacks[index]();
 	}
-	console.log(err);
-	console.log(err.stack);
+	//TODO: Move this to a uncaughtExceptionCallback and put it in log.js
+	var strStack = (err.stack+"");
+	var linePosStart = strStack.indexOf("server.js:")+10;
+	var line = parseInt(strStack.substring(linePosStart, strStack.indexOf(":", linePosStart+1)));
 	try{
-		fs.writeFile(__dirname+"aurora-crash.log", "NodeJS: "+err+" \n"+err.stack, function(){
-			fs.exists("/var/log/", function(exists){
-				if(exists){
-					fs.writeFile("/var/log/aurora-crash.log", "NodeJS: "+err+" \n"+err.stack, function(){
-						process.exit();
-					});
-				}
+		get_lines(__dirname+"/server.js", line-10, line+10, function(lines){
+			lines.splice(10, 0, "------------------------------------------------------------");
+			lines.splice(9, 0, "------------------------------------------------------------");
+			
+			var errorText = "NodeJS: "+err+" \n"+err.stack+"\n-----------------------------------------------------------------------------------------\n"+lines.join("\n");
+			console.log(errorText);
+			fs.writeFile(__dirname+"/aurora-crash.log", errorText, function(){
+				fs.exists("/var/log/", function(exists){
+					if(exists){
+						fs.writeFile("/var/log/aurora-crash.log", errorText, function(){
+							process.exit();
+						});
+					}
+				});
 			});
 		});
 	}
-	catch(e){console.log("Unable to write to log... shutdown");process.exit();}
+	catch(e){
+		console.log(err);
+		console.log(err.stack);
+		console.log("Unable to write to log... shutdown");	
+		process.exit();
+		}
 });
 
 process.on('exit', function (){
