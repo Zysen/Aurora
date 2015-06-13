@@ -81,7 +81,6 @@ var WIDGETS = (function(widgets, OBJECT){
 	        try{arguments = JSON.parse(element.title.replaceAll("'", '"'));}
 			catch(e){LOG.create("Unable to parse JSON from widget title arguments");LOG.create(e);}
 			}
-			console.log("widgets inflatWidgets");
 			var inflated = widgets.instantiateWidget(widget_name, arguments);
 			if(inflated===undefined){
 				return;
@@ -188,7 +187,6 @@ var AURORA = (function(aurora, F, cookies){
 	});
 	
 	aurora.serverVersionE.filterRepeatsE().mapE(function(version){
-		LOG.create("Server is running version "+version);
 		return version;
 	}).skipFirstE().mapE(function(version){
 		LOG.create("Client and Server versions do not match. Reloading page.");
@@ -200,7 +198,6 @@ var AURORA = (function(aurora, F, cookies){
 			return chooseSignal();
 		}
 		if(socketConnected==true){
-			LOG.create("Page Loaded and socket connected. Inflating widgets "+socketConnected);
 			WIDGETS.loadWidgets(WIDGETS.inflateWidgets(document.body));
 		}
 		return true;
@@ -211,7 +208,6 @@ var AURORA = (function(aurora, F, cookies){
 		if(!good() || socketConnected==false){
 			return chooseSignal();
 		}
-		LOG.create("Page Loaded and socket connected. Inflating widgets "+socketConnected);
 		var rawPage = DOM.get('content').innerHTML;
 		WIDGETS.loadWidgets(WIDGETS.inflateWidgets(document.body));
 		return rawPage;
@@ -261,18 +257,15 @@ var AURORA = (function(aurora, F, cookies){
 	return aurora;
 }(AURORA || {}, F, COOKIES));
 
-
-var DATA = (function(dataManager, F, aurora){
+var DATA = (function(dataManager, F, aurora, binary){
 	var referenceCount = {};
 	var requests = {};	
 	
 	dataManager.sendToServer = aurora.sendEvent; 
 	
 	dataManager.receiveE = function(instanceId, objectName, binaryPlugin, binaryChannel){
-
-		var binaryStreamE = aurora.sendToClientE.filterE(function(message){
-			if(message.command===undefined && message instanceof ArrayBuffer){
-				
+		return aurora.sendToClientE.filterE(function(message){
+			if(message.command===undefined && message instanceof ArrayBuffer){	
 				var key = new Uint16Array(message, undefined, 2);
 				//console.log("Possible AB 2", key[0]+"==="+binaryPlugin+" && "+key[1]+"==="+binaryChannel,(key[0]===binaryPlugin&&key[1]===binaryChannel));
 				return key[0]===binaryPlugin&&key[1]===binaryChannel;
@@ -281,82 +274,14 @@ var DATA = (function(dataManager, F, aurora){
 		}).mapE(function(ab){
 			return ab.slice(4);
 		});
-
-		var textStream = aurora.sendToClientE.filterE(function(message){
-			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
-		}).mapE(function(messagePacket){return messagePacket.data;});
-
-		return F.mergeE(binaryStreamE, textStream);
 	};
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	dataManager.requestE = function(instanceId, objectName){
-		referenceCount[objectName] = referenceCount[objectName]==undefined?1:(referenceCount[objectName]+1);
-		if(referenceCount[objectName]===1){
-			aurora.sendToServer({command: aurora.COMMANDS.REGISTER_DATA, key: objectName});
+
+	dataManager.requestB = function(instanceId, pluginId, channelId){
+		if(typeof(pluginId)==="string"){
+			pluginId = aurora.plugins[pluginId];
 		}
-		requests[instanceId] = aurora.sendToClientE.filterE(function(message){
-			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
-		}).mapE(function(messagePacket){return messagePacket.data;});
-		return requests[instanceId];
+		return dataManager.requestObjectB(instanceId, pluginId, channelId);
 	};
-	
-	dataManager.requestB = function(instanceId, objectName){
-		return F.liftBI(function(newData){return newData;}, function(newData){
-			aurora.sendToServer({command: aurora.COMMANDS.UPDATE_DATA, key: objectName, data:newData});
-			return [newData];
-		}, dataManager.requestE(instanceId, objectName).startsWith(SIGNALS.NOT_READY));
-	};
-	
-	dataManager.requestTableBI = function(instanceId, key){
-		var initialTable = SIGNALS.NOT_READY;
-		var channelE = dataManager.getChannelE(instanceId, key);
-		
-		channelE.collectE(initialTable, function(newState, state){
-			if(newState.command==="update"){	//Whole table
-				state = newState.data;
-			}
-			//else if(newState==="chunk"){		//Chunk of table
-				//TODO: Add new chunks to state
-			//}
-			//else if(newState==="change"){		//Changeset for table
-				//TODO: Run through change set add changes to state
-			//}
-			return state;
-		});
-		
-		return F.liftBI(function(newState){
-			return newState;
-		}, function(newState){
-			//TODO: check for and handle cases of changesets or chunks 
-			channelE.send("update", newState);
-		}, channelE.startsWith(SIGNALS.NOT_READY));
-	};
-	
-	/*
-	dataManager.requestChunkedB = function(instanceId, objectName){
-       
-        var inputB = DATA.requestE(instanceId, objectName).chunkedCollectE().mapE(function(object){
-            //LOG.create(Object.keys(object["$.get"]));
-            var firstKey = Object.keys(object["$.get"])[0];
-            return object["$.get"][firstKey];
-        }).startsWith(SIGNALS.NOT_READY); 
-
-        return F.liftBI(function(newData){return newData;}, function(newData){
-            //aurora.sendToServer({command: aurora.COMMANDS.UPDATE_DATA, key: objectName, data:newData});
-            LOG.create("Error - Chunked data upstream is not implemented.");
-            return [newData];
-        }, inputB);
-
-    };
-    */
 	
 	dataManager.release = function(instanceId, objectName){
 		referenceCount[objectName] = (referenceCount[objectName]==undefined||referenceCount[objectName]<=0)?0:(referenceCount[objectName]-1);
@@ -366,33 +291,21 @@ var DATA = (function(dataManager, F, aurora){
 		if(referenceCount[objectName]<0){
 			LOG.create("Object "+objectName+" has been released too many times. Count dropped below 0");
 		}
-		
-		requests[instanceId].purge();	
-		OBJECT.remove(requests[instanceId]);
+		if(requests[instanceId]){
+			requests[instanceId].purge();
+			OBJECT.remove(requests[instanceId]);
+		}
 	};
 	dataManager.reregisterAll = function(){
 		for(var objectName in referenceCount){
 			aurora.sendToServer({command: aurora.COMMANDS.REGISTER_DATA, key: objectName});
 		}
 	};
-	
+	/*
 	dataManager.getChannelE = function(instanceId, pluginKey, channelId){
 		var pluginId = aurora.plugins[pluginKey];
 		var newKey = pluginKey + "_" + (channelId || "");
 		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId || 1);
-		 channelE.filterCommandsE = function(){
-			 var args = arguments;
-			 return channelE.filterE(function(packet){
-				 for(var index in args){
-					 if(args[index]===packet.command){
-						 return true;
-					 }
-				 }
-				 return false;
-			}).mapE(function(packet){
-				return {data: packet.data};
-			});
-		 };
 		 var littleEndian = true;
 		 channelE.send = function(data){
 		 	if(typeof(data) === "object"){
@@ -412,6 +325,108 @@ var DATA = (function(dataManager, F, aurora){
 		 };
 		 return channelE;
 	};
+	
+	dataManager.getObjectChannelE = function(instanceId, pluginKey, channelId){
+		var channelE = dataManager.getChannelE(instanceId, pluginKey, channelId);
+		var e = channelE.mapE(function(ab){
+			return JSON.parse(String.fromCharCode.apply(null, new Uint16Array(ab)));
+		});
+		e.send = channelE.send;
+		return e;
+	};
+	*/
+	
+	var channelRegistrationE = F.receiverE();
+	dataManager.getChannelE = function(instanceId, pluginKey, channelId){
+		var pluginId = aurora.plugins[pluginKey];
+		var newKey = pluginKey + "_" + (channelId || "");
+		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId===undefined?1:channelId);
+		 var littleEndian = true;
+		 channelE.send = function(data){
+		 	if(data===undefined){
+				data = new ArrayBuffer(0);
+			}
+		 	else if(typeof(data) === "object" && (!data instanceof ArrayBuffer && !data instanceof Blob)){
+		 		data = JSON.stringify(data);
+		 	}
+		 	if(data instanceof ArrayBuffer || data instanceof Blob || typeof(data) === "string"){//){
+		 		var blob = new Blob([binary.toUInt16ArrayBuffer([pluginId, channelId]), data]);
+		 		dataManager.sendToServer(newKey, blob);
+		 	}
+		 	else{
+		 		console.log("Error, channelE.send Unknown type "+typeof(data)+" cannot send data");
+		 	}
+		 };
+		 channelRegistrationE.sendEvent({pluginKey: pluginKey, pluginId:pluginId, channelId: channelId});
+		 return channelE;
+	};
+	
+	dataManager.getCommandChannelE = function(instanceId, pluginKey, channelId){
+		var channelE = dataManager.getChannelE(instanceId, pluginKey, channelId);
+		var commandPacketE = channelE.mapE(function(packet){
+			return {command: new Uint8Array(packet, undefined, 1)[0], data: packet.slice(1)};
+		});
+
+		commandPacketE.send = function(command, data){
+			if(data===undefined){
+				data = new ArrayBuffer(0);
+			}
+			else if((typeof(data) === "object" || data instanceof Array) && !(data instanceof ArrayBuffer || data instanceof Blob)){
+		 		data = JSON.stringify(data);
+		 	}
+			var commandAb = binary.toUInt8ArrayBuffer(command);
+			channelE.send(new Blob([commandAb, data]));
+		};
+		
+		commandPacketE.filterCommandsE = function(command){
+			return commandPacketE.filterE(function(packet){return packet.command===command;});
+		};
+		
+		return commandPacketE;
+	};
+	
+	dataManager.requestObjectB = function(instanceId, pluginId, objectId){
+		var channelE = dataManager.getChannelE(instanceId, pluginId, objectId); 
+		console.log("channelE "+ pluginId+" "+objectId);
+		var collectedE = channelE.collectE({chunks:[]}, function(packet, state){
+			var end = new Uint8Array(packet, 0, 1)[0];
+			state.chunks.push(packet.slice(1));
+			if(end===1){
+				return {chunks: [], value: state.chunks};
+			}
+			else{
+				return {chunks: state.chunks};
+			}
+		}).propertyE("value").filterRepeatsE();
+		 console.log("Lifting");
+		return F.liftBI(function(value){
+			if(!good()){
+				return value;
+			}
+			var strs = [];
+			for(var index in value){
+				strs.push(binary.arrayBufferToString(value[index]));
+			}
+			try{
+				return JSON.parse(strs.join(""));
+			}
+			catch(e){
+				console.log("dataManager.requestObjectB: Unable to parse object ", e);
+				console.log("|"+strs.join("")+"|");
+			}
+		}, function(message){
+			if(typeof(message)==="object"){
+				message = JSON.stringify(message);
+			}
+			channelE.send(message);		
+			return [message];	
+		}, collectedE.startsWith(SIGNALS.NOT_READY));
+	};
+	
+	var dataRegChannelE = dataManager.getCommandChannelE("AURORA", aurora.CHANNEL_ID, aurora.CHANNELS.DATA_REG);	
+	channelRegistrationE.mapE(function(regReq){
+		dataRegChannelE.send(aurora.COMMANDS.REGISTER_DATA, regReq);
+	});
 	
 	function extractData(str){
 		//This is for extracting data from a binary stream back to JSON
@@ -446,10 +461,6 @@ var DATA = (function(dataManager, F, aurora){
                 end+=ch;
             }
 	    }
-	    //LOG.create({command:parseInt(command), key:key, data: data, end: end==="true"});
-	    //LOG.create(key);
-	    //LOG.create(data);
-	    //LOG.create("");
 	    return {command:parseInt(command), key:key, data: {data:data, end: end==="true"}};
 	}
 	
@@ -514,6 +525,7 @@ var DATA = (function(dataManager, F, aurora){
 			return;
 		}
 		if(packet.data instanceof ArrayBuffer || packet.data instanceof Blob){
+			console.log("Sending "+packet.data.length+" bytes of binary data");
 			webSocket.send(packet.data);
 		}
 		else{
@@ -522,7 +534,7 @@ var DATA = (function(dataManager, F, aurora){
     });
 	dataManager.connect();
 	return dataManager;
-}(DATA || {}, F, AURORA));
+}(DATA || {}, F, AURORA, BINARY));
 
 window.changePage = function(page){
 	if(history){

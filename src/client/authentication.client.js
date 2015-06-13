@@ -25,7 +25,6 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     aurora.authTokenRequestE = aurora.connectionStatusE.filterE(function(packet){   //TODO: Should the onceE be there?
        return packet.data===aurora.STATUS.CONNECTED && cookies.getCookie("sesh")!=undefined;
     }).onceE().mapE(function(){
-       LOG.create("Sending Auth Token");
        aurora.sendToServer({command: aurora.COMMANDS.AUTHENTICATE, data: {token: cookies.getCookie("sesh")}});
     }).mapE(function(){
         DATA.reregisterAll();
@@ -48,7 +47,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
         //else{
         	document.cookie="sesh="+messagePacket.data.cookie+"; path=/"; 
         //}
-        return {userId: messagePacket.data.userId, groupId: messagePacket.data.groupId}
+        return {userId: messagePacket.data.userId, groupId: messagePacket.data.groupId};
     }).startsWith({userId: -1, groupId: 1});
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
@@ -168,6 +167,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     
     
     widgets.register("DataSourcesPermissionTable", function(instanceId, data, purgeData){
+    	console.log("DataSourcesPermissionTable");
         var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
         
         var findRow = function(table, column, match){
@@ -177,39 +177,60 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
               }
           }  
         };
-        
+        //,{"permissionId":2,"dataSource":"AURORA_GROUPS", "groups":{}},{"permissionId":3,"dataSource":"AURORA_DATASOURCESADMIN"},{"permissionId":4,"dataSource":"AURORA_DATAPERMISSIONS"},{"permissionId":5,"dataSource":"AURORA_ACTIVE_USERS"},{"permissionId":6,"dataSource":"AURORA_PAGES"},{"permissionId":7,"dataSource":"AURORA_SETTINGS"},{"permissionId":8,"dataSource":"AURORA_MEM_USAGE"},{"permissionId":9,"dataSource":"AURORA_UPTIME"},{"permissionId":10,"dataSource":"AURORA_LOAD_AVERAGE"},{"permissionId":11,"dataSource":"STATS_RATE"},{"permissionId":12,"dataSource":"AURORA_DATASOURCES"},{"dataSource":"checklist.categories", "permissionId":13},{"dataSource":"STATS_RATE","permissionId":15},{"dataSource":"AURORA_UPTIME","permissionId":16},{"dataSource":"AURORA_MEM_USAGE","permissionId":17}
         
         return {
             build:function(){
                 return tableWidget.build();
             },
             load:function(){
+            	console.log("DataSourcesPermissionTable load");
                 var modifiedDataTableBI = F.liftBI(function(table, dataSources, groups){
+                    console.log("MTDBI", arguments);
                     if(!good()){
                         return chooseSignal();
                     }
+                    console.log("newTable", newTable);
                     var newTable = OBJECT.clone(table);
-                    TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
-                        if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
-                            newTable.rowMetaData[row.permissionId].disabled = true;
-                        }
-                    });
+                   // TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
+                   //     if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
+                   //         TABLES.UTIL.getRowMetaData(newTable, row.permissionId, true).disabled = true;
+                   //     }
+                   // });
+                   newTable.tableMetaData.canAdd = false;
+                   newTable.tableMetaData.canDelete = false;
                     var groupOptions = {keyMap: {}, valueMap: {"R":"R", "RW":"RW"}};                
                     for(var rowIndex in groups.data){
                         groupOptions.keyMap[groups.data[rowIndex]["groupId"]] = groups.data[rowIndex]["description"];
                     }
+                    newTable.columnMetaData["key"].readonly = true;
+                    newTable.columnMetaData["pluginId"].readonly = true;
+                    newTable.columnMetaData["channelId"].readonly = true;
                     newTable.columnMetaData["groups"].rendererOptions = groupOptions;
-                    newTable.columnMetaData["users"].rendererOptions = {valueMap: {"R":"R", "RW":"RW"}};
+                    //newTable.columnMetaData["users"].rendererOptions = {valueMap: {"R":"R", "RW":"RW"}};
+                    
+                    console.log("dataSources", dataSources);
+                    
+                    for(var index in dataSources.data){
+                    	var key = dataSources.data[index].key;
+                    	if(TABLES.UTIL.findRow(newTable, key)===false){
+                    		TABLES.UTIL.addRow(newTable, key, {key:key, groups:{}});
+                    	}
+                    }
+                    
+                    
+                    
+                    
                     
                     return newTable;
                 },function(table){
                     var newTable = OBJECT.clone(table);
-                    TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
-                        if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
-                            OBJECT.remove(newTable.rowMetaData[row.permissionId], "userChange");
-                            OBJECT.remove(newTable.rowMetaData[row.permissionId], "deleted");
-                        }
-                    });
+                  //  TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
+                   //     if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
+                   //         OBJECT.remove(newTable.rowMetaData[row.permissionId], "userChange");
+                   //         OBJECT.remove(newTable.rowMetaData[row.permissionId], "deleted");
+                   //     }
+                  //  });
                     return [newTable, undefined, undefined];                                  
                 }, DATA.requestB(instanceId, "AURORA_DATAPERMISSIONS"), DATA.requestB(instanceId, "AURORA_DATASOURCES"), DATA.requestB(instanceId, "AURORA_GROUPS"));
                 

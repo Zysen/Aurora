@@ -1,4 +1,4 @@
-var AUTHENTICATION = (function(authentication, http){
+var AUTHENTICATION = (function(authentication, http, aurora){
     DATA.httpMessageInE = F.zeroE();
 
     var activeSessionExpiry = 120000;//30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
@@ -16,7 +16,7 @@ var AUTHENTICATION = (function(authentication, http){
     STORAGE.createTableBI("aurora.groups", "groupId", {
         groupId:{name: "Group Id", type: "number"},
         description:{name: "Description", type: "string"}
-    }).sendToClients("AURORA_GROUPS", AURORA.DATATYPE.UTF8);
+    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS);
 
     var usersTableBI = STORAGE.createTableBI("aurora.users", "userId", {
         userId:{name: "User Id", type: "number"},
@@ -26,7 +26,7 @@ var AUTHENTICATION = (function(authentication, http){
         username:{name: "Username", type: "string"},
         password:{name: "Password", type: "password"},
         groupId:{name: "Group Id", type: "number"}
-    }).sendToClients("AURORA_USERS", AURORA.DATATYPE.UTF8);
+    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.USERS);
 
     var passwordLoginE = http.userAuthenticationE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE && packet.data.data.password!==undefined;}).mapE(function(dataPacket){
         var clientId = dataPacket.clientId;
@@ -176,12 +176,8 @@ var AUTHENTICATION = (function(authentication, http){
                 LOG.create("Session table updater, unhandled TAG");
             }
         }
-        //console.log("sessionTable");
-        //console.log(sessionTable.data);
-        //console.log(taggedPacket.tag+"2 "+sessionTable.data.length);
-        //console.log(sessionTable.data);
         return {sessionTable:sessionTable, clientMap: clientMap};
-    });//.mapE(function(state){return state.sessionTable;});
+    });
     
     authentication.sessionTableE = sessionTableStateE.mapE(function(state){return state.sessionTable;});
     authentication.sessionTableB = authentication.sessionTableE.startsWith(SIGNALS.NOT_READY);
@@ -191,7 +187,7 @@ var AUTHENTICATION = (function(authentication, http){
         return table;
     }, function(table){
         sessionTableUpE.sendEvent(table);
-    }, authentication.sessionTableB).sendToClients("AURORA_SESSIONS", AURORA.DATATYPE.UTF8);
+    }, authentication.sessionTableB).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.SESSIONS);
     
     /*
     authentication.sessionTableE.calmE(1000).mapE(function(){
@@ -213,12 +209,13 @@ var AUTHENTICATION = (function(authentication, http){
         }
     });
     */
-    authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "dataSource", {
-        dataSource:{name: "Data Source", type: "string"},
-        groups:{name: "Groups", type: "map"},
-        users:{name: "Users", type: "map"}
-    }).sendToClients("AURORA_DATAPERMISSIONS", AURORA.DATATYPE.UTF8);
-   
+    authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "key", {
+        key:{name: "Key", type: "string"},
+        pluginId:{name: "Plugin", type: "int"},
+        channelId:{name: "Channel", type: "int"},
+        groups:{name: "Groups", type: "map"}
+    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_PERMISSIONS, "Data Permissions");
+   // users:{name: "Users", type: "boolean"}
 
     authentication.clientCanWrite = function(clientId, dataSource, write){
         authentication.clientCanRead(clientId, dataSource, true);
@@ -277,5 +274,5 @@ var AUTHENTICATION = (function(authentication, http){
     };
 
     return authentication;
-})(AUTHENTICATION || {}, HTTP);
+})(AUTHENTICATION || {}, HTTP, AURORA);
 

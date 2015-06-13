@@ -21,7 +21,7 @@ var SKELETON = (function(skeleton, dataManager, widgets, aurora){
 		    },
 		    load : function() {
 		    	//Channels Example
-		    	var channelE = dataManager.getChannelE(instanceId, skeleton.CHANNEL_ID);
+		    	var channelE = dataManager.getCommandChannelE(instanceId, skeleton.CHANNEL_ID);
 		    	
 		    	var dailyTableB = channelE.filterCommandsE(skeleton.COMMANDS.GET_TIME).mapE(function(packet){
 		    		timeContainer.innerHTML = packet.data.time;
@@ -32,13 +32,13 @@ var SKELETON = (function(skeleton, dataManager, widgets, aurora){
 		    	});
 		    	
 		    	//Behaviour Example    	
-		    	DATA.requestB(instanceId, "SKELETON_TIME").liftB(function(date){
+		    	DATA.requestB(instanceId, skeleton.CHANNEL_ID, skeleton.CHANNELS.SKELETON_TIME).liftB(function(date){
 		    		updatingTimeContainer.innerHTML = date;
 		    	});
 		    	
 		    	//Bi-Directional Behaviour Example
 		    	
-		    	var sliderBI = DATA.requestB(instanceId, "SKELETON_SLIDER")
+		    	var sliderBI = DATA.requestB(instanceId, skeleton.CHANNEL_ID, skeleton.CHANNELS.SKELETON_SLIDER);
 		    	sliderBI.liftB(function(value){
 		    		slider.value = value;
 		    	});

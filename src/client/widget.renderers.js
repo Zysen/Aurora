@@ -4,10 +4,13 @@
  * 
  */
 
+
+
 /**
  * Map Renderer
  */
 WIDGETS.renderers.Map = function(id) {
+	console.log("WIDGETS.renderers.Map");
     // Ensure new keyword has been used
     if ( !(this instanceof arguments.callee) ) 
            throw new Error("Constructor called as a function, use new keyword");
@@ -15,9 +18,13 @@ WIDGETS.renderers.Map = function(id) {
     var container = DOM.create("div");
     var rowsContainer = DOM.createAndAppend(container, "div", undefined, "mapRenderer_rowsContainer");
     var controlsContainer = DOM.createAndAppend(container, "div", undefined, "mapRenderer_controls");
+    controlsContainer.style.clear = "both";
     var lastKeys = undefined;
     var newValueE = F.receiverE();
     var newStateE = F.receiverE();
+    var deleteClickedE = F.receiverE();
+    var optionsE = newStateE.propertyE("options");
+    var optionsB = optionsE.startsWith(SIGNALS.NOT_READY);
     var valueE = F.zeroE();
     
     var keySelection = DOM.createAndAppend(controlsContainer, "select", undefined, "mapRenderer_newKey");
@@ -29,49 +36,38 @@ WIDGETS.renderers.Map = function(id) {
         build : function() {
             return container;
         },
-        load : function(options) {         
-            var newStateB = newStateE.startsWith(SIGNALS.NOT_READY);
-            var newValueB = newValueE.startsWith(SIGNALS.NOT_READY);
-            var lastValueB = newValueB.previousValueB();
+        load : function(options) {      
+            var newStateB = newStateE.startsWith(SIGNALS.NOT_READY);                
+
+            var deleteUpdateE = deleteClickedE.mapE(function(clickEvent){
+                return clickEvent.target.id.replace(id+"_", "").replace("_button", "");
+            });
             
-            F.liftB(function(newValue, state){
-                if(!good()){
-                    return chooseSignal();
-                }
-                LOG.create();
-                keySelection.style.display = (!state.options.keyMap)?"none":"table-cell";
-                keySelectionInput.style.display = (!state.options.keyMap)?"table-cell":"none";
-                
-                valueSelection.style.display = (!state.options.valueMap)?"none":"table-cell";
-                valueSelectionInput.style.display = (!state.options.valueMap)?"table-cell":"none";
-                
-                for(var i=keySelection.options.length-1;i>=0;i--){keySelection.remove(i);}
-                for(var key in state.options.keyMap){
-                    var option = DOM.create("option", undefined, undefined, state.options.keyMap[key]);
-                    option.value = key;
-                    if(newValue[key]==undefined){
-                        keySelection.appendChild(option);
-                    }
-                }
-                for(var i=valueSelection.options.length-1;i>=0;i--){valueSelection.remove(i);}
-                for(var key in state.options.valueMap){
-                    var option = DOM.create("option", undefined, undefined, state.options.valueMap[key]);
-                    option.value = key;
-                    valueSelection.appendChild(option);
-                }
-            }, newValueB, newStateB);
-                
+            var addUpdateE = F.clicksE(addButton).snapshotE(newStateB).mapE(function(state){
+                var key = (!state.options.keyMap)?keySelectionInput.value:keySelection.value;
+                var value = (!state.options.valueMap)?valueSelectionInput.value:valueSelection.value;
+                return {key:key,value:value};
+            });
+
+           valueE = F.mergeE(newValueE.tagE("map"), deleteUpdateE.tagE("delete"), addUpdateE.tagE("add")).collectE({value:{}}, function(newValue, state){
+            	if(newValue.tag==="map"){
+            		state.value = newValue.value;
+            	}
+            	else if(newValue.tag==="add"){
+            		state.value[newValue.value.key] = newValue.value.value;
+            	}
+            	else if(newValue.tag==="delete"){
+            		state.value = OBJECT.remove(state.value, newValue.value);
+            	}
+            	state.tag = newValue.tag;
+            	return state;
+           });
+
             
-            var deleteClickedE = newValueE.mapE(function(newMap){
-                var options = newStateB.valueNow().options || {};
-                var lastKeys = Object.keys(lastValueB.valueNow());
-                if(lastKeys){
-                    for(var index in lastKeys){
-                        if(!newMap[lastKeys[index]]){
-                            DOM.remove(DOM.get(id+"_"+lastKeys[index]));
-                        }
-                    }
-                }  
+            valueE.mapE(function(newMap){
+            	newMap = newMap.value;
+            	rowsContainer.innerHTML = "";
+                var options = optionsB.valueNow();
                 var deleteEvents = [];
                 for(var key in newMap){
                     var value = newMap[key];
@@ -79,9 +75,15 @@ WIDGETS.renderers.Map = function(id) {
                     var deleteButton = DOM.get(domId+"_button");
                     if(!deleteButton){
                         var rowContainer = DOM.createAndAppend(rowsContainer, "div", domId, "mapRenderer_row");
+                        rowContainer.style.clear = "both";
                         var keyCont = DOM.createAndAppend(rowContainer, "div", undefined, "mapRenderer_key", (options.keyMap!=undefined?options.keyMap[key]:key));
-                        var valCont = DOM.createAndAppend(rowContainer, "div", domId+"_val", "mapRenderer_val", value);
                         var deleteButton = DOM.createAndAppend(rowContainer, "button", domId+"_button", "mapRenderer_button", "Delete");
+                        var valCont = DOM.createAndAppend(rowContainer, "div", domId+"_val", "mapRenderer_val", value);
+                        
+                    	keyCont.style.cssFloat = "left";
+                    	valCont.style.cssFloat = "right";
+                    	valCont.style.marginRight = "5px";
+                    	deleteButton.style.cssFloat = "right";
                     }
                     else if(DOM.get(domId+"_val")!==value){
                         DOM.get(domId+"_val").innerHTML = value;
@@ -89,36 +91,49 @@ WIDGETS.renderers.Map = function(id) {
                     deleteEvents.push(F.clicksE(deleteButton));
                 }
                 return F.mergeE.apply({}, deleteEvents);
-            }).switchE();
-            
-            //addButton
-            
-            
-            var deleteUpdateE = deleteClickedE.mapE(function(clickEvent){
-                var clickedKey = clickEvent.target.id.replace(id+"_", "").replace("_button", "");
-                var cloneData = OBJECT.clone(newValueB.valueNow());
-                OBJECT.remove(cloneData, clickedKey);
-                return cloneData;
+            }).switchE().mapE(function(e){
+            	deleteClickedE.sendEvent(e);
             });
-            
-            var addUpdateE = F.clicksE(addButton).snapshotE(newStateB).mapE(function(state){
-                var key = (!state.options.keyMap)?keySelectionInput.value:keySelection.value;
-                var value = (!state.options.valueMap)?valueSelectionInput.value:valueSelection.value;
-                var cloneData = OBJECT.clone(newValueB.valueNow());
-                cloneData[key] = value;
-                return cloneData;
-            });
-            
-            valueE = F.mergeE(deleteUpdateE, addUpdateE);
+
+   			F.liftB(function(newValue, state){
+                if(!good()){
+                    return chooseSignal();
+                }
+                keySelection.style.display = (!state.options.keyMap)?"none":"table-cell";
+                keySelectionInput.style.display = (!state.options.keyMap)?"table-cell":"none";
+                
+                valueSelection.style.display = (!state.options.valueMap)?"none":"table-cell";
+                valueSelectionInput.style.display = (!state.options.valueMap)?"table-cell":"none";
+                for(var i=keySelection.options.length-1;i>=0;i--){keySelection.remove(i);}
+                for(var key in state.options.keyMap){
+                    var option = DOM.create("option", undefined, undefined, state.options.keyMap[key]);
+                    option.value = key;
+                       keySelection.appendChild(option);
+                }
+                
+                for(var i=valueSelection.options.length-1;i>=0;i--){valueSelection.remove(i);}
+                for(var key in state.options.valueMap){
+                    var option = DOM.create("option", undefined, undefined, state.options.valueMap[key]);
+                    option.value = key;
+                    valueSelection.appendChild(option);
+                }
+            }, valueE.startsWith(SIGNALS.NOT_READY), newStateB);
         },
         setValue : function(newMap) {
+        	console.log("setValue", newMap);
             newValueE.sendEvent(newMap);
         },
         setState : function(state) {
             newStateE.sendEvent(state);
         },
         getValueE : function() {
-            return valueE;
+        	return valueE.filterE(function(state){
+        		return state.tag!=="map";
+        	}).mapE(function(state){
+        		return state.value;
+        	});
+        	//return F.zeroE();
+            //return valueE.printE("Value E out: "+id);
         },
         getFocusE : function() {
             return F.zeroE();
@@ -1942,4 +1957,177 @@ WIDGETS.renderers.TimestampDiff = function(id) {
             return F.constantB(true);
         }
     };
+};
+
+/**
+ * Popup
+ */
+WIDGETS.renderers.Popup = function(id) {
+	
+	// Ensure new keyword has been used
+	if ( !(this instanceof arguments.callee) ) 
+		   throw new Error("Constructor called as a function, use new keyword");
+	
+	// Instance id
+	var instanceId = id;
+	
+	// Elements
+	// --------
+	var jdiv_container = jQuery('<div>', {style: 'position: relative;'});
+	jdiv_container.attr('id', id);
+	
+	var jdiv_inner = jQuery('<div>', {id: 'duration' + instanceId, 'class': 'popup_field', 'tabindex':0});
+	jdiv_inner.append(
+		jQuery('<div>', {'class': 'popup_icon_container button', text: '...'}),
+		jQuery('<div>', {'class': 'popup_display', html: '&nbsp;'}),
+		jQuery('<div>', {style: 'clear: both;'})
+	);
+	
+	var jdiv_readonly = jQuery('<div>', {'class': 'renderer_group_input readonly', html: '&nbsp;'});
+	jdiv_container.append(jdiv_inner, jdiv_readonly);
+	
+	// Construct popup
+	var jdiv_popup = jQuery('<div>', {id: 'popup_content' + instanceId, 'class': 'popup_container'});
+	jdiv_popup.hide();
+	jdiv_container.append(jdiv_popup);
+	
+	var is_disabled = undefined;
+	var is_errored = undefined;
+	var is_readonly = undefined;
+	
+	// Events
+	var toggledE = F.receiverE();
+	var click_outsideE = F.receiverE();
+	var focusE = null;
+	var blurE = null;
+	
+	// Public object
+	// -------------
+	return {
+		build : function() {
+			return jdiv_container.get(0);
+		},
+		
+		load : function() {
+			focusE = jdiv_inner.fj('jQueryBind', 'focus');
+			blurE = jdiv_inner.fj('jQueryBind', 'blur');
+			
+			// Popup logic
+			// -----------
+			
+			var clickE = jdiv_inner.fj('clicksE').mapE(function(){
+				if(jdiv_inner.hasClass('disabled')){
+					return false;
+				}			
+				
+				// Force focus
+				jdiv_inner.focus();
+				return true;
+			}).filterE(function(value){ return value;});
+			
+
+			var popup_shownE = F.mergeE(clickE, click_outsideE).mapE(function(){
+				
+				if(jdiv_popup.is(":visible")){
+					// Hide content
+					toggledE.sendEvent(false);
+					jdiv_popup.hide();
+					jdiv_inner.find('.duration_inner_icon').toggleClass('up', false);
+					
+					// Remove click outside for this specific object.
+					jQuery(document).off('mouseup.' + '#popup_content' + instanceId);
+					
+					return false;
+					
+				}else{
+					// Show content
+					toggledE.sendEvent(true);
+					jdiv_popup.show();
+					ensureOnScreen(jdiv_popup, '', jdiv_inner.outerHeight() + 2);
+					
+					// Listen to click outside for this specific object.
+					jQuery(document).on('mouseup.' + '#popup_content' + instanceId, function (e){
+					    var container = jQuery('#popup_content' + instanceId + ', #' + 'duration' + instanceId);
+					    if (!container.is(e.target) && container.has(e.target).length === 0)
+					    {
+					    	click_outsideE.sendEvent();
+					    }
+					});
+					
+					return true;
+				}
+			});
+		},
+		
+		setValue : function(value) {
+			jdiv_inner.find('.popup_display').html(value);
+			jdiv_readonly.html(value);
+		},
+		
+		setContent : function(content){
+			jdiv_popup.html(content);
+		},
+		
+		close : function(){
+			click_outsideE.sendEvent();
+		},
+		
+		setState : function(state) {
+			if(state.disabled !== is_disabled){
+				is_disabled = state.disabled;
+				jdiv_inner.toggleClass('disabled', is_disabled);
+				jdiv_readonly.toggleClass('disabled', is_disabled);
+				jdiv_inner.find('.popup_icon_container').toggleClass('disabled', is_disabled);
+				
+				if(is_disabled){
+					jdiv_inner.removeAttr('tabindex');
+				}else{
+					jdiv_inner.attr('tabindex', 0);
+				}
+			}
+			
+			if(state.readonly !== is_readonly){
+				is_readonly = state.readonly;
+				jdiv_inner.toggle(!is_readonly);
+				jdiv_readonly.toggle(is_readonly);
+			}
+			
+			if(state.errored !== is_errored){
+				is_errored = state.errored;
+				jdiv_inner.toggleClass('errored', is_errored);
+			}
+			
+			if(state.options !== undefined && state.options.tooltip !== undefined){
+				jdiv_container.attr('title', state.options.tooltip);
+			}
+		},
+		
+		getToggledE : function(){
+			return toggledE;
+		},
+		
+		getValueE : function() {
+			return F.zeroE();	// Extend this class to return a value.
+		},
+		
+		getFocusE : function() {
+			return focusE;
+		},
+		
+		getBlurE : function() {
+			return blurE;
+		},
+		
+		isDisabled : function() {
+			return is_disabled;
+		},
+		
+		isErrored : function() {
+			return is_errored;
+		},
+		
+		isReadOnly : function() {
+			return is_readonly;
+		}
+	};
 };

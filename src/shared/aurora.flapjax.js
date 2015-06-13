@@ -257,14 +257,9 @@ F.Behavior.prototype.equalsB = function(object2){
  * EventStream that extracts an objects property
  */
 F.EventStream.prototype.propertyE = function(propertyName){
-	return this.mapE(function(value){
-		if(!good()){
-			return value;
-		}
-		if(value.propertyName===undefined){
-			console.log("EventStream.propertyE error: No such property "+propertyName);
-			return SIGNALS.ERROR();
-		}
+	return this.filterE(function(value){
+		return value[propertyName]!==undefined;
+	}).mapE(function(value){
 		return value[propertyName];
 	});
 };
