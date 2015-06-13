@@ -7,12 +7,7 @@ var ADMINISTRATION = (function(administration, widgets){
 	}
 	
 	widgets.register("UserDataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_USERDATASOURCES"));
-	widgets.register("DataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCES"));
-	widgets.register("DataSourcesAdminTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCESADMIN"));
-	
-	widgets.register("SettingsManagementConfig", TABLES.WIDGETS.basicTableWidget("AURORA_SETTINGS"));
-	widgets.register("PageManagement", TABLES.WIDGETS.basicTableWidget("AURORA_PAGES"));
-	//widgets.register("UserManagement", TABLES.WIDGETS.basicTableWidget("AURORA_USERS"));	//administration.WIDGETS.UserManagement = 
+	//widgets.register("DataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCES"));
 	widgets.register("UserManagement", function(instanceId, data, purgeData){
         var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
         return {
@@ -42,12 +37,12 @@ var ADMINISTRATION = (function(administration, widgets){
                     return table;
                 },function(table){
                     return [table, undefined];
-                }, DATA.requestB(instanceId, "AURORA_USERS"), DATA.requestB(instanceId, "AURORA_GROUPS"));
+                }, DATA.requestB(instanceId, aurora.CHANNEL_ID, aurora.CHANNELS.USERS), DATA.requestB(instanceId, aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS));
                 tableWidget.load(modifiedDataTableBI);
             },
             destroy:function(){
-                DATA.release(instanceId, "AURORA_USERS");
-                DATA.release(instanceId, "AURORA_GROUPS");
+                DATA.release(instanceId, aurora.CHANNEL_ID, aurora.CHANNELS.USERS);
+                DATA.release(instanceId, aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS);
                 tableWidget.destroy();
             }
         };
@@ -83,65 +78,17 @@ var ADMINISTRATION = (function(administration, widgets){
                         table.rowMetaData["3"].deleted = false;
                     }
                     return [table];
-                }, DATA.requestB(instanceId, "AURORA_GROUPS"));
+                }, DATA.requestB(instanceId,aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS));
                 
                 tableWidget.load(modifiedDataTableBI);
             },
             destroy:function(){
-                DATA.release(instanceId, "AURORA_GROUPS");
+                DATA.release(instanceId, aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS);
                 tableWidget.destroy();
             }
         };
     });
-	
-	widgets.register("SettingsManagement", function(instanceId, data, purgeData){
-		var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
-		return {
-			build:function(){
-				return tableWidget.build();
-			},
-			load:function(){
-				var modifiedDataTableBI = F.liftBI(function(newTable){
-					if(!good()){
-						return chooseSignal();
-					}
-					var table = OBJECT.clone(newTable);
-					table.tableMetaData.canAdd = false;
-					table.tableMetaData.canDelete = false;
-					var visibleColumns = ["description", "value"];
-					for(var columnId in table.columnMetaData){
-						if(!ARRAYS.contains(visibleColumns, columnId)){
-							table.columnMetaData[columnId].visible = false;
-						}
-					}
-					for(var rowIndex in table.data){
-						var type = table.data[rowIndex]["type"].toLowerCase();
-						if(type=="list"){
-							LOG.create("widgets.renderers.List");
-							//LOG.create(widgets.renderers.List);//widgets.renderers.List
-							TABLES.UTIL.createCellMeta(table, rowIndex, "value", {renderer: "list", rendererOptions: {options: table.data[rowIndex]["metaData"]}});
-						}
-						else{
-							TABLES.UTIL.createCellMeta(table, rowIndex, "value", {dataType: table.data[rowIndex]["type"]});
-						}
-					}
-					table.columnMetaData.description.readonly = true;
-					//TABLES.UTIL.printTable(table);
-					return table;
-				},function(table){
-					return [table];
-				}, DATA.requestB(instanceId, "AURORA_SETTINGS"));
-				
-				tableWidget.load(modifiedDataTableBI);
-			},
-			destroy:function(){
-				DATA.release(instanceId, "AURORA_SETTINGS");
-				tableWidget.destroy();
-			}
-		};
-	});
-	
+
 	return administration;
 })(ADMINISTRATION || {}, WIDGETS);
-
 
