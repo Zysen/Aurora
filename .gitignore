@@ -20,6 +20,7 @@
 /config.json
 /themes/csr*
 /src/plugins/csr*
+/aurora-crash.log
 
 
 # OS generated files #
