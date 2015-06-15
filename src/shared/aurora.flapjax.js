@@ -54,8 +54,8 @@ F.liftBI = function (fn, functionUp) {
 
 
 F.EventStream.prototype.filterUndefinedE = function(){
-	return this.filterE(function(val){
-		return this.val!=undefined;
+	return this.filterE(function(value){
+		return this.value!=undefined;
 	});
 };
 
@@ -409,8 +409,8 @@ F.EventStream.prototype.filterUncheckedTargetE = function(){
 	});
 };
 F.EventStream.prototype.filterTypeE = function(type){
-	return this.filterE(function(val) {
-		return typeof(val)!==type;
+	return this.filterE(function(value) {
+		return typeof(value)!==type;
 	});
 };
 F.EventStream.prototype.filterUndefinedE = function(){
@@ -561,6 +561,23 @@ F.Behavior.prototype.bufferOnBooleanB = function(booleanB){
 		
 		return newSet;
 	}, this, booleanB, F.constantB([])).changes().switchE().startsWith(SIGNALS.NOT_READY);
+};
+
+F.EventStream.prototype.bufferOnBooleanE = function(booleanB){
+	var rec = F.receiverE();	
+	F.mergeE(booleanB.changes().mapE(function(){}), this).collectE({buffer: []}, function(newVal, state){
+		if(newVal!==undefined){
+			state.buffer.push(newVal);
+		}
+		if(booleanB.valueNow()===true){
+			for(var index in state.buffer){
+				rec.sendEvent(state.buffer[index]);
+			}
+			return {buffer: []};
+		}
+		return state;
+	});
+	return rec;
 };
 
 F.Behavior.prototype.filterRepeatsB = function(){
