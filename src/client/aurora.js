@@ -422,7 +422,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 	channelRegistrationE.mapE(function(regReq){
 		dataRegChannelE.send(aurora.COMMANDS.REGISTER_DATA, regReq);
 	});
-	
+
 	function extractData(str){
 		//This is for extracting data from a binary stream back to JSON
 	    var qCount = 0;

@@ -21,7 +21,8 @@ var SKELETON = (function(skeleton, dataManager, widgets, aurora){
 		    },
 		    load : function() {
 		    	//Channels Example
-		    	var channelE = dataManager.getCommandChannelE(instanceId, skeleton.CHANNEL_ID);
+
+		    	var channelE = dataManager.getChannelE(instanceId, skeleton.CHANNEL_ID, skeleton.CHANNELS.MAIN);
 		    	
 		    	var dailyTableB = channelE.filterCommandsE(skeleton.COMMANDS.GET_TIME).mapE(function(packet){
 		    		timeContainer.innerHTML = packet.data.time;

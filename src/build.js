@@ -34,8 +34,8 @@ var config = JSON.parse(fs.readFileSync((process.argv.length > 2 && fs.existsSyn
 var theme = config.theme;
 var exec = require('exec');
 
-config.generateDocumentation = config.generateDocumentation || true;
 
+config.generateDocumentation = config.generateDocumentation || true;
 var ignorePlugins = [];
 
 var ARRAYS = (function(arrays) {
@@ -199,19 +199,9 @@ function wait() {
 var sharedBuildFiles = [];
 
 var clientBuildFiles = [
-// "client/closure-base.js",
-"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
-        "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/binary.client.js", "client/aurora.js",
-
+"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
+        "shared/crypto.js", "plugins/jquery/jquery-2.0.3.min.js", "plugins/jquery/jquery-flapjax.js", "shared/aurora.flapjax.js", "client/dom.js", "client/binary.client.js", "client/aurora.js",
          "client/widget.renderers.js", "client/authentication.client.js"
-// "plugins/stats/stats.client.widgets.js",
-// "plugins/debug/debug.client.widgets.js",
-// "plugins/aurora.administration/aurora.administration.client.js",
-// "plugins/aurora.administration/aurora.administration.client.widgets.js",
-// "plugins/treeview/treeview.client.js",
-// "plugins/treeview/treeview.client.js",
-// "plugins/checklist/checklist.client.js",
-// "plugins/checklist/checklist.client.widgets.js"
 ];
 
 var clientCSSFiles = [ "../themes/" + theme + "/style.css",
@@ -220,11 +210,7 @@ var clientCSSFiles = [ "../themes/" + theme + "/style.css",
 
 var serverBuildFiles = [ "server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/date.js",
         "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js",
-        "server/binary.server.js","server/server.js", "server/authentication.server.js"
-// "plugins/stats/stats.server.js",
-// "plugins/debug/debug.server.js",
-// "plugins/aurora.administration/aurora.administration.server.js",
-// "plugins/checklist/checklist.server.js"
+        "server/binary.server.js", "server/server.js", "server/authentication.server.js"
 ];
 
 

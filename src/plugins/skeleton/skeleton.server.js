@@ -2,7 +2,6 @@ var SKELETON = (function(skeleton, dataManager){
 	
 	//Channels Example
 	var channelE = dataManager.getCommandChannelE(skeleton.CHANNEL_ID, skeleton.CHANNELS.SKELETON_TIME, "Skeleton Time");								//2 Way data channel
-	//TESTUBG Todfgdf
 	channelE.filterCommandsE(skeleton.COMMANDS.GET_TIME).mapE(function(packet){					//Respond with data when requested
 		console.log("Received Time Request Packet");
 		console.log(packet.data);
