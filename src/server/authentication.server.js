@@ -7,8 +7,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     
     var customLoginReceiverE = F.receiverE();
     authentication.customLogin = function(token, seriesId, userId, groupId, rememberMe, clientId, connection){
-    	//console.log({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
-        customLoginReceiverE.sendEvent({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
+    	customLoginReceiverE.sendEvent({user: {userId:userId, groupId:groupId}, token: token, seriesId: seriesId, rememberMe:rememberMe, clientId:clientId, connection: connection});
     };
 
     authentication.GROUPS = {PUBLIC:0, ADMINISTRATOR: 1};
@@ -16,7 +15,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     STORAGE.createTableBI("aurora.groups", "groupId", {
         groupId:{name: "Group Id", type: "number"},
         description:{name: "Description", type: "string"}
-    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS);
+    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS, "User Groups");
 
     var usersTableBI = STORAGE.createTableBI("aurora.users", "userId", {
         userId:{name: "User Id", type: "number"},
@@ -26,7 +25,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         username:{name: "Username", type: "string"},
         password:{name: "Password", type: "password"},
         groupId:{name: "Group Id", type: "number"}
-    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.USERS);
+    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.USERS, "Users");
 
     var passwordLoginE = http.userAuthenticationE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE && packet.data.data.password!==undefined;}).mapE(function(dataPacket){
         var clientId = dataPacket.clientId;
@@ -118,7 +117,6 @@ var AUTHENTICATION = (function(authentication, http, aurora){
             case "PASSWORD_LOGIN":{
                 var row = TABLES.UTIL.findRow(sessionTable, update.token);
                 if(row && update.user){                      //User Login
-                	//console.log(row);
                 	row.userId = update.user.userId;
                     row.groupId = update.user.groupId;
                     row.persistent = update.rememberMe;
@@ -138,14 +136,11 @@ var AUTHENTICATION = (function(authentication, http, aurora){
                     //var tokenPair = AUTHENTICATION.createNewTokenSeriesPair(sessionTable, 10, update.seriesId);
                    // row.token = tokenPair.token;
                    // row.expiry = DATE.getTime()+(row.persistent?persistentSessionExpiry:activeSessionExpiry);
-                    
-                    //for(var index in row.instances){
-                      //  clientMap[row.instances[index]] = row.token;
-                    //}
+                   for(var index in row.instances){
+                        clientMap[row.instances[index]] = row.token;
+                    }
                     //TODO: Should this token re create happen on each HTTP request? What does this mean for http security?
                     //TODO: Add longer expiry if remember me login has happened.      
-                    
-                    //update.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.UPDATE_TOKEN, data: {message: "Successfully Logged In!", cookie:row.token+"-"+row.seriesId, token: row.token, expiry: row.expiry, groupId:row.groupId}}));   
                 }
                 else if(update.seriesId!==undefined){   //Invalid token, possible token theft.
                     var deleteTokens = TABLES.UTIL.findRows(sessionTable, "seriesId", update.seriesId);
@@ -182,14 +177,12 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     authentication.sessionTableE = sessionTableStateE.mapE(function(state){return state.sessionTable;});
     authentication.sessionTableB = authentication.sessionTableE.startsWith(SIGNALS.NOT_READY);
     authentication.clientMapB = sessionTableStateE.mapE(function(state){return state.clientMap;}).startsWith(SIGNALS.NOT_READY);;
-    
     F.liftBI(function(table){
         return table;
     }, function(table){
         sessionTableUpE.sendEvent(table);
-    }, authentication.sessionTableB).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.SESSIONS);
+    }, authentication.sessionTableB).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.SESSIONS, "Aurora Sessions");
     
-    /*
     authentication.sessionTableE.calmE(1000).mapE(function(){
     	var table = authentication.sessionTableB.valueNow();
         var newTable = [];
@@ -208,17 +201,16 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         	console.log(e);
         }
     });
-    */
-    authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "key", {
+ 
+  	authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "key", {
         key:{name: "Key", type: "string"},
-        pluginId:{name: "Plugin", type: "int"},
+        plugin:{name: "Plugin", type: "string"},
         channelId:{name: "Channel", type: "int"},
         groups:{name: "Groups", type: "map"}
     }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_PERMISSIONS, "Data Permissions");
-   // users:{name: "Users", type: "boolean"}
 
-    authentication.clientCanWrite = function(clientId, dataSource, write){
-        authentication.clientCanRead(clientId, dataSource, true);
+    authentication.clientCanWrite = function(clientId, pluginId, channelId){
+        return authentication.clientCanRead(clientId, pluginId, channelId, true);
     };
      
 
@@ -243,32 +235,31 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     };
     
     
-    authentication.clientCanRead = function(clientId, dataSource, write){
-    return true;
+    authentication.clientCanRead = function(clientId, pluginId, channelId, write){
+    	var pluginName = aurora.pluginsById[pluginId];
         var table = authentication.sessionTableB.valueNow();
         var clientMap = authentication.clientMapB.valueNow();
         var token = clientMap[clientId];
-        write = write==undefined?false:write;
-        
+        write = write===undefined?false:write;
+
         var userRow = TABLES.UTIL.findRow(table, token);
-        //LOG.create(userRow);
         if(!userRow){
             LOG.create("ClientCanRead: Unable to find user "+clientId+", "+token);
+            LOG.log("Unable to find user "+clientId+", "+token, LOG.WARNING, "AUTHENTICATION");
+            return false;
         }
-        
+      
         var userId = userRow.userId;
-        var groupId = userRow.groupId;
-        var permissionTable = authentication.dataPermissionsBI.valueNow();      
-
+        var groupId = userRow.groupId===undefined?1:userRow.groupId;
+        var permissionTable = authentication.dataPermissionsBI.valueNow();     
         //This is a better idea, but its not the pk //var rowIndex = TABLES.UTIL.findRowIndex(permissionTable, dataSource);
-        
-        var permRows = TABLES.UTIL.findRows(permissionTable, "dataSource", dataSource);
-        var permRow = permRows[0];
-        if(permRows.length>0 && permRow.groups[groupId+""]!==undefined && ((permRow.groups[groupId+""]==="R" && write!==true) || (permRow.groups[groupId+""]==="RW"))){
-            return true;
-        }
-        if(permRows.length>0 && permRow.users && permRow.users[userId+""]!==undefined && ((permRow.users[userId+""]==="R" && write!==true) || (permRow.users[userId+""]==="RW"))){
-            return true;
+        for(var rowIndex in permissionTable.data){
+        	var row = permissionTable.data[rowIndex];
+        	if(row.channelId === channelId && row.plugin === pluginName){
+        		 if(row.groups[groupId+""]!==undefined && ((row.groups[groupId+""]==="R" && write!==true) || (row.groups[groupId+""]==="RW"))){
+		            return true;
+		         }
+        	}
         }
         return false;
     };

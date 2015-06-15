@@ -36,7 +36,7 @@ var exec = require('exec');
 
 config.generateDocumentation = config.generateDocumentation || true;
 
-var ignorePlugins = [];	//"skeleton","stats", "debug"
+var ignorePlugins = [];
 
 var ARRAYS = (function(arrays) {
 	arrays.arrayCut = function(array, index) {
@@ -81,17 +81,21 @@ String.prototype.endsWith = function(suffix) {
 	return this.indexOf(suffix, this.length - suffix.length) !== -1;
 };
 
+String.prototype.replaceAll = function (find, replace) {
+    var str = this;
+    return str.replace(new RegExp(find.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replace);
+};
+
+String.prototype.makeDomIdSafe = function() {
+	return this.replace(/^[^a-z0-9]+|[^\w:.-]+/gi, "").replaceAll("=", "").replaceAll(".", "_").toLowerCase();//.toLowerCase().replaceAll("=", "");
+};
+
 var concatenate = function() {
 	var concatenated = "";
 	for ( var index in arguments) {
 		var fileArray = arguments[index];
 		for ( var index in fileArray) {
-			try{
 			concatenated += fs.readFileSync(fileArray[index]) + "\n\n";
-			}
-			catch(e){
-				console.log("Error on file "+fileArray[index], e);
-			}
 		}
 	}
 	return concatenated;
@@ -196,10 +200,10 @@ var sharedBuildFiles = [];
 
 var clientBuildFiles = [
 // "client/closure-base.js",
-"client/binary.client.js", "server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
-        "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/aurora.js",
+"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
+        "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/binary.client.js", "client/aurora.js",
 
-        "plugins/tables/tables.js", "plugins/tables/tables.shared.js", "plugins/tables/tables.client.js", "plugins/tables/tables.validators.js", "client/widget.renderers.js", "client/authentication.client.js"
+         "client/widget.renderers.js", "client/authentication.client.js"
 // "plugins/stats/stats.client.widgets.js",
 // "plugins/debug/debug.client.widgets.js",
 // "plugins/aurora.administration/aurora.administration.client.js",
@@ -214,9 +218,13 @@ var clientCSSFiles = [ "../themes/" + theme + "/style.css",
 // "plugins/stats/stats.css",
 "plugins/tables/tables.css" ];
 
-var serverBuildFiles = [ "server/binary.server.js", "server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/arrays.js", "shared/string.js", "shared/date.js",
+var serverBuildFiles = [ "server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/date.js",
         "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js",
-        "server/server.js", "server/authentication.server.js"
+        "server/binary.server.js","server/server.js", "server/authentication.server.js"
+// "plugins/stats/stats.server.js",
+// "plugins/debug/debug.server.js",
+// "plugins/aurora.administration/aurora.administration.server.js",
+// "plugins/checklist/checklist.server.js"
 ];
 
 
@@ -224,14 +232,14 @@ var serverBuildFiles = [ "server/binary.server.js", "server/file.js", "server/go
 var target = (process.argv.length >= 3) ? process.argv[2] : "debug";
 
 if(target=="libs"){
-	var libs = concatenate(["server/goog.js", "shared/number.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js","shared/aurora.flapjax.js"]);
+	var libs = concatenate(["server/goog.js", "shared/number.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js","shared/aurora.flapjax.js"]);
 	fs.writeFileSync("aurora.libs.js", libs);
 	process.exit();
 }
 /*
-var clientBuildFiles = ["server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/aurora.js", "plugins/tables/tables.shared.js", "plugins/tables/tables.client.js", "plugins/tables/tables.validators.js", "client/authentication.client.js", "client/widget.renderers.js"];
+var clientBuildFiles = ["server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js", "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/aurora.js", "plugins/tables/tables.shared.js", "plugins/tables/tables.client.js", "plugins/tables/tables.validators.js", "client/authentication.client.js", "client/widget.renderers.js"];
 var clientCSSFiles = ["../themes/" + theme + "/style.css", "plugins/tables/tables.css"]; 
-var serverBuildFiles = ["server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/date.js", "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js", "server/server.js", "server/authentication.server.js"];
+var serverBuildFiles = ["server/file.js", "server/goog.js", "shared/enums.js", "shared/number.js", "shared/log.js", "shared/signals.js", "shared/math.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/date.js", "shared/crypto.js", "shared/aurora_version.js", "server/aurora.settings.server.js", "shared/flapjax.closure.js", "shared/aurora.flapjax.js", "plugins/tables/tables.shared.js", "server/http.library.js", "server/server.js", "server/authentication.server.js"];
 */
 var clientLibraries = [];
 var serverLibraries = [];
@@ -242,6 +250,7 @@ fs.writeFileSync("shared/aurora_version.js", "AURORA.VERSION = '" + (new Date().
 
 var pluginAllocatorCount = 1;
 var pluginAllocation = {"aurora":0};
+var pluginAllocationReverse = {"0": "aurora"};
 
 // Include plugins
 fs.readdir("plugins", function(err, files) {
@@ -257,10 +266,12 @@ fs.readdir("plugins", function(err, files) {
 		if (ARRAYS.contains(ignorePlugins, plugin)) {
 			continue;
 		}
+		var cleanPluginName = plugin.makeDomIdSafe();
+		pluginAllocationReverse[pluginAllocatorCount+""] = cleanPluginName;
+		pluginAllocation[cleanPluginName] = pluginAllocatorCount++;
 		
-		pluginAllocation[plugin] = pluginAllocatorCount++;
 		var pluginDir = fs.readdirSync("plugins/" + plugin + "/");
-		filesStr+=plugin+", ";
+		filesStr+=cleanPluginName+", ";
 		for ( var fileIndex in pluginDir) {
 			var fullPath = "plugins/" + plugin + "/" + pluginDir[fileIndex];
 			if (fullPath.endsWith("build.js")) {
@@ -314,7 +325,7 @@ fs.readdir("plugins", function(err, files) {
 			}
 		}
 		
-		var pluginAllocatorCode = "var AURORA = (function(aurora){aurora.plugins="+JSON.stringify(pluginAllocation)+";return aurora;}(AURORA || {}));\n\n";
+		var pluginAllocatorCode = "var AURORA = (function(aurora){aurora.plugins="+JSON.stringify(pluginAllocation)+";aurora.pluginsById = "+JSON.stringify(pluginAllocationReverse)+";return aurora;}(AURORA || {}));\n\n";
 		clientBuildFiles = clientBuildFiles.concat(widgetCode);
 
 		// Build client.js
@@ -333,7 +344,7 @@ fs.readdir("plugins", function(err, files) {
 		
 		//writeFile(concatenated, clientFile);
 		writeFile(concatenated, "../" + clientFile);
-		if(config.compile){
+		if(compile){
 			minify();
 		}
 		// Build CSS

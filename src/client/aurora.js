@@ -265,9 +265,8 @@ var DATA = (function(dataManager, F, aurora, binary){
 	
 	dataManager.receiveE = function(instanceId, objectName, binaryPlugin, binaryChannel){
 		return aurora.sendToClientE.filterE(function(message){
-			if(message.command===undefined && message instanceof ArrayBuffer){	
+			if(message.command===undefined && message instanceof ArrayBuffer){
 				var key = new Uint16Array(message, undefined, 2);
-				//console.log("Possible AB 2", key[0]+"==="+binaryPlugin+" && "+key[1]+"==="+binaryChannel,(key[0]===binaryPlugin&&key[1]===binaryChannel));
 				return key[0]===binaryPlugin&&key[1]===binaryChannel;
 			}
 			return false;
@@ -275,12 +274,45 @@ var DATA = (function(dataManager, F, aurora, binary){
 			return ab.slice(4);
 		});
 	};
-
-	dataManager.requestB = function(instanceId, pluginId, channelId){
-		if(typeof(pluginId)==="string"){
-			pluginId = aurora.plugins[pluginId];
+	
+	dataManager.requestE = function(instanceId, objectName){
+		referenceCount[objectName] = referenceCount[objectName]==undefined?1:(referenceCount[objectName]+1);
+		if(referenceCount[objectName]===1){
+			aurora.sendToServer({command: aurora.COMMANDS.REGISTER_DATA, key: objectName});
 		}
+		requests[instanceId] = aurora.sendToClientE.filterE(function(message){
+			return message.command===aurora.COMMANDS.UPDATE_DATA && message.key===objectName;
+		}).mapE(function(messagePacket){return messagePacket.data;});
+		return requests[instanceId];
+	};
+	
+	dataManager.requestB = function(instanceId, pluginId, channelId){
 		return dataManager.requestObjectB(instanceId, pluginId, channelId);
+	};
+	
+	dataManager.requestTableBI = function(instanceId, key){
+		var initialTable = SIGNALS.NOT_READY;
+		var channelE = dataManager.getChannelE(instanceId, key);
+		
+		channelE.collectE(initialTable, function(newState, state){
+			if(newState.command==="update"){	//Whole table
+				state = newState.data;
+			}
+			//else if(newState==="chunk"){		//Chunk of table
+				//TODO: Add new chunks to state
+			//}
+			//else if(newState==="change"){		//Changeset for table
+				//TODO: Run through change set add changes to state
+			//}
+			return state;
+		});
+		
+		return F.liftBI(function(newState){
+			return newState;
+		}, function(newState){
+			//TODO: check for and handle cases of changesets or chunks 
+			channelE.send("update", newState);
+		}, channelE.startsWith(SIGNALS.NOT_READY));
 	};
 	
 	dataManager.release = function(instanceId, objectName){
@@ -292,7 +324,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 			LOG.create("Object "+objectName+" has been released too many times. Count dropped below 0");
 		}
 		if(requests[instanceId]){
-			requests[instanceId].purge();
+			requests[instanceId].purge();	
 			OBJECT.remove(requests[instanceId]);
 		}
 	};
@@ -301,52 +333,17 @@ var DATA = (function(dataManager, F, aurora, binary){
 			aurora.sendToServer({command: aurora.COMMANDS.REGISTER_DATA, key: objectName});
 		}
 	};
-	/*
-	dataManager.getChannelE = function(instanceId, pluginKey, channelId){
-		var pluginId = aurora.plugins[pluginKey];
-		var newKey = pluginKey + "_" + (channelId || "");
-		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId || 1);
-		 var littleEndian = true;
-		 channelE.send = function(data){
-		 	if(typeof(data) === "object"){
-		 		data = JSON.stringify(data);
-		 	}
-		 	if(data instanceof ArrayBuffer || typeof(data) === "string"){
-				var wsProtocol = new DataView(new ArrayBuffer(4));
-				wsProtocol.setUint16(0, pluginId, littleEndian);
-				wsProtocol.setUint16(2, channelId, littleEndian);
-		 		var blob = new Blob([wsProtocol, data]);
-		 		dataManager.sendToServer(newKey, blob);
-		 	}
-		 	else{
-		 		console.log("Error, channelE.send Unknown type "+typeof(data)+" cannot send data");
-		 	}
-			
-		 };
-		 return channelE;
-	};
-	
-	dataManager.getObjectChannelE = function(instanceId, pluginKey, channelId){
-		var channelE = dataManager.getChannelE(instanceId, pluginKey, channelId);
-		var e = channelE.mapE(function(ab){
-			return JSON.parse(String.fromCharCode.apply(null, new Uint16Array(ab)));
-		});
-		e.send = channelE.send;
-		return e;
-	};
-	*/
 	
 	var channelRegistrationE = F.receiverE();
 	dataManager.getChannelE = function(instanceId, pluginKey, channelId){
 		var pluginId = aurora.plugins[pluginKey];
-		var newKey = pluginKey + "_" + (channelId || "");
+		var newKey = pluginKey + "_" + (channelId===undefined?"":channelId);
 		 var channelE = dataManager.receiveE(instanceId, newKey, pluginId, channelId===undefined?1:channelId);
-		 var littleEndian = true;
 		 channelE.send = function(data){
 		 	if(data===undefined){
 				data = new ArrayBuffer(0);
 			}
-		 	else if(typeof(data) === "object" && (!data instanceof ArrayBuffer && !data instanceof Blob)){
+		 	else if((typeof(data) === "object" && (!data instanceof ArrayBuffer && !data instanceof Blob)) || typeof(data)==="number"){
 		 		data = JSON.stringify(data);
 		 	}
 		 	if(data instanceof ArrayBuffer || data instanceof Blob || typeof(data) === "string"){//){
@@ -357,7 +354,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 		 		console.log("Error, channelE.send Unknown type "+typeof(data)+" cannot send data");
 		 	}
 		 };
-		 channelRegistrationE.sendEvent({pluginKey: pluginKey, pluginId:pluginId, channelId: channelId});
+		 channelRegistrationE.sendEvent({key: newKey, pluginId:pluginId, channelId: channelId});
 		 return channelE;
 	};
 	
@@ -387,7 +384,6 @@ var DATA = (function(dataManager, F, aurora, binary){
 	
 	dataManager.requestObjectB = function(instanceId, pluginId, objectId){
 		var channelE = dataManager.getChannelE(instanceId, pluginId, objectId); 
-		console.log("channelE "+ pluginId+" "+objectId);
 		var collectedE = channelE.collectE({chunks:[]}, function(packet, state){
 			var end = new Uint8Array(packet, 0, 1)[0];
 			state.chunks.push(packet.slice(1));
@@ -397,8 +393,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 			else{
 				return {chunks: state.chunks};
 			}
-		}).propertyE("value").filterRepeatsE();
-		 console.log("Lifting");
+		}).propertyE("value");
 		return F.liftBI(function(value){
 			if(!good()){
 				return value;
@@ -497,6 +492,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 		    webSocket.onmessage = function (packet) {
 		    	var reader = new FileReader();
 			    reader.onload = function() {
+			    	//console.log(binary.arrayBufferToString(reader.result));
 				   aurora.sendToClient(reader.result);
 				};
 		    	try{
@@ -513,19 +509,17 @@ var DATA = (function(dataManager, F, aurora, binary){
 					LOG.create(e);
 					console.log(packet.data);
 				}
-				
 		    };
 		}else{
 			LOG.create("Sorry but your browser does not support WebSockets");	
 		}
 	};
-	aurora.dataUpdateE.mapE(function(packet){
+	aurora.dataUpdateE.bufferOnBooleanE(aurora.connectedB).mapE(function(packet){
 		if(webSocket==undefined){
 			LOG.create("Unabled to send data, WebSocket has not been initialized");
 			return;
 		}
 		if(packet.data instanceof ArrayBuffer || packet.data instanceof Blob){
-			console.log("Sending "+packet.data.length+" bytes of binary data");
 			webSocket.send(packet.data);
 		}
 		else{

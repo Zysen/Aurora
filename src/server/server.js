@@ -116,9 +116,7 @@ var HTTP = (function(http, dataManager, authentication){
     
     LOG.create("Aurora version "+AURORA.VERSION);
     LOG.create('Server started');
-    
-    
-    
+
     var responseHeadersDef = (function(){
     	var headers = {"Server":["CTR Portal"], "Date":[(new Date()).toGMTString()]};
     	return {
@@ -149,7 +147,6 @@ var HTTP = (function(http, dataManager, authentication){
     			}
     			return newHeaders;
     		}
-    		
     	};
     });
     
@@ -344,6 +341,7 @@ var HTTP = (function(http, dataManager, authentication){
             http.wsEventE.sendEvent(SIGNALS.newError("Websocket Connection Error: "+error));
         });
         packet.connection.on('message', function(message){
+        	
         	if(message.type==="binary"){
         		http.wsEventE.sendEvent({data: message.binaryData, clientId:packet.clientId, connection:packet.connection});
         	}
@@ -363,6 +361,11 @@ var HTTP = (function(http, dataManager, authentication){
     
     http.wsConnectionCloseE = http.wsEventE.filterE(function(eventData){return eventData.close!==undefined;});
     var wsConnectionErrorE = http.wsEventE.filterE(function(eventData){return !good(eventData);});
+    
+    
+    
+    //Replace this wsMessage thing with a channel for reqeuesting pages and authenticating.
+    
     var wsMessageE = http.wsEventE.filterE(function(eventData){return eventData.message!==undefined;}).mapE(function(packet){
        // LOG.create("wsMessageE: Token Is "+packet.token);
         if(packet.message.type=="utf8"){
@@ -378,20 +381,7 @@ var HTTP = (function(http, dataManager, authentication){
             }           
         }  
     }).filterUndefinedE();
-    
-    http.websocketE = wsMessageE;
-    
-    /*
-    var dataUpdateRequestE = wsMessageE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.UPDATE_DATA;});
-    dataUpdateRequestE.mapE(function(packet){
-        dataManager.setValue(packet.data.key, packet.data.data);
-    });
-    */
-    
-    http.dataRegistrationE = wsMessageE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.REGISTER_DATA || packet.data.command===AURORA.COMMANDS.DEREGISTER_DATA;}).mapE(function(packet){
-        return packet;
-    });
-    
+
     http.userAuthenticationE = wsMessageE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE || packet.data.command===AURORA.COMMANDS.UNAUTHENTICATE;}).mapE(function(packet){
         return packet;
     });
@@ -403,34 +393,23 @@ var HTTP = (function(http, dataManager, authentication){
         if(fs.exists(pagePath, function(exists){
         	packet.connection.sendUTF(JSON.stringify({command: AURORA.RESPONSES.PAGE, data: exists?fs.readFileSync(pagePath, "utf8"):theme404}));
         }));
-        
     });
     return http;
 }(HTTP || {}, DATA, AUTHENTICATION));
 
-var DATA = (function(dataManager, aurora, http){
+var DATA = (function(dataManager, aurora, http, binary, authentication){
 	//Handle client Data Channel signals.
 	var receiveE = function(pluginKey, pluginId, channelId){
 		return http.wsBinaryUpdate.filterE(function(packet){
-			if(packet.data.command===undefined && Buffer.isBuffer(packet.data)){
+			if(Buffer.isBuffer(packet.data)){
 				return packet.data.readUInt16LE(0)===pluginId && packet.data.readUInt16LE(2) === channelId;
 			}
 			return false;
 		}).mapE(function(packet){
-			return {connection: packet.connection, token: packet.token, data:packet.data.slice(4)};
+			packet.data = packet.data.slice(4);
+			return packet;
 		});
 	};
-    
-	dataManager.sendToClient = function(connection, channelID, data){
-    	if(Buffer.isBuffer(data)){
-        	var byteUpdateCommand = ('"'+AURORA.COMMANDS.UPDATE_DATA+'","'+channelID+'"').toByteArray();
-            var command = byteUpdateCommand.concat(value);
-            connection.sendBytes(new Buffer(command));
-        }
-        else{
-           connection.sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: channelID, data: data}));
-        }	
-    };
     
 	dataManager.connectionsB = F.mergeE(http.wsConnectionCloseE, http.wsConnectionOpenE).collectE({}, function(packet, connections){
         if(packet.close!==undefined && connections[packet.clientId]!==undefined){
@@ -448,17 +427,10 @@ var DATA = (function(dataManager, aurora, http){
         return dataSources;
     });
     var dataSourcesB = dataSourcesE.startsWith(SIGNALS.NOT_READY);
-      
-    //Handle Data Source Updates
-    http.websocketE.filterE(function(packet){
-		return (packet.data.command!==undefined && packet.data.command===AURORA.COMMANDS.UPDATE_DATA && dataSourcesB.valueNow()[packet.data.key]!==undefined);
-	}).mapE(function(packet){
-		var dataBI = dataSourcesB.valueNow()[packet.data.key].sendEvent(packet.data.data);
-		return {connection: packet.connection, token: packet.token, data:packet.data.data};
-	});
+    
     var dataRegR = F.receiverE(); 
-    dataManager.registrationRequestE = dataRegR;
-    dataManager.dataRegE = F.mergeE(dataManager.registrationRequestE, http.wsConnectionCloseE, http.dataRegistrationE).collectE({}, function(websocketPacket, dataReg){  
+    dataManager.registrationRequestE = dataRegR; 
+    dataManager.dataRegE = F.mergeE(dataRegR, http.wsConnectionCloseE).collectE({}, function(websocketPacket, dataReg){  
         var clientId = websocketPacket.clientId; 
         if(websocketPacket.close!==undefined){
             for(var key in dataReg){
@@ -473,20 +445,22 @@ var DATA = (function(dataManager, aurora, http){
             var key = websocketPacket.data.key;
             var registered = dataReg[key]!=undefined && ARRAYS.arrayContains(dataReg[key],clientId);
             if(command == AURORA.COMMANDS.REGISTER_DATA){
-                if(!AUTHENTICATION.clientCanRead(clientId, key)){
+                if(!AUTHENTICATION.clientCanRead(clientId, websocketPacket.data.pluginId, websocketPacket.data.channelId)){
+                	LOG.log("User has requested "+key+" but they dont have access.",LOG.WARNING,"Authentication");
                     return dataReg;
                 }
-                if(dataReg[key]==undefined){
-                    dataReg[key] = [];
-                }
-                if(!ARRAYS.arrayContains(dataReg[key], clientId)){
-                    dataReg[key].push(clientId);
-                }
-                var DATA = dataSourcesB.valueNow();
-                if(DATA[key]!==undefined){
-                    if(DATA[key].valueNow!==undefined){
-                        websocketPacket.connection.sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: key, data: DATA[key].valueNow()}));
-                    }
+                var dataSources = dataSourcesB.valueNow();	//Send the current value back to the user upon registration
+
+				if(dataSources[key]!==undefined && dataSources[key].channel!==undefined && dataSources[key].behaviour!==undefined){
+					dataSources[key].channel.send(Buffer.concat([new Buffer([1]), new Buffer(JSON.stringify(dataSources[key].behaviour.valueNow()))]), websocketPacket.connection);	
+				}
+                if(dataSourcesB.valueNow()[key]!==undefined){
+	                if(dataReg[key]==undefined){
+	                    dataReg[key] = [];
+	                }
+	                if(!ARRAYS.arrayContains(dataReg[key], clientId)){
+	                    dataReg[key].push(clientId);
+	                }
                 }
                 else{
                     LOG.create("registerClientRequest: Cant find key!!!"+key);
@@ -503,35 +477,50 @@ var DATA = (function(dataManager, aurora, http){
         }
         return dataReg;
     });
-    dataManager.dataRegB = dataManager.dataRegE.printE("USER Data Source Registration").startsWith(SIGNALS.NOT_READY);
+    dataManager.dataRegB = dataManager.dataRegE.startsWith(SIGNALS.NOT_READY);
 
     //Determine who to send this data to.
     dataManager.sendData = function(key, value, type){
-        var DATA_REG = dataManager.dataRegB.valueNow();        
+    	var DATA_REG = dataManager.dataRegB.valueNow();    
         if(DATA_REG[key]){
             var connections = dataManager.connectionsB.valueNow();
             for(var index in DATA_REG[key]){
+            	var found = false;
                 var clientId = DATA_REG[key][index];
-                if(connections[clientId]!=undefined){
+                if(connections[clientId]!=undefined){                    
                     if(type==="binary"){
-                        console.log("dataManager.sendData");
-                        var byteUpdateCommand = ('"'+AURORA.COMMANDS.UPDATE_DATA+'","'+key+'"').toByteArray();
-                        var command = byteUpdateCommand.concat(value);
-                        connections[clientId].sendBytes(new Buffer(command));
+                        connections[clientId].sendBytes(value);
                     }
                     else{
                        connections[clientId].sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: key, data: value}));
                     }
                 }
+                else{
+                	console.log("No parties interested in "+key);
+                }
             }
         }
     };
-
-    dataManager.register = function(key,  pluginId, channelId){  
-        LOG.create("Registering data source "+key);
-        dataSourceRegisterE.sendEvent({key:key, pluginId:pluginId, channelId:channelId});
-    };
-
+/*
+    //Catch object updates and send them to the client
+    dataSourceRegisterE.mapE(function(packet){
+        var data = packet.data;
+        var key = packet.key;
+        var type = packet.type;
+         var DATA=dataSourcesB.valueNow();
+        if(data instanceof F.EventStream){
+            data.mapE(function(value){
+                dataManager.sendData(key, value, type);
+            });
+        }
+        else if(data instanceof F.Behavior){
+            F.liftB(function(key, value, type){
+                dataManager.sendData(key, value, type);
+            }, F.constantB(key), data, F.constantB(type));
+            dataManager.sendData(key, DATA[key].valueNow(), type);
+        }
+    });
+*/
     dataManager.setValue = function(key, value){ 
         var DATA=dataSourcesB.valueNow();
         if(DATA[key]==undefined){
@@ -545,6 +534,66 @@ var DATA = (function(dataManager, aurora, http){
             LOG.create("Attempt to set "+key+" no sendEvent function");
         }
     };
+
+    //Easy registration methods
+   F.EventStream.prototype.sendToClients = function(key, channelId, description){
+    	var pluginId = typeof(key)==="number"?key:aurora.plugins[key];
+		var newKey = (key + "_" + (channelId===undefined?"":channelId));
+		
+    	var channelE = dataManager.getChannelE(key, channelId, description);
+    	this.mapE(function(data){
+    		channelE.send(data);
+    	});
+    	dataSourceRegisterE.sendEvent({key:newKey, pluginId:pluginId, channelId:channelId, description: description || "", channel: channelE});
+    	return channelE;
+    };
+    F.Behavior.prototype.sendToClients = function(key, channelId, description){
+    	var channelE = dataManager.getChannelE(key, channelId, description);
+    	
+    	var pluginId = typeof(key)==="number"?key:aurora.plugins[key];
+		var newKey = (key + "_" + (channelId===undefined?"":channelId));
+    	
+    	var objectBI = F.liftBI(function(packet){
+    		var data = packet;
+    		//console.log("PACKET", typeof(packet));
+    		if(typeof(data)==="object" || typeof(data)==="number"){
+    			data = JSON.stringify(data);
+    		}
+    		if(typeof(data)==="string"){
+    			data = new Buffer(data);
+    		}
+    		if(Buffer.isBuffer(data)){
+    			channelE.send(Buffer.concat([new Buffer([1]), data]));
+    		}
+    		else{
+    			LOG.log("Object "+newKey+" Has an unknown type of "+typeof(data), LOG.WARNING, "AUTHENTICATION");
+    		}
+			return packet;
+		},function(packet){
+			return [packet];
+		}, this);
+		
+		dataSourceRegisterE.sendEvent({key:newKey, pluginId:pluginId, channelId:channelId, description: description || "", behaviour: objectBI, channel: channelE});
+
+		channelE.mapE(function(packet){
+			try{
+				packet.data = JSON.parse(packet.data.toString());
+				if(TABLES.UTIL.isTable(packet.data)){
+					channelE.send(Buffer.concat([new Buffer([1]), new Buffer(JSON.stringify(packet.data))]), packet.clientId);
+					var applyId = packet.data.tableMetaData.applyId;
+					OBJECT.remove(packet.data.tableMetaData, "applyId");
+				}
+				objectBI.sendEvent(packet.data);
+			}
+			catch(e){
+				LOG.log("Error during data transport.", LOG.ERROR, "DATA TRANSPORT");
+				console.log(packet.data);
+				console.log(e);
+				
+			}
+		});
+		return objectBI;
+    };    
     
     //Authentication and Data Tables
     var dataRegTableE = dataManager.dataRegE.mapE(function(dataReg){
@@ -577,14 +626,27 @@ var DATA = (function(dataManager, aurora, http){
              dataSources:{name:"Data Sources", type:"list"}
         })};
     });
-	
-	dataManager.getChannelE = function(pluginKey, channelId, tagName){
+   
+    dataManager.getChannelE = function(pluginKey, channelId, tagName){
+		//console.log("getChannelE "+pluginKey+" "+channelId+" "+tagName);
 		var pluginId = typeof(pluginKey)==="number"?pluginKey:aurora.plugins[pluginKey];
-		var newKey = tagName!==undefined?tagName:(pluginKey + "_" + (channelId===undefined?"":channelId));
-		var channelE = receiveE(newKey, pluginId, channelId===undefined?1:channelId);
-		 dataManager.register(newKey, pluginId, channelId);	//Register the existence of this data source.
-		 channelE.send = function(data, connection){
-		 	if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
+		var newKey = (pluginKey + "_" + (channelId===undefined?"":channelId));
+		dataSourceRegisterE.sendEvent({key:newKey, pluginId:pluginId, channelId:channelId, description: (tagName || "")});
+		
+		var channelE = receiveE(newKey, pluginId, channelId===undefined?1:channelId).filterE(function(packet){
+		 	//Filter messages from users who dont have write permission
+		 	var auth =authentication.clientCanWrite(packet.clientId, pluginId, channelId);
+		 	if(!auth){
+		 		LOG.log("User "+packet.clientId+" attempted to set "+newKey+" but does not have permission. "+pluginId+" "+channelId, LOG.WARNING, "AUTHENTICATION");
+		 	}
+		 	return auth;
+		 });
+		 
+		channelE.send = function(data, connection){
+		 	//Check for permissions when connection IS specified, also i think its actually clientId
+		 	//console.log("ChannelE Send ", arguments.callee.caller.toString(), data.toString());
+		 	//console.log(pluginKey+" "+pluginId+" "+channelId);
+		 	if((!Buffer.isBuffer(data)) && (typeof(data)==="object" || typeof(data)==="number")){
 			 	data = JSON.stringify(data);
 			 }
 			 if(typeof(data)==="string"){
@@ -598,7 +660,12 @@ var DATA = (function(dataManager, aurora, http){
 			 	var buf = Buffer.concat([channelProtocolBuf, data]);
 		     	if(connection!==undefined){
 		     		if(typeof(connection)==="string"){
-		     			connection = dataManager.connectionsB.valueNow()[connection];
+		     			if(authentication.clientCanRead(connection, pluginId, channelId)){
+		     				connection = dataManager.connectionsB.valueNow()[connection];
+		     			}
+		     			else{
+		     				LOG.log("User attempted to read "+newKey+" but does not have permission.", LOG.WARNING, "AUTHENTICATION");
+		     			}
 		     		}
 		     		if(connection!==undefined && typeof(connection)==="object" && connection.sendBytes!==undefined){
 		     			connection.sendBytes(buf);
@@ -608,12 +675,17 @@ var DATA = (function(dataManager, aurora, http){
 		    		 dataManager.sendData(newKey, buf, "binary");
 		    	}
 			 }
+			 else{
+			 	LOG.log("Channel does not know how to send data of type "+typeof(data), LOG.ERROR, "DATA CHANNELS");
+			 }
 		 };
+
 		 return channelE;
 	};
 	
-	dataManager.getCommandChannelE = function(pluginKey, channelId, tagName){
-		var channelE = dataManager.getChannelE(pluginKey, channelId, tagName);
+	dataManager.getCommandChannelE = function(pluginKey, channelId, description){
+		//console.log("getCommandChannelE "+pluginKey+" "+channelId+" "+description);
+		var channelE = dataManager.getChannelE(pluginKey, channelId, description);
 		var commandPacketE = channelE.mapE(function(packet){
 			if(packet.length===0){
 				console.log("Error, commandChannel received packet with no command (length 0) ");
@@ -625,6 +697,8 @@ var DATA = (function(dataManager, aurora, http){
 			return packet;
 		});
 		commandPacketE.send = function(command, data, connection){
+			// console.log("CommandChannelE Send ", arguments.callee.caller.toString(), data.toString());
+		 //	console.log("commandCHannel send "+pluginKey+" "+channelId);
 			 if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
 			 	data = JSON.stringify(data);
 			 }
@@ -641,49 +715,28 @@ var DATA = (function(dataManager, aurora, http){
 		return commandPacketE;
 	};
 	
-    //Easy registration methods
-    F.EventStream.prototype.sendToClients = function(key, channelId, tagName){
-    	var channelE = dataManager.getChannelE(key, channelId, tagName);
-    	this.mapE(function(data){
-    		channelE.send(data);
-    	});
-    };
-    F.Behavior.prototype.sendToClients = function(key, channelId, tagName){
-    	var channelE = dataManager.getChannelE(key, channelId, tagName);
-		var objectBI = F.liftBI(function(packet){channelE.send(packet);return packet;},function(data){return [data];}, this);
-		channelE.mapE(function(data){objectBI.sendEvent(data);});
-		return objectBI;
-    };
+	dataSourcesE.mapE(function(dataSources){
+        var newData = [];
+        for(var key in dataSources){
+            newData.push({key: dataSources[key].key, pluginId: dataSources[key].pluginId, channelId: dataSources[key].channelId, description: dataSources[key].description});
+        }
+        return TABLES.parseTable("dataSources", "key", newData, {key: {name: "Key", type: "string"}, pluginId:{name: "Plugin", type: "int"}, channelId:{name: "Channel", type: "int"}, description:{name: "Description", type: "string"}});
+    }).startsWith(SIGNALS.NOT_READY).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_SOURCES, "Data Sources");
 	
-	//Data Registration and User data registration
-	var dataRegChannelE = dataManager.getCommandChannelE(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_REG);
+	var dataRegChannelE = dataManager.getCommandChannelE(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_REG, "Channel Registration");
 	dataRegChannelE.mapE(function(packet){
 		packet.data = JSON.parse(packet.data.toString());
 		packet.data.command = packet.command;
-		packet.data.key = packet.data.pluginKey+"_"+packet.data.channelId;
 		dataRegR.sendEvent(packet);
 	});
 	
 	dataManager.clientDataSourceUsageTableB = dataRegTableE.mapE(function(tables){return tables.usersDataSources;}).startsWith(SIGNALS.NOT_READY);
     dataManager.dataSourceUserUsageTableB = dataRegTableE.mapE(function(tables){return tables.sourcesAdminTable;}).startsWith(SIGNALS.NOT_READY);
-    dataManager.dataSourceUserUsageTableB.sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.AURORA_DATASOURCES_USER);
+    dataManager.dataSourceUserUsageTableB.sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_SOURCES_ADMIN, "Data Sources Admin");
     
-    dataSourcesE.mapE(function(dataSources){
-        var newData = [];
-        for(var key in dataSources){
-            newData.push(dataSources[key]);
-        }
-        //console.log(dataSources);
-        return TABLES.parseTable("dataSources", "key", newData, {key: {name: "Key", type: "string"}, pluginId:{name: "Plugin", type: "int"}, channelId:{name: "Channel", type: "int"}});
-    }).startsWith(SIGNALS.NOT_READY).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATASOURCES);
-    
-	
+		
     return dataManager;
-})(DATA || {}, AURORA, HTTP);
-
-
-
-
+})(DATA || {}, AURORA, HTTP, BINARY, AUTHENTICATION);
 
 var STORAGE = (function(storage, aurora){
 	var updateTable = function(objectName, primaryKey, columns, inputE, data, writeTableCB){
@@ -785,13 +838,12 @@ var AURORA = (function(aurora, http){
 
 	aurora.addUncaughtExceptionCallback = function(cb){aurora.uncaughtExceptionCallbacks.push(cb);};
 	aurora.addExitCallback = function(cb){aurora.exitCallbacks.push(cb);};
-	
+	aurora.config = config;
 	return aurora;
 }(AURORA || {}, HTTP));
 
 function get_lines(filename, lineFrom, lineTo, callback) {
     var lines = fs.readFileSync(filename, 'utf8').split("\n");
-    console.log("From: "+(Math.max(0, lineFrom))+", To: "+lineTo);
 	callback(lines.slice(Math.max(0, lineFrom), lineTo));
 }
 
@@ -810,7 +862,7 @@ process.on('uncaughtException', function (err) {
 			lines.splice(10, 0, "------------------------------------------------------------");
 			lines.splice(9, 0, "------------------------------------------------------------");
 			
-			var errorText = "NodeJS: "+err+" \n"+err.stack+"\n-----------------------------------------------------------------------------------------\n"+lines.join("\n");
+			var errorText = err+" \n"+err.stack+"\n-----------------------------------------------------------------------------------------\n"+lines.join("\n")+"\n\n";
 			console.log(errorText);
 			fs.writeFile(__dirname+"/aurora-crash.log", errorText, function(){
 				fs.exists("/var/log/", function(exists){
@@ -828,11 +880,11 @@ process.on('uncaughtException', function (err) {
 		console.log(err.stack);
 		console.log("Unable to write to log... shutdown");	
 		process.exit();
-		}
+	}
 });
 
 process.on('exit', function (){
-  console.log('Goodbye!');
+
 });
   
 process.on( 'SIGINT', function() {
