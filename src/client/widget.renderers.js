@@ -4,13 +4,10 @@
  * 
  */
 
-
-
 /**
  * Map Renderer
  */
 WIDGETS.renderers.Map = function(id) {
-	console.log("WIDGETS.renderers.Map");
     // Ensure new keyword has been used
     if ( !(this instanceof arguments.callee) ) 
            throw new Error("Constructor called as a function, use new keyword");
@@ -54,6 +51,9 @@ WIDGETS.renderers.Map = function(id) {
             		state.value = newValue.value;
             	}
             	else if(newValue.tag==="add"){
+            		if(state.value===undefined){
+            			state.value = {};
+            		}
             		state.value[newValue.value.key] = newValue.value.value;
             	}
             	else if(newValue.tag==="delete"){
@@ -120,7 +120,6 @@ WIDGETS.renderers.Map = function(id) {
             }, valueE.startsWith(SIGNALS.NOT_READY), newStateB);
         },
         setValue : function(newMap) {
-        	console.log("setValue", newMap);
             newValueE.sendEvent(newMap);
         },
         setState : function(state) {
@@ -132,8 +131,6 @@ WIDGETS.renderers.Map = function(id) {
         	}).mapE(function(state){
         		return state.value;
         	});
-        	//return F.zeroE();
-            //return valueE.printE("Value E out: "+id);
         },
         getFocusE : function() {
             return F.zeroE();

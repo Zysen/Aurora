@@ -1,4 +1,4 @@
-var STATS = (function(stats, widgets){
+var STATS = (function(stats, widgets, binary){
 	if(stats.WIDGETS==undefined){
 		stats.WIDGETS = {};
 	}
@@ -37,7 +37,8 @@ var STATS = (function(stats, widgets){
                     ]
                 };
 				var chart = new CanvasJS.Chart(container.id,chartOptions);
-				var memoryUsageE = DATA.getChannelE(instanceId, stats.CHANNEL_ID, stats.CHANNELS.memory_usage).blindE(500).mapE(function(memoryUsage){
+				DATA.getChannelE(instanceId, stats.CHANNEL_ID, stats.CHANNELS.memory_usage).mapE(function(memoryUsage){
+					memoryUsage = JSON.parse(binary.arrayBufferToString(memoryUsage));
 					var used = memoryUsage.total-memoryUsage.free;
 					var usedMem = Math.ceil((used/memoryUsage.total)*100);
 					var availableMem = Math.floor((memoryUsage.free/memoryUsage.total)*100);
@@ -79,6 +80,7 @@ var STATS = (function(stats, widgets){
                 };
                 var chart = new CanvasJS.Chart(container.id,chartOptions);
                 var memoryUsageE = DATA.getChannelE(instanceId, stats.CHANNEL_ID, stats.CHANNELS.memory_usage).blindE(1000).mapE(function(memoryUsage){
+                	memoryUsage = JSON.parse(binary.arrayBufferToString(memoryUsage));
                     var used = memoryUsage.total-memoryUsage.free; 
                     chartOptions.data[0].dataPoints.push({ x: new Date(), y: used });
                     if(chartOptions.data[0].dataPoints.length>100000){
@@ -105,7 +107,7 @@ var STATS = (function(stats, widgets){
 			build:function(){return container;},
 			load:function(){
 				DATA.getChannelE(instanceId, stats.CHANNEL_ID, stats.CHANNELS.uptime).mapE(function(uptime){
-					container.innerHTML = instanceId+"_"+uptime;
+					container.innerHTML = "Uptime: "+JSON.parse(binary.arrayBufferToString(uptime));
 				});
 			},
 			destroy:function(){
@@ -122,6 +124,7 @@ var STATS = (function(stats, widgets){
 			build:function(){return container;},
 			load:function(){
 				DATA.getChannelE(instanceId, stats.CHANNEL_ID, stats.CHANNELS.load_average).mapE(function(load){
+					load = JSON.parse(binary.arrayBufferToString(load));
 					container.innerHTML = load[0]+" "+load[1]+" "+load[2];
 				});
 			},
@@ -159,15 +162,13 @@ var STATS = (function(stats, widgets){
 		return {
 			build:function(){return slider;},
 			load:function(){
-				requestObjectB = function(instanceId, pluginId, objectId){
-					var rateBI = DATA.requestObjectB(instanceId, stats.CHANNEL_ID, stats.CHANNELS.update_rate);
-					rateBI.liftB(function(rate){
-						slider.value = rate;
-					});
-					F.extractValueE(slider).cleanUp(purgeData).filterRepeatsE().mapE(function(rate){//.calmE(1000)
-						rateBI.sendEvent(parseInt(rate));
-					});
-				};
+				var rateBI = DATA.requestObjectB(instanceId, stats.CHANNEL_ID, stats.CHANNELS.update_rate);
+				rateBI.liftB(function(rate){
+					slider.value = rate;
+				});
+				F.extractValueE(slider).cleanUp(purgeData).filterRepeatsE().mapE(function(rate){//.calmE(1000)
+					rateBI.sendEvent(parseInt(rate));
+				});
 			},
 			destroy:function(){
 				DATA.release(instanceId, "STATS_RATE");
@@ -177,4 +178,4 @@ var STATS = (function(stats, widgets){
 	};
 	widgets.register("StatisticUpdateRate", stats.WIDGETS.StatisticUpdateRate);
 	return stats;
-})(STATS || {}, WIDGETS);
+})(STATS || {}, WIDGETS, BINARY);

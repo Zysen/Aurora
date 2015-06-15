@@ -1117,7 +1117,7 @@ var TABLES = (function(tables){
 			
 			tables.UTIL.getMetaDataSet = function(table, rowIndex, columnIndex){
 				var cellMetaData = {};
-				if(table.cellMetaData[rowIndex] !== undefined && table.cellMetaData[rowIndex][columnIndex] !== undefined){
+				if(table.cellMetaData[rowIndex] !== undefined && table.cellMetaData[rowIndex] !== null && table.cellMetaData[rowIndex][columnIndex] !== undefined){
 					cellMetaData = table.cellMetaData[rowIndex][columnIndex];
 				}
 				return {rowMetaData: table.rowMetaData[TABLES.UTIL.findRowPk(table, rowIndex)] || {}, columnMetaData: table.columnMetaData[columnIndex] || {}, cellMetaData:cellMetaData };

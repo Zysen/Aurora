@@ -8,22 +8,17 @@ var STATS = (function(stats){
 		critical15 : .7
 	});
 	
-	
-	var memUsageE = F.receiverE();
-	memUsageE.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.memory_usage);
-	var upTimeE = F.receiverE();
-	upTimeE.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.uptime);
-	var loadAvgE = F.receiverE();
-	loadAvgE.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.load_average);
-	
+	var statsR = F.receiverE();
 	osm.on("monitor", function(e){
-		memUsageE.sendEvent({
+		e.memUsage = {
 			free : e.freemem,
 			total : e.totalmem
-		});
-		upTimeE.sendEvent(e.uptime);
-		loadAvgE.sendEvent(e.loadavg);
+		};
+		statsR.sendEvent(e);
 	});
+	statsR.propertyE("memUsage").sendToClients(stats.CHANNEL_ID, stats.CHANNELS.memory_usage, "Memory Usage");
+	statsR.propertyE("uptime").sendToClients(stats.CHANNEL_ID, stats.CHANNELS.uptime, "Uptime");
+	statsR.propertyE("loadavg").sendToClients(stats.CHANNEL_ID, stats.CHANNELS.load_average, "Load Average");
 	
 	
 	var delayE = F.receiverE();
@@ -34,7 +29,7 @@ var STATS = (function(stats){
 		osm.start();
 		return delay;
 	}, function(delay){delayE.sendEvent(delay);return [delay];}, delayE.startsWith(333));
-	osMonitorUpdateRateBI.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.update_rate);
+	osMonitorUpdateRateBI.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.update_rate, "Update Rate");
 	
 	return stats;
 })(STATS || {});

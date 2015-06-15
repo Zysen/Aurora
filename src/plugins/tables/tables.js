@@ -306,7 +306,6 @@ var TABLES = (function(tables){
 				
 				var newTable = OBJECT.clone(table1);
 				newTable.tableMetaData.id ="("+table1.tableMetaData.id+"+"+table2.tableMetaData.id+")";
-				log("Table Downwards for "+newTable.tableMetaData.id);
 				newTable.data = [];
 				
 //				if(joinDescriptor!=undefined){

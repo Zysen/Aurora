@@ -1,13 +1,12 @@
-var ADMINISTRATION = (function(administration, widgets){
+var ADMINISTRATION = (function(administration, widgets, aurora){
 	if(administration.WIDGETS==undefined){
 		administration.WIDGETS = {};
 	}
 	if(administration.RENDERERS==undefined){
 		administration.RENDERERS = {};
 	}
-	
-	widgets.register("UserDataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_USERDATASOURCES"));
-	//widgets.register("DataSourcesTable", TABLES.WIDGETS.basicReadTableWidget("AURORA_DATASOURCES"));
+	widgets.register("SettingsManagementConfig", TABLES.WIDGETS.basicTableWidget("AURORA_SETTINGS"));
+	widgets.register("PageManagement", TABLES.WIDGETS.basicTableWidget("AURORA_PAGES"));
 	widgets.register("UserManagement", function(instanceId, data, purgeData){
         var tableWidget = new TABLES.WIDGETS.tableWidget(instanceId+"_TW", {}); //Create an instance of a tablewidget
         return {
@@ -61,12 +60,10 @@ var ADMINISTRATION = (function(administration, widgets){
                         return chooseSignal();
                     }
                     var table = OBJECT.clone(newTable);
-                    var visibleColumns = ["description"];
                     for(var columnId in table.columnMetaData){
-                        if(!ARRAYS.contains(visibleColumns, columnId)){
-                            table.columnMetaData[columnId].visible = false;
-                        }
+                        table.columnMetaData[columnId].visible = false;
                     }
+                    table.columnMetaData["description"].visible = true;
                     table.rowMetaData["1"].readonly = true;
                     table.rowMetaData["3"].readonly = true;
                     return table;
@@ -88,7 +85,8 @@ var ADMINISTRATION = (function(administration, widgets){
             }
         };
     });
-
+	
 	return administration;
-})(ADMINISTRATION || {}, WIDGETS);
+})(ADMINISTRATION || {}, WIDGETS, AURORA);
+
 
