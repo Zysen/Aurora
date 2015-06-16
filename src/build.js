@@ -228,7 +228,7 @@ var serverBuildFiles = ["server/file.js", "server/goog.js", "shared/enums.js", "
 */
 var clientLibraries = [];
 var serverLibraries = [];
-
+var licenses = [];
 var plugins = [];
 
 fs.writeFileSync("shared/aurora_version.js", "AURORA.VERSION = '" + (new Date().getTime()) + "';\n");
@@ -285,6 +285,9 @@ fs.readdir("plugins", function(err, files) {
 			} else if (fullPath.endsWith(".shared.lib.js") || fullPath.endsWith(".shared.min.js")) {
 				serverLibraries.push(fullPath);
 				clientLibraries.push(fullPath);
+			}
+			else if (fullPath.toUpperCase().endsWith("LICENSE") || fullPath.toUpperCase().endsWith("LICENSE.TXT")) {
+				licenses.push(fullPath);
 			}
 		}
 	}
@@ -353,6 +356,7 @@ fs.readdir("plugins", function(err, files) {
 
 		concatenated += "\nAURORA.pluginsLoadedE.sendEvent(true);\n";
 		writeFile(concatenated, serverFile);
+		writeFile(concatenate(licenses), "../LICENSE.txt");
 
 		if (isModuleAvailableSync("jsdoc2") && target === "all" && config.generateDocumentation) {
 			generateJSDocs("../" + clientFile, function() {

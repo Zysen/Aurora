@@ -256,6 +256,14 @@ var HTTP = (function(http, dataManager, authentication){
             var port = config.sslPort===443?"":":"+config.sslPort;
             HTTP.redirect(response, 'https://' + requestData.host.replace(":"+config.httpPort, port) + requestData.url.path);
         }
+        else if(requestData.url.pathname==="/LICENSE.txt"){		//This is needed for the sourcemap
+        	HTTP.sendFile(__dirname + "/LICENSE.txt", request, response, responseHeaders);
+        }
+        else if(requestData.url.pathname==="/LICENSE"){		//This is needed for the sourcemap
+        	response.writeHead(200, responseHeaders.toClient());
+            response.write(themeHtml.replace("{CONTENT}", (fs.readFileSync(__dirname + "/LICENSE.txt")+"").replaceAll("\n", '<br />\n')).replace("{HEAD}", ''), 'utf8');
+            response.end();
+        }
         else if(requestData.url.pathname==="/client.min.js"){		//This is needed for the sourcemap
         	responseHeaders.set('X-SourceMap',"/client.js.map");
         	HTTP.sendFile(__dirname + "/client.min.js", request, response, responseHeaders);

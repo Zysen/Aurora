@@ -13,7 +13,6 @@
 /client.libs.js
 /client.js.map
 /client.data.min.js
-/DataThread.js
 /src/shared/aurora_version.js
 /src/client.js
 /src/build_output/*
@@ -21,6 +20,7 @@
 /themes/csr*
 /src/plugins/csr*
 /aurora-crash.log
+/LICENSE.txt
 
 
 # OS generated files #
