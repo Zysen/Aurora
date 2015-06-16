@@ -682,38 +682,6 @@ var DATA = (function(dataManager, aurora, http, binary, authentication){
 		 return channelE;
 	};
 
-	dataManager.getCommandChannelE = function(pluginKey, channelId){
-		var channelE = dataManager.getChannelE(pluginKey, channelId);
-		var commandPacketE = channelE.mapE(function(packet){
-			if(packet.length===0){
-				console.log("Error, commandChannel received packet with no command (length 0) ");
-			}
-			packet.command = packet.data[0];
-			if(packet.data.length>1){
-				packet.data = packet.data.slice(1);
-			}
-			return packet;
-		});
-		commandPacketE.send = function(command, data, connection){
-			 if((!Buffer.isBuffer(data)) && typeof(data)==="object"){
-			 	data = JSON.stringify(data);
-			 }
-			 if(typeof(data)==="string"){
-			 	data = new Buffer(data);
-			 }
-			var commandBuffer = new Buffer(1);
-			commandBuffer.writeUInt8(command, 0);
-			channelE.send(Buffer.concat([commandBuffer, data]), connection);
-		};
-		commandPacketE.filterCommandsE = function(command){
-			return commandPacketE.filterE(function(packet){return packet.command===command;});
-		};
-		return commandPacketE;
-	};
-    return dataManager;
-})(DATA || {}, AURORA, HTTP);
-
-var STORAGE = (function(storage, aurora){
 	dataManager.getCommandChannelE = function(pluginKey, channelId, description){
 		//console.log("getCommandChannelE "+pluginKey+" "+channelId+" "+description);
 		var channelE = dataManager.getChannelE(pluginKey, channelId, description);

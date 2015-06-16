@@ -216,7 +216,7 @@ var AURORA = (function(aurora, F, cookies){
 	aurora.pageBuiltE = aurora.sendToClientE.filterE(function(message){
 		return message.command==aurora.RESPONSES.PAGE;
 	}).mapE(function(response){
-		if(CKEDITOR!=null && CKEDITOR.instances.content){
+		if(CKEDITOR!==undefined && CKEDITOR.instances.content){
 			CKEDITOR.instances.content.destroy();
 		}
 		WIDGETS.deflateWidgets(DOM.get("content"));

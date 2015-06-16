@@ -199,8 +199,8 @@ function wait() {
 var sharedBuildFiles = [];
 
 var clientBuildFiles = [
-"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/ARRAYS.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
-        "shared/crypto.js", "plugins/jquery/jquery-2.0.3.min.js", "plugins/jquery/jquery-flapjax.js", "shared/aurora.flapjax.js", "client/dom.js", "client/binary.client.js", "client/aurora.js",
+"server/goog.js", "shared/number.js", "shared/enums.js", "shared/aurora_version.js", "shared/log.js", "shared/date.js", "shared/math.js", "shared/function.js", "shared/object.js", "shared/array.js", "shared/string.js", "shared/flapjax.closure.js", "shared/signals.js",
+        "shared/crypto.js", "shared/aurora.flapjax.js", "client/dom.js", "client/binary.client.js", "client/aurora.js",
          "client/widget.renderers.js", "client/authentication.client.js"
 ];
 
