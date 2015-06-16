@@ -14,6 +14,7 @@ Installation
 1. Install NodeJS
 2. change to your projects directory
 3. git clone https://github.com/Zysen/Aurora.git
-4. Optionally modify /config.json
-5. Run install.bat or install.sh depending on your OS
+4. Run install.bat or install.sh depending on your OS
+5. Optionally modify /config.json
 6. Login with both the username and password as admin
+7. When you modify the code run build.bat or build.sh to build and then run the server.
