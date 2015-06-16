@@ -113,7 +113,6 @@ var lintCheck = function(code, filename, options) {
 
 	var validLintCheck = jslint(code, options);
 	if (!validLintCheck) {
-		console.log("Failed Lint Checking");
 		var results = jslint.data();
 		fs.writeFileSync("build_output/" + name + "/jsmin_error.html", jslint.error_report(results));
 		return false;
@@ -324,6 +323,7 @@ fs.readdir("plugins", function(err, files) {
 			    debug : true,
 			    browser : true
 			});
+			console.log("Client Lint Check: "+(lintPassed?"PASSED":"FAILED"));
 		}
 		
 		var compile = ((config.compile!==undefined && isModuleAvailableSync("closurecompiler"))?config.compile:false);
@@ -348,6 +348,7 @@ fs.readdir("plugins", function(err, files) {
 			    debug : true,
 			    node : true
 			});
+			console.log("Server Lint Check: "+(lintPassed?"PASSED":"FAILED"));
 		}
 
 		concatenated += "\nAURORA.pluginsLoadedE.sendEvent(true);\n";

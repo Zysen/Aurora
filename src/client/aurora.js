@@ -152,7 +152,7 @@ var AURORA = (function(aurora, F, cookies){
 	aurora.sendToClientE = F.receiverE();
 	
 	aurora.windowLoadE = F.extractEventE(window, 'load').mapE(function(){
-		LOG.create("Starting Aurora version "+aurora.VERSION);
+		//LOG.create("Starting Aurora version "+aurora.VERSION);
 	});
 	//Create a documents and a window behaviour. That is NOT_READY until onload fires.
 

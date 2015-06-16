@@ -1,5 +1,3 @@
-console.log("Starting Aurora");
-
 const https = require('https'),
 http = require('http'),
 httpLib = http;
@@ -16,7 +14,6 @@ var configE = F.mergeE(F.oneE(), configChangedE).mapE(function(){
 	catch(e){console.log("Config Error");console.log(e);}
 }).filterUndefinedE().filterRepeatsE().mapE(function(configStr){
 	try{
-		console.log("Loading Config");
 		config = JSON.parse(configStr);
 		return config;}
 	catch(e){console.log("Config Parse Error");console.log(e);}
@@ -93,7 +90,7 @@ var HTTP = (function(http, dataManager, authentication){
 		}
     };
     configE.mapE(function(config){
-    	console.log("New Config");
+    	console.log("Loading Config");
     	if(http.websocketServer!==undefined){http.websocketServer.shutDown();}	
     	if(http.httpServer!==undefined){
     		console.log("Closing existing http server");
@@ -114,7 +111,7 @@ var HTTP = (function(http, dataManager, authentication){
     	else{configureHttps(config);}
     });
     
-    LOG.create("Aurora version "+AURORA.VERSION);
+    //LOG.create("Aurora version "+AURORA.VERSION);
     LOG.create('Server started');
 
     var responseHeadersDef = (function(){

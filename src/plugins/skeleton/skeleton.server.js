@@ -17,8 +17,6 @@ var SKELETON = (function(skeleton, dataManager){
 	//Bi-Directional Behaviour Example															//A data object that is both getable and setable through the FRP Tree
 	var pushBackE = F.receiverE();						//Push new data to other clients.
 	var sliderValueB = F.liftBI(function(serverValue){
-		console.log("Slider Value Updated DOWN");
-		console.log(serverValue);
 		return serverValue;
 	},function(clientValue){
 		pushBackE.sendEvent(clientValue);
