@@ -64,7 +64,7 @@ var WIDGETS = (function(widgets, OBJECT){
 		var widgetType = widgetTypes[widget_name];
 		var instanceId = widget_name+widgetInstanceCount[widget_name];
 		var cleanup = [];
-		var widget = new widgetType(instanceId, arguments, cleanup);
+		var widget = new widgetType(instanceId, args, cleanup);
 		return {instanceId:instanceId, widget:widget, cleanup:cleanup};
 	};
     
@@ -76,12 +76,12 @@ var WIDGETS = (function(widgets, OBJECT){
 		if(element.className!=undefined && typeof(element.className)==="string" && element.className.startsWith("widget_")){
 			var widget_name = element.className.replace("widget_", "");
 			
-			var arguments = {};
+			var args = {};
 	    	if(element.title!=undefined&&element.title.length>0){
-	        try{arguments = JSON.parse(element.title.replaceAll("'", '"'));}
+	        try{args = JSON.parse(element.title.replaceAll("'", '"'));}
 			catch(e){LOG.create("Unable to parse JSON from widget title arguments");LOG.create(e);}
 			}
-			var inflated = widgets.instantiateWidget(widget_name, arguments);
+			var inflated = widgets.instantiateWidget(widget_name, args);
 			if(inflated===undefined){
 				return;
 			}
@@ -416,7 +416,7 @@ var DATA = (function(dataManager, F, aurora, binary){
 			channelE.send(message);		
 			return [message];	
 		}, collectedE.startsWith(SIGNALS.NOT_READY));
-	};
+	};	
 	
 	var dataRegChannelE = dataManager.getCommandChannelE("AURORA", aurora.CHANNEL_ID, aurora.CHANNELS.DATA_REG);	
 	channelRegistrationE.mapE(function(regReq){
