@@ -1,4 +1,6 @@
 var TABLES = (function(tables){
+	tables.COMMANDS = {GET_ROWS:0, SET_ROW:1, DELETE_ROW:2, ADD_ROW:3, UPDATE_RESPONSE:4, GET_COLUMNS:5, CHANGE_SET:6};
+	
 	var validators = {
 		trueValidator: function(){return true;}
 	};
@@ -81,7 +83,7 @@ var TABLES = (function(tables){
 			table.tableMetaData.id = tableId;
 			if(defaultColumns!==undefined){
 				for(var columnId in defaultColumns){
-					TABLES.UTIL.addColumn(table, columnId, defaultColumns[columnId].name, defaultColumns[columnId].type);
+					TABLES.UTIL.addColumn(table, columnId, defaultColumns[columnId].name, defaultColumns[columnId].type, defaultColumns[columnId].key);
 				}
 			}
 			
@@ -579,7 +581,7 @@ var TABLES = (function(tables){
 			var sourceTable = undefined;
 			return F.liftBI(function(table){
 				if(!good()){
-					return SIGNALS.chooseSignal();
+					return table;
 				}
 				sourceTable = table;
 
@@ -905,6 +907,12 @@ var TABLES = (function(tables){
 			 * @param rowPk - Primary key value of row that is being added
 			 * @returns - Index of row added.
 			 */
+			tables.UTIL.addRows = function(table, rowPk, arr){
+				for(var index in arr){
+					tables.UTIL.addRow(table, arr[index][rowPk], arr[index]);
+				}
+				return table;
+			};
 			tables.UTIL.addRow = function(table, rowPk, newData){
 				var rowIndex = TABLES.UTIL.findRowIndex(table, rowPk);
 				if(rowIndex !== false){
@@ -928,7 +936,7 @@ var TABLES = (function(tables){
 				return (table.data.length - 1);
 			};
 			
-			tables.UTIL.addColumn = function(table, columnId, columnName, dataType){
+			tables.UTIL.addColumn = function(table, columnId, columnName, dataType, key){
 				// If column doesn't exist, create it
 				
 				if(!tables.UTIL.isTable(table)){
@@ -949,6 +957,9 @@ var TABLES = (function(tables){
 				table.columnMetaData[columnId].dataType = dataType || 'string';
 				table.columnMetaData[columnId].name = columnName === undefined ? columnId : columnName;
 				table.columnMetaData[columnId].id = columnId;
+				if(key!==undefined){
+					table.columnMetaData[columnId].key = key;
+				}
 				return table;
 			};
 			
@@ -1443,6 +1454,53 @@ var TABLES = (function(tables){
 				}
 				
 			};
+			
+			tables.UTIL.extractChangeset = function(table){
+				var changeSet = [];
+				applyId = table.tableMetaData.applyId;
+				for(var rowIndex in table.data){
+					var rowPk = TABLES.UTIL.findRowPk(table, rowIndex);
+					var rowMeta = table.rowMetaData[rowPk];
+					
+					if(rowMeta !== undefined && rowMeta.userChange === true){
+						var row = table.data[rowIndex];
+						var isDeleted = rowMeta.deleted === true;
+						var isAdd = rowMeta.newRow === true;
+						var rowChangeData = {};
+	
+						if(!isAdd){
+							rowChangeData[table.tableMetaData.primaryKey] = rowPk;
+						}
+						if(isDeleted){
+							rowChangeData["$.delete"] = true;
+							changeSet.push(rowChangeData);
+							continue;
+						}
+	
+	
+						// Set type of update it is.
+						rowChangeData.mode = isAdd ? SERVER_UPDATE_MODES.ADD : isDeleted ? SERVER_UPDATE_MODES.DELETE : SERVER_UPDATE_MODES.UPDATE; 
+						
+						// Send individual cells if changed
+						for(var columnIndex in table.data[rowIndex]){
+							if(columnIndex === table.tableMetaData.primaryKey) {
+								continue;
+							}
+							
+							var metaData = TABLES.UTIL.getMetaDataSet(table, rowIndex, columnIndex);
+							if(metaData.cellMetaData.userChange === true){
+								// If adding convert rowPk to something server understands
+								changeRowMapping.push(rowIndex);
+								rowChangeData[columnIndex] = row[columnIndex];
+							}
+						}
+						changeSet.push(rowChangeData);
+					}
+				}
+				return changeSet;
+			};		
+		
+			
 		//}
 		
 	//};
