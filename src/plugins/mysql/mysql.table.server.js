@@ -59,11 +59,54 @@ var MYSQL = (function(mysql, dataManager, tables){
 		
 		deleteCB: function(tableName, primaryColumn, deleteId, doneCB){
 			mysql.query("DELETE FROM `"+tableName+"` WHERE `"+primaryColumn+"`="+deleteId+" LIMIT 1;", doneCB);
+		},
+		
+		getColumnsCB: function(tableName, doneCB){
+			mysql.query("select TABLE_NAME,COLUMN_NAME,CONSTRAINT_NAME, REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME from INFORMATION_SCHEMA.KEY_COLUMN_USAGE where TABLE_NAME = '"+tableName+"';", function(err, keyData){
+				if(err!==undefined){
+					console.log("Error", err);
+				}
+				else{
+					mysql.query("SHOW COLUMNS FROM "+tableName+";", function(err, data){
+						if(err!==undefined){
+							console.log("Error", err);
+						}
+						else{
+							var keys = {};
+							for(var index in keyData){
+								keys[keyData[index].COLUMN_NAME] = {table: keyData[index].REFERENCED_TABLE_NAME, column: keyData[index].REFERENCED_COLUMN_NAME, primary: keyData[index].CONSTRAINT_NAME==="PRIMARY"};
+							}
+								
+							var columns = {};
+							for(var index in data){
+								var column = data[index];
+								var type = (column.Type.startsWith("int")?"number":(column.Type.startsWith("varchar")?"string":column.Type));
+								columns[column.Field] = {name: column.Field, type: type};
+								if(keys[column.Field]){
+									columns[column.Field].key = keys[column.Field];
+								}
+							}
+							doneCB(columns);
+						}
+					});
+				}
+			});
+		},
+		
+		getRowsCB: function(tableName, doneCB){
+			mysql.query("SELECT * FROM "+tableName+";", function(err, data){
+				if(err!==undefined){
+					console.log("Error", err);
+				}
+				else{
+					doneCB(data);
+				}
+			});
 		}
 	};
-	
+
 	mysql.getTable = function(tableName, plugin, channelID, description){
-		tables.getSparseTable(tableName, plugin, channelID, description, mysql.sparseTables.insertCB, mysql.sparseTables.updateCB, mysql.sparseTables.deleteCB);
+		tables.getSparseTable(tableName, plugin, channelID, description, mysql.sparseTables.insertCB, mysql.sparseTables.updateCB, mysql.sparseTables.deleteCB, mysql.sparseTables.getColumnsCB, mysql.sparseTables.getRowsCB);
 	};
 	
 	return mysql;

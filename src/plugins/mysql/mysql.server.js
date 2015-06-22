@@ -40,10 +40,6 @@ var MYSQL = (function(mysql){
 		
 		return outE.filterRepeatsE();
 	};
-	
-	mysql.getTable = function(){
-		
-	};
 
 	return mysql;
 }(MYSQL || {}));
