@@ -1,21 +1,23 @@
 var TABLES = (function(tables, dataManager, mysql){
 	
-	tables.getSparseTable = function(tableName, plugin, channelId, description, insertCB, updateCB, deleteCB, getColumnsCB, getRowsCB){
-		var channelE = dataManager.getCommandChannelE(plugin, channelId, description || tableName);								//2 Way data channel
+	tables.getSparseTable = function(tableName, plugin, channelId, description, type, insertCB, updateCB, deleteCB, getColumnsCB, getRowsCB){
+		var channelE = dataManager.getCommandChannelE(plugin, channelId, description || tableName, type || "getSparseTable");								//2 Way data channel
 		var getRows = function(channelE, packet){
-			getRowsCB(tableName, function(data){
+			var request = JSON.parse(packet.data.toString());
+			getRowsCB(tableName, request, function(data, count){
 				channelE.send(tables.COMMANDS.GET_ROWS, data, packet.clientId);
+				channelE.send(tables.COMMANDS.GET_COUNT, {count:count}, packet.clientId);
 			});
 		};
 		
 		channelE.filterCommandsE(tables.COMMANDS.GET_ROWS).mapE(function(packet){
-			//console.log("GET ROWS");
+			console.log("GET ROWS");
 			var request = JSON.parse(packet.data.toString());
-			//console.log("Query", request);
 			getRows(channelE, packet);
 		});
 		
 		var columnsB = channelE.filterCommandsE(tables.COMMANDS.GET_COLUMNS).mapE(function(packet){
+			console.log("GET COLUMNS");
 			var request = JSON.parse(packet.data.toString());
 			var recR = F.receiverE();
 			getColumnsCB(tableName, function(columns){
@@ -26,7 +28,6 @@ var TABLES = (function(tables, dataManager, mysql){
 		}).switchE().startsWith(SIGNALS.NOT_READY);
 		
 		var primaryKeyB = columnsB.liftB(function(columns){
-			console.log("COlumns", columns);
 			if(!good(columns)){return columns;}
 			for(var columnName in columns){
 				if(columns[columnName].key!==undefined && columns[columnName].key.primary){

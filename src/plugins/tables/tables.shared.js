@@ -1,37 +1,28 @@
 var TABLES = (function(tables){
-	tables.COMMANDS = {GET_ROWS:0, SET_ROW:1, DELETE_ROW:2, ADD_ROW:3, UPDATE_RESPONSE:4, GET_COLUMNS:5, CHANGE_SET:6};
+	tables.COMMANDS = {GET_ROWS:0, SET_ROW:1, DELETE_ROW:2, ADD_ROW:3, UPDATE_RESPONSE:4, GET_COLUMNS:5, CHANGE_SET:6, GET_COUNT:7};
+	// Error defines
+	// Overall error format -
+	// errors:[ {table:[{error, message}, ...]}, {index: rowPk, columnId:[{error, message}, ...], columnId:[{error, message}, ...]} ]
 	
 	var validators = {
 		trueValidator: function(){return true;}
-	};
-
-	var columnMetaDataDef = {name:undefined, foreignKey: false, readonly:false, sortable:true, dataType:"string", defaultValue:""};
-	var rowMetaDataDef = {name:undefined, defaultValue:""};
-	var cellMetaDataDef = {};
-	
-	
-	var tableDef = {
+	},
+	columnMetaDataDef = {name:undefined, foreignKey: false, readonly:false, sortable:true, dataType:"string", defaultValue:""},
+	rowMetaDataDef = {name:undefined, defaultValue:""},
+	cellMetaDataDef = {},
+	tableDef = {
 		tableMetaData: {id:undefined, primaryKey:"index", canSelect:true, readonly:false, sortable:true, visible:true, horizontalOrientation: true, headingStyle: 1, canAdd: true, canDelete: true},
 		columnMetaData:{},
 		rowMetaData:{},
 		cellMetaData:[],
 		data:[]
-	};
-	
-	var rendererStateDef = {readonly: false, disabled: false, errored: false, options:undefined};
-	
-	// Error defines
-	// Overall error format -
-	// errors:[ {table:[{error, message}, ...]}, {index: rowPk, columnId:[{error, message}, ...], columnId:[{error, message}, ...]} ]
-	
-	var tableMetaErrorDef = {table:[]};			// a row's cell errors are added as  {index: rowPk, columnId:[{error, message}, ...] into this object. See rowCellMetaErrorDef
-	var rowCellMetaErrorDef = {index: -1};		// cell errors are added as columnId:[{error, message}, ...] into this object.
-	var metaErrorDef = {error: 0, message: ''};
-	
-	var changeDef = {rowPk:-1, columnIndex:-1, value:undefined};
-	
-	// Must start at 1.
-	var temp_id_counter = 1;
+	},
+	rendererStateDef = {readonly: false, disabled: false, errored: false, options:undefined},
+	tableMetaErrorDef = {table:[]},			// a row's cell errors are added as  {index: rowPk, columnId:[{error, message}, ...] into this object. See rowCellMetaErrorDef
+	rowCellMetaErrorDef = {index: -1},		// cell errors are added as columnId:[{error, message}, ...] into this object.
+	metaErrorDef = {error: 0, message: ''},
+	changeDef = {rowPk:-1, columnIndex:-1, value:undefined},
+	temp_id_counter = 1;
 	
 	//return {
 		
@@ -78,11 +69,11 @@ var TABLES = (function(tables){
 		 * @returns
 		 */
 		tables.parseTable = function(tableId, primaryKey, data, defaultColumns){
-			var table = OBJECT.clone(tableDef);
+			var columnId, table = OBJECT.clone(tableDef);
 			table.tableMetaData.primaryKey = primaryKey;
 			table.tableMetaData.id = tableId;
 			if(defaultColumns!==undefined){
-				for(var columnId in defaultColumns){
+				for(columnId in defaultColumns){
 					TABLES.UTIL.addColumn(table, columnId, defaultColumns[columnId].name, defaultColumns[columnId].type, defaultColumns[columnId].key);
 				}
 			}
@@ -615,7 +606,7 @@ var TABLES = (function(tables){
 			var sourceTable = undefined;
 			return F.liftBI(function(table){
 				if(!good()){
-					return SIGNALS.chooseSignal();
+					return chooseSignal();
 				}
 				sourceTable = table;
 				var sortObj = {};
@@ -630,7 +621,7 @@ var TABLES = (function(tables){
 					}
 					
 				}
-				sortObj = sortObject(sortObj);
+				sortObj = OBJECT.sortKeys(sortObj);
 				
 				var newData = [];
 				var newCellMetaData = [];
@@ -766,7 +757,7 @@ var TABLES = (function(tables){
 				// Remove added column
 				TABLES.UTIL.removeColumn(table, intoColumn);
 				
-				return [table]
+				return [table];
 			}, 
 			tableBI);
 		};
@@ -965,9 +956,11 @@ var TABLES = (function(tables){
 			
 			tables.UTIL.updateRow = function(table, searchRowPk, newRow){
 				var rowIndex = tables.UTIL.findRowIndex(table, searchRowPk);
-				for(var columnId in newRow){
-					table.data[rowIndex][columnId] = OBJECT.clone(newRow[columnId]);
+				if(rowIndex===false){
+					LOG.create("table.UTIL.updateRow Error: "+searchRowPk, newRow);
+					return;
 				}
+				OBJECT.extend(table.data[rowIndex], newRow);
 				return table;
 			};
 			
@@ -985,6 +978,53 @@ var TABLES = (function(tables){
 			tables.UTIL.isTable = function (table){
 				return table.tableMetaData!=undefined && table.rowMetaData!=undefined && table.columnMetaData!=undefined && table.data!=undefined;
 			};
+			
+			tables.UTIL.removeColumns = function(table, columns){
+				
+				if(typeof(columns)!=="string" && columns instanceof Array){
+					var args = columns;
+				}
+				else if(typeof(columns)==="string"){
+					var args = arguments.slice(0, 1);
+				}
+				else{
+					console.log("TABLES.UTIL.removeColumns Error: bad arguments. should be array or string.");
+					return;
+				}
+				for(var index in args){
+					tables.UTIL.removeColumn(table, args[index]);
+				}
+			};
+			
+			tables.UTIL.filterColumnsBI = function(tableBI, columnsB){
+				if(!(columnsB instanceof F.Behavior)){
+					columnsB = F.constantB(columnsB);
+				}	
+				return F.liftBI(function(table){
+					var cols = columnsB.valueNow();
+					var newRows = [];
+					for(var rowIndex in table.data){
+						var newRow = {};
+						for(var columnIndex in table.data[rowIndex]){
+							var cell = table.data[rowIndex][columnIndex];
+							if(!ARRAY.contains(cols, columnIndex)){
+								newRow[columnIndex] = OBJECT.clone(cell);	
+							}
+						}
+						newRows.push(newRow);
+					}
+					return {
+						tableMetaData: OBJECT.clone(table.tableMetaData),
+						columnMetaData: OBJECT.clone(table.columnMetaData),
+						rowMetaData: OBJECT.clone(table.rowMetaData),
+						cellMetaData: OBJECT.clone(table.cellMetaData),
+						data: newRows
+					};
+				}, function(table){
+					return [table];
+				}, tableBI);
+			};
+			
 			tables.UTIL.removeColumn = function(table, columnId){
 				
 				if(table==undefined){

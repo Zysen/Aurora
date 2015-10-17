@@ -93,20 +93,42 @@ var MYSQL = (function(mysql, dataManager, tables){
 			});
 		},
 		
-		getRowsCB: function(tableName, doneCB){
-			mysql.query("SELECT * FROM "+tableName+";", function(err, data){
+		getRowsCB: function(tableName, query, doneCB){
+			var filterStr = "";
+			var first = true;
+			for(var column in query.filters){
+				if(first){
+					first = false;
+					filterStr+=" WHERE ";
+				}
+				else{
+					filterStr+=" AND ";
+				}
+				var val = query.filters[column];
+				filterStr+="`"+column+"` LIKE '%"+val+"%'";
+			}	
+			console.log("SELECT * FROM `"+tableName+"`"+filterStr+" LIMIT "+query.start+","+query.length+";");
+			mysql.query("SELECT * FROM `"+tableName+"`"+filterStr+" LIMIT "+query.start+","+query.length+";", function(err, data){
 				if(err!==undefined){
 					console.log("Error", err);
 				}
 				else{
-					doneCB(data);
+					mysql.query("SELECT COUNT(*) FROM `"+tableName+"`"+filterStr+";", function(err, count){			//Query Cache should make this not too bad.
+						if(err!==undefined){
+							console.log("Error", err);
+						}
+						else{
+							doneCB(data, count[0]["COUNT(*)"]);
+						}
+					});
 				}
 			});
 		}
 	};
 
-	mysql.getTable = function(tableName, plugin, channelID, description){
-		tables.getSparseTable(tableName, plugin, channelID, description, mysql.sparseTables.insertCB, mysql.sparseTables.updateCB, mysql.sparseTables.deleteCB, mysql.sparseTables.getColumnsCB, mysql.sparseTables.getRowsCB);
+	mysql.getTable = function(tableName, plugin, channelID, description, type){
+		//console.log("mysql.getTable "+tableName);
+		tables.getSparseTable(tableName, plugin, channelID, description, (type || "getTable"), mysql.sparseTables.insertCB, mysql.sparseTables.updateCB, mysql.sparseTables.deleteCB, mysql.sparseTables.getColumnsCB, mysql.sparseTables.getRowsCB);
 	};
 	
 	return mysql;
