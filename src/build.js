@@ -36,8 +36,11 @@ var exec = require('exec');
 
 
 config.generateDocumentation = config.generateDocumentation || true;
-var ignorePlugins = [];
+var ignorePlugins = ["zysen.geek", "zysen_dayz", "webrtc", "telnet", "shareit", "sha", "repl", "pid", "moment", "mod_passthrough", "git", "1.term.js"];
 
+if(config.ignorePlugins!==undefined){
+	ignorePlugins = ignorePlugins.concat(config.ignorePlugins);
+}
 var ARRAYS = (function(arrays) {
 	arrays.arrayCut = function(array, index) {
 		array.splice(index, 1);

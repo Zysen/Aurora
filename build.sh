@@ -1,3 +1,4 @@
+#!/bin/bash
 cd src
 node build.js debug
 cd ../
