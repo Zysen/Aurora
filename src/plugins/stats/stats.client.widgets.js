@@ -196,4 +196,4 @@ var STATS = (function(stats, widgets, binary) {
 	};
 	widgets.register("StatisticUpdateRate", stats.WIDGETS.StatisticUpdateRate);
 	return stats;
-})(STATS || {}, WIDGETS, BINARY);
+}(STATS || {}, WIDGETS, BINARY));

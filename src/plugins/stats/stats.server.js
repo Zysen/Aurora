@@ -32,4 +32,4 @@ var STATS = (function(stats){
 	osMonitorUpdateRateBI.sendToClients(stats.CHANNEL_ID, stats.CHANNELS.update_rate, "Update Rate");
 	
 	return stats;
-})(STATS || {});
+}(STATS || {}));

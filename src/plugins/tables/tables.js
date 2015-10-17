@@ -616,7 +616,7 @@ var TABLES = (function(tables){
 					}
 					
 				}
-				sortObj = sortObject(sortObj);
+				sortObj = OBJECT.sortKeys(sortObj);
 				
 				var newData = [];
 				var newCellMetaData = [];
