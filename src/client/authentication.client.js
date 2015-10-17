@@ -147,13 +147,16 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     if(!good()){
                         return chooseSignal();
                     }
+
                     var newTable = OBJECT.clone(dataSources);
                     if(table.tableMetaData.applyId!==undefined){
                     	newTable.tableMetaData.applyId = table.tableMetaData.applyId;
                     }
                     TABLES.UTIL.addColumn(newTable, "plugin", "Plugin", "string");
+                    TABLES.UTIL.addColumn(newTable, "pluginId", "PluginID", "number");    
+                    TABLES.UTIL.addColumn(newTable, "channelId", "Channel Id", "number");
                     TABLES.UTIL.addColumn(newTable, "groups", "Groups", "map");
-                    TABLES.UTIL.setColumnOrder(newTable, ["description", "plugin", "channelId", "groups"]);
+                    TABLES.UTIL.setColumnOrder(newTable, ["description", "plugin", "pluginId", "channelId", "groups"]);
                    // TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
                    //     if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
                    //         TABLES.UTIL.getRowMetaData(newTable, row.permissionId, true).disabled = true;
@@ -170,7 +173,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                    			newTable.rowMetaData[row.key].readonly = true;
                    		}
                     }
-                   
+
                    for(var rowIndex in table.data){
                    		var row = TABLES.UTIL.findRow(newTable, table.data[rowIndex].key);
                     	if(row!==undefined){
@@ -191,8 +194,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     newTable.columnMetaData["pluginId"].readonly = true;
                     newTable.columnMetaData["plugin"].readonly = true;
                     newTable.columnMetaData["channelId"].readonly = true;
+                    newTable.columnMetaData["type"].visible = false;
+                    newTable.columnMetaData["type"].readonly = true;
                     newTable.columnMetaData["groups"].rendererOptions = groupOptions;
-                    console.log(newTable.rowMetaData);
                     return newTable;
                 },function(table){
                     var newTable = OBJECT.clone(table);
@@ -200,6 +204,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     for(var rowIndex in newTable.data){
                    		if(newTable.data[rowIndex].groups===undefined){
                    			newTable.data[rowIndex].groups = {};
+                   		}
+                   		if(typeof(newTable.data[rowIndex].channelId)==="string"){		//TODO find the soruce of these string and fix there
+                   			newTable.data[rowIndex].channelId = parseInt(newTable.data[rowIndex].channelId);
                    		}
                     }
                   //  TABLES.UTIL.eachRow(newTable, function(row, rowIndex){

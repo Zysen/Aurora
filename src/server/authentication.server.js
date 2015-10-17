@@ -205,7 +205,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
   	authentication.dataPermissionsBI = STORAGE.createTableBI("aurora.datapermissions", "key", {
         key:{name: "Key", type: "string"},
         plugin:{name: "Plugin", type: "string"},
-        channelId:{name: "Channel", type: "int"},
+        channelId:{name: "Channel", type: "number"},
         groups:{name: "Groups", type: "map"}
     }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_PERMISSIONS, "Data Permissions");
 
@@ -234,7 +234,6 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         return {token: token, seriesId: seriesId};
     };
     
-    
     authentication.clientCanRead = function(clientId, pluginId, channelId, write){
     	var pluginName = aurora.pluginsById[pluginId];
         var table = authentication.sessionTableB.valueNow();
@@ -251,8 +250,8 @@ var AUTHENTICATION = (function(authentication, http, aurora){
       
         var userId = userRow.userId;
         var groupId = userRow.groupId===undefined?1:userRow.groupId;
+
         var permissionTable = authentication.dataPermissionsBI.valueNow();     
-        //This is a better idea, but its not the pk //var rowIndex = TABLES.UTIL.findRowIndex(permissionTable, dataSource);
         for(var rowIndex in permissionTable.data){
         	var row = permissionTable.data[rowIndex];
         	if(row.channelId === channelId && row.plugin === pluginName){
