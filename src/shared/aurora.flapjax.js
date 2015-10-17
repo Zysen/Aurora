@@ -620,6 +620,18 @@ F.Behavior.prototype.domDisplayB = function(domTarget){
 	});
 };
 
+F.EventStream.prototype.keysE = function(){
+	this.mapE(function(o){
+		return Object.keys(o);
+	});
+};
+
+F.Behavior.prototype.keysB = function(){
+	this.liftB(function(o){
+		return Object.keys(o);
+	});
+};
+
 F.EventStream.prototype.filterErrors = function(){
 	return this.filterE(function(value){
 		return !(value instanceof SIGNALS.ERROR);

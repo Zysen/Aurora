@@ -71,5 +71,5 @@ var ARRAYS = (function(arrays){
     }
 	return arrays;
 })(ARRAYS || {});
-
+var ARRAY = ARRAYS;	//TODO: Deprecate ARRAYS
 

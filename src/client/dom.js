@@ -70,6 +70,10 @@ var DOM = (function(dom){
 			element.removeChild(element.firstChild);
 		}
 	};
+	
+	HTMLElement.prototype.removeChildren = function(){
+		dom.removeChildren(this);
+	};
 
 	dom.stopEventBubble = function(e){
 		 var evt = e ? e:window.event;
