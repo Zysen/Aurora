@@ -42,6 +42,13 @@ var HTTP = (function(http, dataManager, authentication){
     var theme404 = fs.readFileSync(__dirname + "/themes/"+config.theme+"/404.html", 'utf8');
     var faviconExists = fs.existsSync(__dirname + "/themes/"+config.theme+"/favicon.ico");
     
+	var themeChangedE = FILE.watchE(__dirname + "/themes/"+config.theme+"/index.html").delayE(1000).blindE(1000).mapE(function(){
+		console.log("THEME UPDATE");
+		themeHtml = fs.readFileSync(__dirname + "/themes/"+config.theme+"/index.html", 'utf8');
+	});
+
+	
+
     var httpReqE = F.receiverE();
     var websocketRequestE = F.receiverE();   
     
@@ -70,14 +77,22 @@ var HTTP = (function(http, dataManager, authentication){
     		console.log("SSL has not been configured");
 			return;
 		}
+		
 		var pemPath = config.sslPemfile!==undefined&&fs.existsSync(config.sslPemfile)?config.sslPemfile:__dirname+"/data/privatekey.pem";
 		var privKeyPath = config.sslPrivkey!==undefined&&fs.existsSync(config.sslPrivkey)?config.sslPrivkey:__dirname+"/data/certificate.pem";
+		var caPath = config.caFile!==undefined&&fs.existsSync(config.caFile)?config.caFile:__dirname+"/data/certificate";
 		if(fs.existsSync(pemPath) && fs.existsSync(privKeyPath)){
 	        LOG.create("Starting HTTPS Server on port "+config.sslPort);    
 	        var options = {
-	            key: fs.readFileSync(privKeyPath, 'utf8'),
-	            cert: fs.readFileSync(pemPath, 'utf8')
+	            key: fs.readFileSync(pemPath),
+	            cert: fs.readFileSync(privKeyPath),
+	            //ca: fs.readFileSync(__dirname+'/data/ca.crt'),
 	        };
+	        
+	        if(fs.existsSync(caPath)){
+	            options.ca = fs.readFileSync(caPath);
+	        }
+	        
 	        //TODO Handle the config option sslUseSslv3
 	        if(config.sslCipherList!==undefined){
 	        	options.ciphers = config.sslCipherList;
@@ -195,7 +210,7 @@ var HTTP = (function(http, dataManager, authentication){
             }
         }
         //console.log("Client: "+groupId+" "+cookies[http.SID_STRING]+" "+request.url.pathname);
-        request.url.pathname = (request.url.pathname==="/")?"/"+config.defaultPage:request.url.pathname.replaceAll("../", "");
+        request.url.pathname = (request.url.pathname==="/")?"/"+config.defaultPage:request.url.pathname.replaceAll("../", "").replaceAll("//", "");
         var ret = {host: request.headers.host, url:request.url, encrypted: request.client.encrypted, cookies: cookies, userId: userId, groupId: groupId, request: request, response: response, newTokenPair:newTokenPair, responseHeaders:responseHeaders};
         if(cookies.sesh!==undefined){
         	var sp = cookies.sesh.split("-");
@@ -251,58 +266,70 @@ var HTTP = (function(http, dataManager, authentication){
         var responseHeaders = requestData.responseHeaders;
         var blockedUrls = ["/src", "/server.js", "/data", "/node_modules"];
         
-        //Force SSL
-        if (config.forceSSL===true && requestData.encrypted===undefined) {
-            var port = config.sslPort===443?"":":"+config.sslPort;
-            HTTP.redirect(response, 'https://' + requestData.host.replace(":"+config.httpPort, port) + requestData.url.path);
-        }
-        else if(requestData.url.pathname==="/LICENSE.txt"){		//This is needed for the sourcemap
-        	HTTP.sendFile(__dirname + "/LICENSE.txt", request, response, responseHeaders);
-        }
-        else if(requestData.url.pathname==="/LICENSE"){		//This is needed for the sourcemap
-        	response.writeHead(200, responseHeaders.toClient());
-            response.write(themeHtml.replace("{CONTENT}", (fs.readFileSync(__dirname + "/LICENSE.txt")+"").replaceAll("\n", '<br />\n')).replace("{HEAD}", ''), 'utf8');
-            response.end();
-        }
-        else if(requestData.url.pathname==="/client.min.js"){		//This is needed for the sourcemap
-        	responseHeaders.set('X-SourceMap',"/client.js.map");
-        	HTTP.sendFile(__dirname + "/client.min.js", request, response, responseHeaders);
-        }
-        else if(faviconExists && requestData.url.pathname==="/favicon.ico"){
-        	HTTP.sendFile(__dirname + "/themes/"+config.theme+"/favicon.ico", request, response, responseHeaders);
-        }
-        else if(requestData.url.pathname.indexOf("/request/getPage/")!==-1){
-            HTTP.sendFile(__dirname + "/resources/pages/"+requestData.url.pathname.replace("/request/getPage/", "")+".html", request, response, responseHeaders);
-        }
-        else if (fs.existsSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")) { 
-            response.writeHead(200, responseHeaders.toClient());
-            response.write(themeHtml.replace("{CONTENT}", fs.readFileSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")).replace("{HEAD}", ''), 'utf8');
-            response.end();                                                                                                                                                                     
-        }
-        else if (fs.existsSync(__dirname + requestData.url.pathname)) { 
-            for(var index in blockedUrls){
-                if(requestData.url.pathname.replaceAll("../", "").startsWith(blockedUrls[index])){
-                    HTTP.writeError(404, response);
+        try{
+            //Force SSL
+            if (config.forceSSL===true && requestData.encrypted===undefined) {
+                var port = config.sslPort===443?"":":"+config.sslPort;
+                if(requestData.host===undefined){
+                    response.writeHead(500, responseHeaders.toClient());
+                    response.end();
                     return;
                 }
+                HTTP.redirect(response, 'https://' + requestData.host.replace(":"+config.httpPort, port) + requestData.url.path);
             }
-            var fileStat = fs.statSync(__dirname + requestData.url.pathname);
-            if(fileStat.isFile()){
-               HTTP.sendFile(__dirname + requestData.url.pathname, request, response, responseHeaders);
+            else if(requestData.url.pathname==="/LICENSE.txt"){		//This is needed for the sourcemap
+            	HTTP.sendFile(__dirname + "/LICENSE.txt", request, response, responseHeaders);
             }
-            else if(config.directoryBrowsing && fileStat.isDirectory()){
-                HTTP.readDirectory(response, requestData.url.pathname);
+            else if(requestData.url.pathname==="/LICENSE"){		//This is needed for the sourcemap
+            	response.writeHead(200, responseHeaders.toClient());
+                response.write(themeHtml.replace("{CONTENT}", (fs.readFileSync(__dirname + "/LICENSE.txt")+"").replaceAll("\n", '<br />\n')).replace("{HEAD}", ''), 'utf8');
+                response.end();
+            }
+            else if(requestData.url.pathname==="/client.min.js"){		//This is needed for the sourcemap
+            	responseHeaders.set('X-SourceMap',"/client.js.map");
+            	HTTP.sendFile(__dirname + "/client.min.js", request, response, responseHeaders);
+            }
+            else if(faviconExists && requestData.url.pathname==="/favicon.ico"){
+            	HTTP.sendFile(__dirname + "/themes/"+config.theme+"/favicon.ico", request, response, responseHeaders);
+            }
+            else if(requestData.url.pathname.indexOf("/request/getPage/")!==-1){
+                HTTP.sendFile(__dirname + "/resources/pages/"+requestData.url.pathname.replace("/request/getPage/", "")+".html", request, response, responseHeaders);
+            }
+            else if (fs.existsSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")) { 
+                response.writeHead(200, responseHeaders.toClient());
+                response.write(themeHtml.replace("{CONTENT}", fs.readFileSync(__dirname + "/resources/pages"+requestData.url.pathname+".html")).replace("{HEAD}", ''), 'utf8');
+                response.end();                                                                                                                                                                     
+            }
+            else if (fs.existsSync(__dirname + requestData.url.pathname)) { 
+                for(var index in blockedUrls){
+                    if(requestData.url.pathname.replaceAll("../", "").startsWith(blockedUrls[index])){
+                        HTTP.writeError(404, response);
+                        return;
+                    }
+                }
+                var fileStat = fs.statSync(__dirname + requestData.url.pathname);
+                if(fileStat.isFile()){
+                   HTTP.sendFile(__dirname + requestData.url.pathname, request, response, responseHeaders);
+                }
+                else if(config.directoryBrowsing && fileStat.isDirectory()){
+                    HTTP.readDirectory(response, requestData.url.pathname);
+                }
+                else{
+                	response.writeHead(404, responseHeaders.toClient());
+                    response.write(themeHtml.replace("{CONTENT}", theme404).replace("{HEAD}", ''), 'utf8');
+                    response.end();
+                }
             }
             else{
-            	response.writeHead(404, responseHeaders.toClient());
+                LOG.create("Cannot find requested file "+requestData.url.pathname);
+                response.writeHead(404, responseHeaders.toClient());
                 response.write(themeHtml.replace("{CONTENT}", theme404).replace("{HEAD}", ''), 'utf8');
                 response.end();
             }
         }
-        else{
-            LOG.create("Cannot find requested file "+requestData.url.pathname);
-            response.writeHead(404, responseHeaders.toClient());
-            response.write(themeHtml.replace("{CONTENT}", theme404).replace("{HEAD}", ''), 'utf8');
+        catch(e){
+            response.writeHead(500, responseHeaders.toClient());
+            console.log("httpRequestE", e);
             response.end();
         }
     });

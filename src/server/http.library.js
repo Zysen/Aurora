@@ -176,13 +176,30 @@ var HTTP = (function(httpPublic){
         response.end();
 	};
 	httpPublic.getPost = function(request, callback){
+		var contentType = request.headers["content-type"] || "";
 		if (request.method == 'POST') {
             var body = '';
             request.on('data', function (data) {
                 body += data;
             });
             request.on('end', function () {
-            	callback(qs.parse(body));
+            	try{
+	            	switch(contentType){
+	            		case "application/json":
+	            			callback(JSON.parse(body), body);
+	            		break;
+	            		default:
+	            			callback(qs.parse(body), body);
+	            		break;
+	            	}
+            	}
+            	catch(e){
+            		console.log("Aurora HTTP cannot parse request of type ",contentType, e);
+            		callback(null, body);
+            	}
+            	
+            	
+            	
             });  
         }
 	},
@@ -207,11 +224,13 @@ var HTTP = (function(httpPublic){
 	};
 	
 	httpPublic.startHTTPSServerE = function(port, receiver, options){
-		console.log("startHTTPSServerE");
-		options = options || {
-            key: fs.readFileSync(__dirname+'/data/privatekey.pem'),
-            cert: fs.readFileSync(__dirname+'/data/certificate.pem')
-        };
+		console.log("startHTTPSServerE", __dirname+'/data/privatekey.pem', __dirname+'/data/certificate.pem');
+		
+		var defaultOptions = {};
+		if(fs.existsSync(__dirname+'/data/privatekey.pem')){defaultOptions.key = fs.readFileSync(__dirname+'/data/privatekey.pem');}
+		if(fs.existsSync(__dirname+'/data/certificate.pem')){defaultOptions.cert = fs.readFileSync(__dirname+'/data/certificate.pem');}
+		if(fs.existsSync(__dirname+'/data/sslaurthority')){defaultOptions.ca = fs.readFileSync(__dirname+'/data/sslaurthority');}
+		options = options || defaultOptions;
         var httpsServer = https.createServer(options, function(request, response){
             receiver.sendEvent({request: request, response: response});
         });
