@@ -28,6 +28,11 @@
 goog['require']("LOG");
 var CKEDITOR = undefined;
 var COOKIES = (function(cookieLib){
+	cookieLib.setCookie = function(name, value, path, expires){
+		expires = expires || "";
+		path = path || "/";
+		document.cookie = name + '='+value+'; Path='+path+'; expires='+expires+';';
+	}
 	cookieLib.getCookie = function(name) {
       var value = "; " + document.cookie;
       var parts = value.split("; " + name + "=");
@@ -343,10 +348,12 @@ var DATA = (function(dataManager, F, aurora, binary){
 		 	if(data===undefined){
 				data = new ArrayBuffer(0);
 			}
-		 	else if((typeof(data) === "object" && (!data instanceof ArrayBuffer && !data instanceof Blob)) || typeof(data)==="number"){
-		 		data = JSON.stringify(data);
+		 	else if(data instanceof ArrayBuffer || data instanceof Blob || typeof(data) === "string"){//){
+		 		var blob = new Blob([binary.toUInt16ArrayBuffer([pluginId, channelId]), data]);
+		 		dataManager.sendToServer(newKey, blob);
 		 	}
-		 	if(data instanceof ArrayBuffer || data instanceof Blob || typeof(data) === "string"){//){
+		 	else if(typeof(data) === "object" || typeof(data)==="number"){
+		 		data = JSON.stringify(data);
 		 		var blob = new Blob([binary.toUInt16ArrayBuffer([pluginId, channelId]), data]);
 		 		dataManager.sendToServer(newKey, blob);
 		 	}
