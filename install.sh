@@ -14,6 +14,10 @@ npm install mysql
 
 mkdir data
 
+if [ -e "./pre-install.sh" ]; then
+	./pre-install.sh
+fi
+
 if [ ! -f ./config.json ]; then
 	echo -e "{\n\t\"httpPort\": 80,\n\t\"sslPort\": 443,\n\t\"forceSSL\": false\n\t,\"theme\":\"aurora\",\n\t\"directoryBrowsing\":true,\n\t\"defaultPage\":\"home\",\n\t\"compile\":true,\n\t\"ignorePlugins\":[\n\t\t\"skeleton\"\n\t]\n\t}" > config.json
 fi
