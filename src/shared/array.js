@@ -30,6 +30,7 @@ var ARRAYS = (function(arrays){
         }
         return -1;
     };
+    arrays.indexOf = arrays.arrayIndexOf;
     arrays.reverseIndexOf = function(arr, needle, start) {
         start = start === undefined ? arr.length - 1: start;
         for(var i =  start ; i >= 0; i--) {

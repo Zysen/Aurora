@@ -1,7 +1,10 @@
+
 //goog['provide']('LOG');
 var LOG = (function(log, aurora) {
 	// Constants
 	// =========
+	
+	
 	
 	// Debug flag
 	log.DEBUG_MODE = false; // Should default to false. Don't commit change.
@@ -153,3 +156,5 @@ var LOG = (function(log, aurora) {
 	
 	return log;
 })(LOG || {}, AURORA);
+
+log = console.log;
