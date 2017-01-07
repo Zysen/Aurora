@@ -38,18 +38,20 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     }).startsWith({userId: -1, groupId: 1});
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
-        var container = DOM.create("div");
-        var emailInputContainer = DOM.createAndAppend(container, "div");
-        var emailInput = DOM.createAndAppend(emailInputContainer, "input");
-        emailInput.placeholder = "Email Address";
-        var usernameInputContainer = DOM.createAndAppend(container, "div");
+        
+        
+        var container = DOM.create("div", undefined, "aurora_loginContainer");
+        //var emailInputContainer = DOM.createAndAppend(container, "div");
+        //var emailInput = DOM.createAndAppend(emailInputContainer, "input");
+        //emailInput.placeholder = "Email Address";
+        var usernameInputContainer = DOM.createAndAppend(container, "div", undefined, "aurora_username_container");
         var usernameInput = DOM.createAndAppend(usernameInputContainer, "input");
-        usernameInput.placeholder = "Username";
-        var passwordInputContainer = DOM.createAndAppend(container, "div");
+        usernameInput.placeholder = "Username or Email Address";
+        var passwordInputContainer = DOM.createAndAppend(container, "div", undefined, "aurora_password_container");
         var passwordInput = DOM.createAndAppend(passwordInputContainer, "input");
         passwordInput.placeholder = "Password";
         passwordInput.type = "password";
-        var rememberMeCont = DOM.createAndAppend(container, "div");
+        var rememberMeCont = DOM.createAndAppend(container, "div", undefined, "aurora_rememberme_container");
         var rememberMeLabel = DOM.createAndAppend(rememberMeCont, "span", undefined, undefined, "Remember Me? ");
         var rememberMe = DOM.createAndAppend(rememberMeCont, "input");
         rememberMe.type = "checkbox";
@@ -69,7 +71,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
             	
                 var usernameB = F.extractValueB(usernameInput);
                 var passwordB = F.extractValueB(passwordInput);
-                var emailB = F.extractValueB(emailInput);
+               // var emailB = F.extractValueB(emailInput);
                 var rememberMeB = F.extractValueE(rememberMe).mapE(function(){LOG.create(rememberMe.checked);return rememberMe.checked;}).startsWith(false);
                 
                 var formDataB = F.liftB(function(username, password,emailaddress, rememberMe){
@@ -81,7 +83,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                         formData.username = username;
                     }
                     return formData;
-                }, usernameB,passwordB,emailB, rememberMeB);
+                }, usernameB,passwordB,rememberMeB);
                 F.clicksE(button).snapshotE(formDataB).mapE(function(formData){
                     AURORA.sendToServer({command: AURORA.COMMANDS.AUTHENTICATE, data: formData});
                 });
