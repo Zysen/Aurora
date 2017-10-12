@@ -1,0 +1,15 @@
+.show{
+	display: initial;
+}
+.hide{
+	display: none;
+}
+
+div.icon-and-label {
+    white-space: nowrap;
+}
+
+div.icon-and-label>img {
+    vertical-align:middle;
+    padding-right: 4px;
+}

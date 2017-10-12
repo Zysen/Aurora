@@ -828,7 +828,13 @@ F.EventStream.prototype.filterRepeatsE = function(optStart) {
 
   return this.filterE(function (v) {
     if(typeof(v)=='object'){
-        if(!OBJECT.equals(v, prev)){
+        if(prev!==undefined && v!==undefined && prev.equals!==undefined && v.equals!==undefined){
+			if(!prev.equals(v)){			//If the object has an equals method, use it.
+				prev = OBJECT.clone(v);
+	            return true;
+        	}
+        }
+        else if(!OBJECT.equals(v, prev)){
             prev = OBJECT.clone(v);
             return true;
         }
@@ -934,8 +940,8 @@ F.Behavior.prototype.firedBefore = function(b2) {
 /**
  * @returns {F.Behavior}
  */
-F.Behavior.prototype.firedAfter = function(b2) {
-  return this.stamp>b2.stamp;
+F.Behavior.prototype.firedAfter = function(b2){
+	return this.stamp>b2.stamp;
 };
 
 /**

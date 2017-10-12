@@ -64,29 +64,91 @@ var FILE = (function(file){
 	    }
 	};
 	file.watchE = function(filePath){
-		var watcher = undefined;
-		var rec = F.receiverE();
-		
-		var dirPath = path.dirname(filePath);
-		var filename = path.basename(filePath);
+	    var recE = F.receiverE();
+            var fileWatcher = undefined;
+            var dirWatcher = undefined;
 
-		var watchFunc =function (event, eventFilename) {
-			if(eventFilename===filename){
-				rec.sendEvent({event:event,filename:eventFilename});
-				watcher.close();
-				try{
-					if(fs.existsSync(filePath)){watcher = fs.watch(filePath, watchFunc);}
-					else{watcher = fs.watch(dirPath, watchFunc);}
-				}
-				catch(e){
-					watcher = fs.watch(dirPath, watchFunc);
-				}
-			}
-		};
-		
-		if(fs.existsSync(filePath)){watcher = fs.watch(filePath, watchFunc);}
-		else{watcher = fs.watch(dirPath, watchFunc);}
+            var startWatch = function (error) {
+                if (error) {
+                    if (!dirWatcher) {
+                        var dir = path.dirname(filePath);
+                        dirWatcher = fs.watch(dir, function(event, eventFilename){
+                            fs.stat(filePath, startWatch);
+		        });
+                    }
+                   
+                }
+                else {
+                    if (dirWatcher) {
+                        dirWatcher.close();
+                        dirWatcher = undefined;
+		        recE.sendEvent({filename:filePath, event:'rename'});
+                    }
+                    try {
+		        fileWatcher = fs.watch(filePath, function(event, eventFilename){
+		            recE.sendEvent({filename:eventFilename, event:event});
+                            if (event === 'rename') {
+                                // file is renamed close and start watching directory it may have beend deleted
+                                if (fileWatcher) {
+                                    fileWatcher.close();
+                                    fileWatcher = undefined;
+                                }
+                                fs.stat(filePath, startWatch);
+                            }
+	                });
+                    }
+                    catch(e) {
+                        fs.stat(filePath, startWatch);
+                    }
+                }
+            };
+            fs.stat(filePath, startWatch);
+	    return recE;
+                        
+	};
+	file.existsE = function(fileNameInE){
+		var rec = F.receiverE();
+		fileNameInE.mapE(function(path){
+			fs.exists(path, function(exists){
+				rec.sendEvent(exists);	
+			});
+		});
 		return rec;
+	};
+	file.readDirE = function(filePath){
+		var recE = F.receiverE();
+		fs.stat(filePath, function(err, stats){
+			if (err) throw err;
+			if(stats.isDirectory()){
+				var watcher = fs.watch(filePath, function(event, eventFilename){
+					fs.readdir(filePath, function(err, files){
+						recE.sendEvent(files);
+					});
+				});
+				fs.readdir(filePath, function(err, files){
+					recE.sendEvent(files);
+				});
+			}
+			else{
+				throw new Error('readDirE: path '+filePath+" is not a directory");
+			}
+		});
+		return recE;
+	};
+	file.delete = function (filePath, cb) {
+		fs.exists(filePath, function(exists){
+			if(exists){
+				fs.stat(filePath, function(err, stats) {
+					if (err) throw err;
+					if (!stats.isFile()) throw new Error("invalid file specified");
+					fs.unlink(filePath, cb);
+				});
+			}
+			else{
+				console.log("FILE Delete file "+filePath+" does not exist!");
+			}
+		})
+		
 	};
 	return file;
 }(FILE || {}));

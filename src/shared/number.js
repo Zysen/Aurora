@@ -1,3 +1,13 @@
+Number.prototype.tidyDecimal = function(n) {
+	return Math.abs(this.toFixed(n));
+};
+Number.prototype.toEm = function() {
+	return (this / 12).tidyDecimal(3);
+};
+/**
+ * Formats a number as a string in the format: d h m s
+ * @returns {String}
+ */
 Number.prototype.formatAsTime = function() {
 	var secs = Math.floor(this);
 	if (secs < 0) {
@@ -24,9 +34,27 @@ Number.prototype.formatAsTime = function() {
 	}
 	return str;
 };
-Number.prototype.tidyDecimal = function(n) {
-	return Math.abs(this.toFixed(n));
+/**
+ * Formats a number with comma separators
+ * @returns
+ */
+Number.prototype.formatWithCommas = function() {
+	if (this < 10000) {
+		return this.toString();
+	}
+	var parts = this.toString().split(".");
+	parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+	return parts.join(".");
 };
-Number.prototype.toEm = function() {
-	return (this/12).tidyDecimal(3);
-};
+/**
+ * Creates a number from two 32 bit unsigned integers
+ * @param msn
+ * @param lsn
+ */
+Number.fromSNMPCounter64 = function(msn, lsn) {
+	// Note that the bitwise operators and shift operators operate on 32-bit ints.
+	// So we use multiplication and addition instead.
+	var upper = msn * Math.pow(2, 32);
+	var value = upper + lsn;
+	return value;
+}; 

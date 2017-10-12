@@ -1,4 +1,7 @@
 var DOM = (function(dom){
+	dom.makeDomSafe = function(str){
+		return str.replaceAll(" ", "_").replace(/^[^a-z]+|[^\w:.-]+/gi, "?");
+	};
 	dom.isParentOf = function(parent, child){
 		if(child===parent){
 			return true;
@@ -17,7 +20,7 @@ var DOM = (function(dom){
     };
 	dom.isIE = function (){
 		var a=navigator.userAgent.toLowerCase();
-		return-1!=a.indexOf("msie")?parseInt(a.split("msie")[1]):!1
+		return-1!=a.indexOf("msie")?parseInt(a.split("msie")[1]):!1;
 	};
 	dom.get = function(domId){
 		var el = document.getElementById(domId);
@@ -65,16 +68,6 @@ var DOM = (function(dom){
 		}
 	};
 
-	dom.removeChildren = function(element){
-		while (element.firstChild) {
-			element.removeChild(element.firstChild);
-		}
-	};
-	
-	HTMLElement.prototype.removeChildren = function(){
-		dom.removeChildren(this);
-	};
-
 	dom.stopEventBubble = function(e){
 		 var evt = e ? e:window.event;
 		 if (evt.stopPropagation) evt.stopPropagation();
@@ -111,6 +104,65 @@ var DOM = (function(dom){
     		DOM.stopEventBubble(e);
     		return e;
     	});
+    };
+    
+	dom.checkboxClicksE = function(ch, allowNullB){
+    	
+    	allowNullB = allowNullB || F.constantB(false);
+    	if(!(allowNullB instanceof F.Behavior)){
+    		allowNullB = F.constantB(allowNullB); 
+    	}
+    	var rec = F.receiverE();
+    	var state = undefined;
+		ch.onclick = function(e){
+			if(allowNullB.valueNow()===true){
+			setTimeout(function(){
+				console.log("checkboxClicksE", allowNullB.valueNow());
+				if(state===undefined){			
+					if(ch.indeterminate){
+			    		state = 1;
+			    	}
+			    	else if(ch.checked===true){
+			    		state = 0;
+			    	}
+			    	else{
+			    		state = 2;
+			    	}
+			    	console.log("Default State "+state);
+				}	    	
+			
+				if(state===0){
+					//if(allowNullB.valueNow()){
+					//	state++;
+					//}
+					//else{
+						ch.checked = false;
+						ch.indeterminate = true;
+					//}
+				}
+				if(state===1){
+					ch.indeterminate = false;
+					ch.checked = false;
+				}
+				else if(state===2){
+					ch.indeterminate = false;
+					ch.checked = true;
+				}
+				state++;
+				state = state % 3;
+				rec.sendEvent(ch.indeterminate?undefined:ch.checked);
+			}, 1);
+			event.stopPropagation();
+			return false;
+				
+			}
+			else{
+				rec.sendEvent(ch.checked);
+			}
+			
+			
+		};	
+		return rec.mapE(function(a){return a;});			//<- The mapE is just so you cant call send event on it.
     };
 
     dom.disableHighlight = function (target){
@@ -168,6 +220,8 @@ var DOM = (function(dom){
     	});
     	
     	jcontainer.prepend(jdiv_container);
+    	
+    	return jdiv_container.get(0);
     };
 
     dom.detectBrowser= function(){
@@ -277,25 +331,53 @@ var DOM = (function(dom){
 						var elementNum = parseInt(modeElement.target.className.replace(groupId+"_", ""))-1;
 						elements[elementNum].element.checked = true;
 						return buttons[elementNum].value;
-					}, F.mergeE.apply(this, events).startsWith(defaultSelection || SIGNALS.NOT_READY), F.constantB(buttons), F.constantB(domElements));
+					}, F.mergeE.apply(this, events).startsWith(defaultSelection || NOT_READY), F.constantB(buttons), F.constantB(domElements));
 				}
 			};
 		}
 	};
-    
-    HTMLElement.prototype.removeChildren = function(){
-		dom.removeChildren(this);
+	
+	HTMLSelectElement.prototype.optionsB = function(valueB){
+		var select = this;
+		valueB.liftB(function(v){
+			if(good()){
+				select.removeChildren();
+				for(var index in v){
+					
+					var el = document.createElement("option");
+					el.innerHTML = v[index];
+					el.id = v[index];
+					select.appendChild(el);
+					
+				}
+			}
+		});
 	};
+	
+	 HTMLElement.prototype.each = function(cb){
+	 	for(var index in this.childNodes){
+	 		cb(this.childNodes[index]);
+	 	}
+	 };
     
-    HTMLElement.prototype.showB = function(valueB){
+    HTMLElement.prototype.showB = function(valueB, forcedStateB){
+    	if(!forcedStateB instanceof F.Behavior){
+    		forcedStateB = F.constantB(forcedState);
+    	}
     	var visibleState = this.style.display;
     	var element = this;
-    	valueB.liftB(function(val){
-    		if(!val){
+    	F.liftB(function(val, forcedState){
+    		if(!good()){
+    			return chooseSignal();
+    		}
+    		if(!val && (element.style.display !== "none")) {
     			visibleState = element.style.display;
     		}
-    		element.style.display=val?"":"none";
-    	});
+    		if(forcedState){
+    			visibleState = forcedState;
+    		}
+    		element.style.display=val?visibleState:"none";
+    	},valueB,forcedStateB);
 	};
     
     HTMLElement.prototype.showE = function(valueE){
@@ -305,11 +387,90 @@ var DOM = (function(dom){
     		if(!val){
     			visibleState = element.style.display;
     		}
-    		element.style.display=val?"":"none";
+    		element.style.display=val?visibleState:"none";
     	});
 	};
-    
 	
+	HTMLElement.prototype.valueE = function(valueE){
+    	var element = this;
+    	valueE.mapE(function(val){
+			element.value = val;    		
+    	});
+	};
+	
+	HTMLElement.prototype.valueB = function(valueB){
+    	var element = this;
+    	valueB.liftB(function(val){
+    		if(good()){
+				element.value = val;
+    		}
+    	});
+	};
+	
+	HTMLElement.prototype.innerHTMLE = function(valueE){
+    	var element = this;
+    	valueE.mapE(function(val){
+			element.innerHTML = val;    		
+    	});
+	};
+	
+	HTMLElement.prototype.innerHTMLB = function(valueB){
+    	var element = this;
+    	valueB.liftB(function(val){
+    		if(good()){
+				element.innerHTML = val; 
+    		}
+    	});
+	};
+
+	HTMLElement.prototype.cssClassB = function(valueB, klass){
+		var element = this;
+		valueB.liftB(function(val){
+			if (val) element.classList.add(klass);
+			else element.classList.remove(klass);
+		});
+	};
+
+	HTMLElement.prototype.onChangeE = function(){
+		var rec = F.receiverE();
+		var textarea = this;
+		this.onchange = function(){
+       		rec.sendEvent(textarea.value);
+        }
+       return rec;
+	}
+	
+	dom.removeChildren = function(element){
+		while (element.firstChild) {
+			element.removeChild(element.firstChild);
+		}
+	};
+	
+	HTMLElement.prototype.removeChildren = function(){
+		dom.removeChildren(this);
+	};
+	
+	HTMLButtonElement.prototype.clicksE = function(){
+		return F.clicksE(this);	
+	};
+	HTMLButtonElement.prototype.disabledB = function(valueB){
+		var element = this;
+		return valueB.liftB(function(val){
+			element.disabled=val;
+		});
+	};
+
+	F.EventStream.prototype.stopPropagationE = function(){
+		return this.mapE(function(event){
+			if (event.stopPropagation){
+		    	event.stopPropagation();
+		    }
+		    else if(window.event){
+		    	window.event.cancelBubble=true;
+		   	}
+		   	return event;
+	   	});
+	};
 
 	F.EventStream.prototype.dom = function(){
 		var bParent = this;
@@ -334,7 +495,7 @@ var DOM = (function(dom){
 		    		if(!val){
 		    			visibleState = element.style.display;
 		    		}
-		    		element.style.display=val?"":"none";
+		    		element.style.display=val?visibleState:"none";
 		    	});
 			},
 			
@@ -369,7 +530,7 @@ var DOM = (function(dom){
 		    		if(!val){
 		    			visibleState = element.style.display;
 		    		}
-		    		element.style.display=val?"":"none";
+		    		element.style.display=val?visibleState:"none";
 		    	});
 			},
 			
@@ -382,6 +543,32 @@ var DOM = (function(dom){
 		    	});
 			}
 		};
+	};
+	
+	if(HTMLElement.prototype.remove===undefined){
+		HTMLElement.prototype.remove = function(){
+			this.parentNode.removeChild(this);	
+		};
+	}
+	
+	HTMLElement.prototype.hasClass = function(cls) {
+	    return (' ' + this.className + ' ').indexOf(' ' + cls + ' ') > -1;
+	};
+	
+	HTMLElement.prototype.classB = function(classB) {
+	    var element = this;
+	    return classB.liftB(function(cl){
+	    	if(!good()){return SIGNALS.NOT_READY};
+	    	element.className = cl
+	    });
+	};
+	
+	HTMLElement.prototype.toggleClassB = function(classB) {
+		var element = this;
+		classB.liftB(function(cl){
+			if(!good()){return chooseSignal()};
+			jQuery(element).toggleClass(cl);
+		});
 	};
 
 	

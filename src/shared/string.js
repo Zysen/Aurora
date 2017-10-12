@@ -1,8 +1,8 @@
-String.prototype.startsWith = function(prefix) {
-    return this.indexOf(prefix) === 0;
-};
 String.prototype.contains = function(it) { return this.indexOf(it) != -1; };
 String.prototype.endsWith = function(suffix) {
+    if (this.length < suffix.length) {
+        return false;
+    }
     return this.indexOf(suffix, this.length - suffix.length) !== -1;
 };
 
@@ -21,26 +21,42 @@ String.prototype.startsWith = function (str){
 };
 String.prototype.trim = String.prototype.trim || function() {
 	return this.replace(/^\s+|\s+$/,"");
-}
+};
   String.prototype.trimFullStops = function() {
           return this.replace(/^\.+|\.+$/,"");
   };
   String.prototype.replaceNewLine = function() {
           return this.replace(/(\r\n|\r|\n)/g, "<br />");
-  }
+  };
   String.prototype.replaceBreaks = function() {
           return this.replace(/<br \/>|<br\/>/g, "\n");
-  }
+  };
   //String Trim to length or first Stop(.)
   String.prototype.short = function(nLen) {
           var nFSPos=this.indexOf('.');
           return (this.length>nLen)?((nFSPos>-1)&&(nFSPos<nLen+1)&&(nFSPos>3))?this.split('.')[0].trim()+'':this.substring(0,nLen).trim()+'':this;
   };
-  
+
   String.prototype.ucFirst = function() {
-    return this.substring(0, 1).toUpperCase() + this.substring(1).toLowerCase();
+    // NOTE: I'm not sure it make sense to lowerCase the remainder of the string? -RC
+    return this.substring(0, 1).toUpperCase() + this.substring(1);  //.toLowerCase();
   };
-  
+
+  String.prototype.titleCaseTableKeys = function() {
+    var parts = this.split(/[-_]/);
+    for (var i = 0; i < parts.length; i++) {
+      parts[i] = parts[i].ucFirst();
+    }
+    return parts.join(" ");
+  };
+
+  String.prototype.titleCaseEnumKeys = function() {
+    // insert '-' characters between capital letters
+    var result = this.replace( /([^A-Z])([A-Z])/g, "$1-$2" );
+    // can now use the table key title function
+    return result.titleCaseTableKeys();
+  };
+
   //Encode for URL transport
   String.prototype.encode = function() {
           return (this.length>0)?encodeURIComponent(this):this;
@@ -101,30 +117,75 @@ String.prototype.trim = String.prototype.trim || function() {
   };
   
   String.prototype.makeDomIdSafe = function() {
-	  return this.replace(/^[^a-z0-9]+|[^\w:.-]+/gi, "").toLowerCase().replaceAll("=", "");
+	  return this.replace(/[^a-z0-9_]/gi, "").toLowerCase();
   };
   
   String.prototype.clearPunc=function(){
           return this.replace(/[\.,-\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s{2,}/g," ");
   };
   
-    String.prototype.toByteArray = function(){
-        var bytes = [];
-        for(var i = 0; i < this.length; i++) {
-            var char = this.charCodeAt(i);
-            bytes.push(char >>> 8);
-            bytes.push(char & 0xFF);
-        }
-        return bytes;
-    };
-    
-    String.fromByteArray = function(bytes){
-    	 var str = "";
-	    for(var i = 0; i < bytes.length; i += 2) {
-	        var char = bytes[i] << 8;
-	        if (bytes[i + 1])
-	            char |= bytes[i + 1];
-	        str += String.fromCharCode(char);
-	    }
-	    return str;
-    };
+  String.prototype.trunc = function(n, useWordBoundary){
+	var toLong = this.length > n;
+	var s_ = toLong ? this.substr(0,n-1) : this;
+	s_ = useWordBoundary && toLong ? s_.substr(0,s_.lastIndexOf(' ')) : s_;
+	return  toLong ? s_ + '&hellip;' : s_;
+};
+  
+String.prototype.toByteArray = function(){
+    var bytes = [];
+    for(var i = 0; i < this.length; i++) {
+    	bytes.push(this.charCodeAt(i));
+        //var char = this.charCodeAt(i);
+        //bytes.push(char >>> 8);
+        //bytes.push(char & 0xFF);
+    }
+    return bytes;
+};
+
+String.prototype.highlight=function(vWords){
+	var oWords = vWords.clearPunc().stripTags().split(' '),vNewPhrase=this;
+	oWords.each(function(o){
+		vNewPhrase=vNewPhrase.replace(new RegExp("("+o+")","ig"),'<span class="highlight">$1</span>');
+	});
+	return vNewPhrase;
+};
+String.fromByteArray = function(b){
+	var str = "";
+	for(var index in b){
+		str+= String.fromCharCode(b[index]);
+	}
+	return str;
+};
+String.prototype.highlight=function(vWords){
+          var oWords = vWords.clearPunc().stripTags().split(' '),vNewPhrase=this;
+          oWords.each(function(o){
+                  vNewPhrase=vNewPhrase.replace(new RegExp("("+o+")","ig"),'<span class="highlight">$1</span>');
+          });
+          return vNewPhrase;
+  };
+String.prototype.hexStringToBytes = function(){
+	var arr = [];
+	try{
+		for(var i=0;i<this.length-1;i+=2){
+			arr.push(parseInt("0x"+this[i]+this[i+1]));
+		}
+	}
+	catch(e){
+		console.log("Error, unable to parse Hex String ", e);
+	}
+	return arr;
+};
+String.prototype.toHexString = function(){
+	var bytes = this.toByteArray();
+	var hexStr =  BINARY.byteArrayToHexString(bytes);
+	return hexStr;
+};
+
+String.prototype.splice = function( idx, s ) {
+    return (this.slice(0,idx) + s + this.slice(idx));
+};
+
+String.prototype.insert = function(str, pos){
+  pos = pos || 0;
+    return this.substring(0, pos)+str+(this.substring(pos));
+};

@@ -19,6 +19,9 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     
     //TODO: Link up with http server, to enable a session across all requests. Probably give the webserver a copy of the sessions table. 
     
+    var serverLogoutChannelE = DATA.getChannelE("global", "aurora", aurora.CHANNELS.SERVER_LOGOUT).mapE(function () {location.reload()});
+
+   
     
     //Receive Authentication token from server.
     aurora.currentUserB = aurora.sendToClientE.filterE(function(message){
@@ -38,20 +41,18 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
     }).startsWith({userId: -1, groupId: 1});
     
     widgets.register("LoginForm", function(instanceId, data, purgeData){
-        
-        
-        var container = DOM.create("div", undefined, "aurora_loginContainer");
-        //var emailInputContainer = DOM.createAndAppend(container, "div");
-        //var emailInput = DOM.createAndAppend(emailInputContainer, "input");
-        //emailInput.placeholder = "Email Address";
-        var usernameInputContainer = DOM.createAndAppend(container, "div", undefined, "aurora_username_container");
+        var container = DOM.create("div");
+        var emailInputContainer = DOM.createAndAppend(container, "div");
+        var emailInput = DOM.createAndAppend(emailInputContainer, "input");
+        emailInput.placeholder = "Email Address";
+        var usernameInputContainer = DOM.createAndAppend(container, "div");
         var usernameInput = DOM.createAndAppend(usernameInputContainer, "input");
-        usernameInput.placeholder = "Username or Email Address";
-        var passwordInputContainer = DOM.createAndAppend(container, "div", undefined, "aurora_password_container");
+        usernameInput.placeholder = "Username";
+        var passwordInputContainer = DOM.createAndAppend(container, "div");
         var passwordInput = DOM.createAndAppend(passwordInputContainer, "input");
         passwordInput.placeholder = "Password";
         passwordInput.type = "password";
-        var rememberMeCont = DOM.createAndAppend(container, "div", undefined, "aurora_rememberme_container");
+        var rememberMeCont = DOM.createAndAppend(container, "div");
         var rememberMeLabel = DOM.createAndAppend(rememberMeCont, "span", undefined, undefined, "Remember Me? ");
         var rememberMe = DOM.createAndAppend(rememberMeCont, "input");
         rememberMe.type = "checkbox";
@@ -71,7 +72,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
             	
                 var usernameB = F.extractValueB(usernameInput);
                 var passwordB = F.extractValueB(passwordInput);
-               // var emailB = F.extractValueB(emailInput);
+                var emailB = F.extractValueB(emailInput);
                 var rememberMeB = F.extractValueE(rememberMe).mapE(function(){LOG.create(rememberMe.checked);return rememberMe.checked;}).startsWith(false);
                 
                 var formDataB = F.liftB(function(username, password,emailaddress, rememberMe){
@@ -83,7 +84,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                         formData.username = username;
                     }
                     return formData;
-                }, usernameB,passwordB,rememberMeB);
+                }, usernameB,passwordB,emailB, rememberMeB);
                 F.clicksE(button).snapshotE(formDataB).mapE(function(formData){
                     AURORA.sendToServer({command: AURORA.COMMANDS.AUTHENTICATE, data: formData});
                 });
@@ -149,16 +150,13 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     if(!good()){
                         return chooseSignal();
                     }
-
                     var newTable = OBJECT.clone(dataSources);
                     if(table.tableMetaData.applyId!==undefined){
                     	newTable.tableMetaData.applyId = table.tableMetaData.applyId;
                     }
                     TABLES.UTIL.addColumn(newTable, "plugin", "Plugin", "string");
-                    TABLES.UTIL.addColumn(newTable, "pluginId", "PluginID", "number");    
-                    TABLES.UTIL.addColumn(newTable, "channelId", "Channel Id", "number");
                     TABLES.UTIL.addColumn(newTable, "groups", "Groups", "map");
-                    TABLES.UTIL.setColumnOrder(newTable, ["description", "plugin", "pluginId", "channelId", "groups"]);
+                    TABLES.UTIL.setColumnOrder(newTable, ["description", "plugin", "channelId", "groups"]);
                    // TABLES.UTIL.eachRow(newTable, function(row, rowIndex){
                    //     if(row.groupId===3 && (row.dataSource==="AURORA_DATASOURCES" || row.dataSource==="AURORA_USERS" || row.dataSource==="AURORA_GROUPS" || row.dataSource==="AURORA_DATAPERMISSIONS")){
                    //         TABLES.UTIL.getRowMetaData(newTable, row.permissionId, true).disabled = true;
@@ -175,7 +173,7 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                    			newTable.rowMetaData[row.key].readonly = true;
                    		}
                     }
-
+                   
                    for(var rowIndex in table.data){
                    		var row = TABLES.UTIL.findRow(newTable, table.data[rowIndex].key);
                     	if(row!==undefined){
@@ -196,9 +194,8 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     newTable.columnMetaData["pluginId"].readonly = true;
                     newTable.columnMetaData["plugin"].readonly = true;
                     newTable.columnMetaData["channelId"].readonly = true;
-                    newTable.columnMetaData["type"].visible = false;
-                    newTable.columnMetaData["type"].readonly = true;
                     newTable.columnMetaData["groups"].rendererOptions = groupOptions;
+                    console.log(newTable.rowMetaData);
                     return newTable;
                 },function(table){
                     var newTable = OBJECT.clone(table);
@@ -206,9 +203,6 @@ var AUTHENTICATION = (function(authentication, widgets, aurora, cookies){
                     for(var rowIndex in newTable.data){
                    		if(newTable.data[rowIndex].groups===undefined){
                    			newTable.data[rowIndex].groups = {};
-                   		}
-                   		if(typeof(newTable.data[rowIndex].channelId)==="string"){		//TODO find the soruce of these string and fix there
-                   			newTable.data[rowIndex].channelId = parseInt(newTable.data[rowIndex].channelId);
                    		}
                     }
                   //  TABLES.UTIL.eachRow(newTable, function(row, rowIndex){

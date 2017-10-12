@@ -1,7 +1,5 @@
 //goog['provide']('F');
 //goog['require']("LOG");
-goog['require']("LOG");
-goog['require']("F");
 //goog['require']("SIGNALS");
   /**
  * @param {Function|F.Behavior} fn
@@ -16,6 +14,8 @@ F.liftBI = function (fn, functionUp) {
     for(var index in args){
         if(args[index]===undefined){
             LOG.create("Error - liftBI was passed a behaviour that is undefined");
+            console.log(arguments);
+            console.log(arguments.callee.caller);
             throw "Error - liftBI was passed a behaviour that is undefined";
         }
     }
@@ -52,10 +52,20 @@ F.liftBI = function (fn, functionUp) {
 };     
 
 
+F.loopbackBI = function(){
+	var rec = F.receiverE();
+	return F.liftBI(function(table){
+		return table;
+	}, function(table){
+		rec.sendEvent(table);
+		return [undefined];	
+	},rec.startsWith(SIGNALS.NOT_READY));
+};
+
 
 F.EventStream.prototype.filterUndefinedE = function(){
-	return this.filterE(function(value){
-		return this.value!=undefined;
+	return this.filterE(function(val){
+		return this.val!=undefined;
 	});
 };
 
@@ -249,7 +259,11 @@ F.Behavior.prototype.equalsB = function(object2){
 		if(!good()){
 			return value;
 		}
-		return OBJECT.equals(value,object2);
+		var match = false;
+		for(var index in arguments){
+			match = match || OBJECT.equals(value,object2);
+		}
+		return match;
 	});
 };
 
@@ -257,8 +271,8 @@ F.Behavior.prototype.equalsB = function(object2){
  * EventStream that extracts an objects property
  */
 F.EventStream.prototype.propertyE = function(propertyName){
-	return this.filterE(function(value){
-		return value[propertyName]!==undefined;
+	return this.filterE(function(val){
+		return val!==undefined && val!==null && val[propertyName]!==undefined && val[propertyName]!==null;
 	}).mapE(function(value){
 		return value[propertyName];
 	});
@@ -272,15 +286,9 @@ F.Behavior.prototype.propertyB = function(propertyName){
 		if(!good(value)){
 			return value;
 		}
-
-		if(value[propertyName]===undefined){
-			console.log("Behaviour.propertyB error: No such property "+propertyName);
-			console.log(value);
-			console.log(propertyName);
-			console.log(value[propertyName]);
-			return SIGNALS.ERROR();
+		if(value===null || value===undefined || value[propertyName]===undefined || value[propertyName]===null){
+			return SIGNALS.NOT_READY;
 		}
-
 		return value[propertyName];
 	});
 };
@@ -319,7 +327,7 @@ F.Behavior.prototype.filterNotGoodB = function(){
  */
 F.Behavior.prototype.filterNotGoodExceptSetErrorsB = function(){
 	return F.mergeE(F.oneE(this.valueNow()), this.changes()).filterE(function(value){
-		return SIGNALS.isSetErrored(value) || good();
+		return isSetErrored(value) || good();
 	}).startsWith(SIGNALS.NOT_READY);
 };
 
@@ -397,7 +405,6 @@ F.EventStream.prototype.filterNotArrayE = function(){
     });
 };
 
-
 F.EventStream.prototype.filterCheckedTargetE = function(){
 	return this.filterE(function(event) {
 		return !event.target.checked;
@@ -409,8 +416,8 @@ F.EventStream.prototype.filterUncheckedTargetE = function(){
 	});
 };
 F.EventStream.prototype.filterTypeE = function(type){
-	return this.filterE(function(value) {
-		return typeof(value)!==type;
+	return this.filterE(function(val) {
+		return typeof(val)!==type;
 	});
 };
 F.EventStream.prototype.filterUndefinedE = function(){
@@ -418,7 +425,11 @@ F.EventStream.prototype.filterUndefinedE = function(){
 		return value!=undefined;
 	});
 };
-
+F.EventStream.prototype.filterTruthyE = function(){
+	return this.filterE(function(value) {
+		return Boolean(value);
+	});
+};
 F.EventStream.prototype.targetIdE = function(){
 	return this.mapE(function(event){
 		return event.target.id;
@@ -490,19 +501,96 @@ F.EventStream.prototype.trueE = function(str){
 	return this.mapE(function(value){return true;});
 };
 
+F.Behavior.prototype.trueB = function(){
+	return this.liftB(function(value){if(!good()){return chooseSignals;}return true;});
+};
+
 F.EventStream.prototype.falseE = function(str){
 	return this.mapE(function(value){return false;});
 };
 
-F.EventStream.prototype.printE = function(str){
+F.Behavior.prototype.falseB = function(){
+	return this.liftB(function(value){if(!good()){return chooseSignals;}return false;});
+};
+
+F.EventStream.prototype.printE = function(str, showData){
 	return this.mapE(function(value){
 		LOG.create(str);
-		LOG.create(value);
+		if(showData===true || showData===undefined){
+			LOG.create(value);
+		}
 		return value;
 	});
 };
 F.EventStream.prototype.print = F.EventStream.prototype.printE;
 
+F.EventStream.prototype.toJSONE = function(v){
+	return this.mapE(function(){
+		try{
+			return JSON.stringify(v);
+		}
+		catch(e){
+			console.log(e);
+			return SIGNALS.ERROR;
+		}
+	});
+};
+
+F.EventStream.prototype.fromJSONE = function(v){
+	return this.mapE(function(){
+		try{
+			return JSON.parse(v);
+		}
+		catch(e){
+			console.log(e);
+			return SIGNALS.ERROR;
+		}
+	});
+};
+
+F.Behavior.prototype.toJSONB = function(){
+	return F.liftBI(function(t){
+		if(!good()){
+			return t;
+		}
+		try{
+			return [JSON.stringify(t)];
+		}
+		catch(e){
+			return SIGNALS.ERROR;
+		}	
+	},
+	function(t){
+		try{
+			return [JSON.parse(t)];
+		}
+		catch(e){
+			return SIGNALS.ERROR;
+		}
+	}, this)	
+};
+
+F.Behavior.prototype.fromJSONB = function(){
+	return F.liftBI(function(t){
+		if(!good()){
+			return t;
+		}
+		try{
+			return [JSON.parse(t)];
+		}
+		catch(e){
+			return SIGNALS.ERROR;
+		}	
+	},
+	function(t){
+		try{
+			return [JSON.stringify(t)];
+		}
+		catch(e){
+			return SIGNALS.ERROR;
+		}
+	}, this)	
+};
 
 
 F.Behavior.prototype.filterUndefinedB = function(){	//This is bad
@@ -515,13 +603,25 @@ F.Behavior.prototype.filterUndefinedB = function(){	//This is bad
 };
 
 F.Behavior.prototype.printB = function(tag){
-    return this.liftB(function(val){
-    	LOG.create(tag);
-        LOG.create(val);
+    return F.liftBI(function(val){
+    	console.log(tag, "DOWN", val);
+    	//LOG.create(tag+" DOWN");
+        //LOG.create(val);
         return val;
-    });
+    }, function(newVal){
+    	console.log(tag, "UP", newVal);
+    	return [newVal];
+    }, this);
 };
 F.Behavior.prototype.print = F.Behavior.prototype.printB;
+
+F.Behavior.prototype.filterUpBI = function(){
+    return F.liftBI(function(val){
+        return val;
+    }, function(){
+    	return [undefined];
+    }, this);
+};
 
 F.EventStream.prototype.undefinedE = function(){
 	return this.mapE(function(){return undefined});
@@ -531,20 +631,6 @@ F.Behavior.prototype.onceB = function(){
 		return value;
 	}, this).changes().onceE();
 };
-
-F.EventStream.prototype.windowedQueueE = function(max_length){
-	return this.collectE([], function(new_object, existing_array) {
-		var output = new Array();
-		var length = (existing_array.length <= (max_length - 1)) ? existing_array.length : (max_length - 1);
-		if(length > 0){
-			for(var i=length; i > 0; i--){
-				output[i] = existing_array[i-1];
-			}
-		}
-		output[0] = new_object;
-		return output;
-	});
-}; 
 
 F.Behavior.prototype.bufferOnBooleanB = function(booleanB){
 	return F.liftB(function(packet, scrolling, state){
@@ -620,18 +706,6 @@ F.Behavior.prototype.domDisplayB = function(domTarget){
 	});
 };
 
-F.EventStream.prototype.keysE = function(){
-	this.mapE(function(o){
-		return Object.keys(o);
-	});
-};
-
-F.Behavior.prototype.keysB = function(){
-	this.liftB(function(o){
-		return Object.keys(o);
-	});
-};
-
 F.EventStream.prototype.filterErrors = function(){
 	return this.filterE(function(value){
 		return !(value instanceof SIGNALS.ERROR);
@@ -647,23 +721,31 @@ F.EventStream.prototype.toggleE = function(defaultValue){
 	});
 };
 
+F.EventStream.prototype.snapshotManyE = function(keyBehaviorPairObject) {
+	if (!( keyBehaviorPairObject instanceof Object)) {
+		throw 'snapshotManyE: expected key value pair object as argument, where values are behaviors';
+	}
+	
+	for(var key in keyBehaviorPairObject){
+		if (!( keyBehaviorPairObject[key] instanceof F.Behavior)) {
+			throw 'snapshotManyE: key - ' + key + ' is not a behavior';
+		}
+	}
 
-F.EventStream.prototype.filterChangesE = function(optStart) {
-  var hadFirst = optStart === undefined ? false : true;
-  var prev = optStart;
+	return this.mapE(function(val){
+		var value = {event: val};
+		for(var key in keyBehaviorPairObject){
+			value[key] = keyBehaviorPairObject[key].valueNow();
+		}
+		return value;
+	});
+};
 
-  return this.filterE(function (v) {
-    if(typeof(v)=='object'){
-        if(!OBJECT.equals(v, prev)){
-            prev = OBJECT.clone(v);
-            return false;
-        }
-    }
-    else if (!hadFirst || prev !== v) {
-      hadFirst = true;
-      prev = v;
-      return false;
-    }
-    return true;
-  });
+F.focusE = function(domElement){
+	return F.extractEventE(domElement, 'focus');
+};
+
+
+F.blurE = function(domElement){
+	return F.extractEventE(domElement, 'blur');
 };
