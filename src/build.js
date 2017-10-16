@@ -426,14 +426,13 @@ var scanPlugins = function (dir ,params, whitelist) {
     if(whitelist!==undefined && ARRAYS.contains(whitelist, plugin)===false){
         continue;
     }
-        params.plugins.push(plugin);
-        
 	if(plugin.endsWith("disabled")){
 	    continue;
 	}
 	if (ARRAYS.contains(ignorePlugins, plugin)) {
 	    continue;
 	}
+	params.plugins.push(plugin);
 	var cleanPluginName = plugin.makeDomIdSafe();
         if  (params.pluginAllocation[cleanPluginName]) {
             console.log("DUPLICATE plugin found", cleanPluginName);
