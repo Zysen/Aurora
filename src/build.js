@@ -7,7 +7,6 @@ process.on('exit', function (){
   process.chdir(wd);
 });
 
-var jsmin = require('jsmin2');
 var jslint = require('node-jslint').JSLINT;
 var path = require("path");
 var fs = require("fs");
