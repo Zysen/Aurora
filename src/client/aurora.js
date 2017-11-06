@@ -45,9 +45,9 @@ var COOKIES = (function(cookieLib){
             }
 	};
 	cookieLib.getCookie = function(name) {
-      var value = "; " + document.cookie;
-      var parts = value.split("; " + name + "=");
-      if (parts.length == 2) return parts.pop().split(";").shift();
+            var value = "; " + document.cookie;
+            var parts = value.split("; " + name + "=");
+            if (parts.length == 2) return decodeURIComponent(parts.pop().split(";").shift());
     };
     cookieLib.remove = function( name ) {
     	document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
