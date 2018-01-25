@@ -1026,20 +1026,24 @@ var STORAGE = (function(storage, aurora){
         return tableBI;
 	};
 
-    storage.createJSONTableBI = function(objectName, primaryKey, columns, inputE){
+    storage.createJSONTableBI = function(objectName, primaryKey, columns, inputE, opt_readOnly){
         var path = __dirname+"/data/"+objectName+".json";
         inputE = inputE || F.zeroE();
         if(!fs.existsSync(path)){
             fs.writeFileSync(path, "[]", 'utf8');
         }
-        return updateTable(objectName, primaryKey, columns, inputE, JSON.parse(fs.readFileSync(path, 'utf8')), function(objectName, primaryKey, columns, data){
-    		fs.writeFileSync(__dirname+"/data/"+objectName+".json", JSON.stringify(data), 'utf8');
+        var resB = updateTable(objectName, primaryKey, columns, inputE, JSON.parse(fs.readFileSync(path, 'utf8')), function(objectName, primaryKey, columns, data){
+    	    fs.writeFileSync(__dirname+"/data/"+objectName+".json", JSON.stringify(data), 'utf8');
     	});
+        if (opt_readOnly) {
+            resB = F.liftB(function (v) {return v}, resB);
+        }
+        return resB;
     };
    
-    storage.createTableBI = function(objectName, primaryKey, columns, inputE){
+    storage.createTableBI = function(objectName, primaryKey, columns, inputE, opt_readOnly){
         if(aurora.SETTINGS.STORAGE_ENGINE===aurora.STORAGE_ENGINES.JSON){
-            return storage.createJSONTableBI(objectName, primaryKey, columns, inputE);
+            return storage.createJSONTableBI(objectName, primaryKey, columns, inputE, opt_readOnly);
         }
     };
     

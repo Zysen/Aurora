@@ -2,7 +2,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     var log = LOG.createModule("AUTH");
     authentication.log = log;
     DATA.httpMessageInE = F.zeroE();
-
+    var readOnly = config.secWrite === undefined || !config.secWrite;
     var activeSessionExpiry = 120000;//30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
     var sessionExpiryClean = 30000;   //How often to check for expired session tokens
     var persistentSessionExpiry = 2419200000;  //How long a persistent token should last.
@@ -35,8 +35,10 @@ var AUTHENTICATION = (function(authentication, http, aurora){
     STORAGE.createTableBI("aurora.groups", "groupId", {
         groupId:{name: "Group Id", type: "number"},
         description:{name: "Description", type: "string"}
-    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS, "User Groups");
+    }, undefined, readOnly).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.GROUPS, "User Groups");
 
+    // this is insecure we should not be passing back the password even if it is encrypted
+    // however since we are not using the aurora mechinisim for passwords this should be fine
     var usersTableBI = STORAGE.createTableBI("aurora.users", "userId", {
         userId:{name: "User Id", type: "number"},
         firstname:{name: "First Name", type: "string"},
@@ -45,7 +47,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         username:{name: "Username", type: "string"},
         password:{name: "Password", type: "password"},
         groupId:{name: "Group Id", type: "number"}
-    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.USERS, "Users");
+    }, undefined, readOnly).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.USERS, "Users");
 
     var passwordLoginE = http.userAuthenticationE.filterE(function(packet){return packet.data.command===AURORA.COMMANDS.AUTHENTICATE && packet.data.data.password!==undefined;}).mapE(function(dataPacket){
         var clientId = dataPacket.clientId;
@@ -269,7 +271,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         return table;
     }, function(table){
         sessionTableUpE.sendEvent(table);
-    }, authentication.sessionTableB).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.SESSIONS, "Aurora Sessions");
+    }, authentication.sessionTableB);
     
     /*
      //Store the session table on the file system, so that auto login users details are remembered.
@@ -298,7 +300,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         plugin:{name: "Plugin", type: "string"},
         channelId:{name: "Channel", type: "int"},
         groups:{name: "Groups", type: "map"}
-    }).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_PERMISSIONS, "Data Permissions");
+    }, undefined, readOnly).sendToClients(aurora.CHANNEL_ID, aurora.CHANNELS.DATA_PERMISSIONS, "Data Permissions");
 
     authentication.clientCanWrite = function(clientId, pluginId, channelId){
         return authentication.clientCanRead(clientId, pluginId, channelId, true);
