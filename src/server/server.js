@@ -778,7 +778,25 @@ var DATA = (function(dataManager, aurora, http, binary, authentication){
 		 }).mapE(function(e){       //DO NOT REMOVE, this is because other code paths modify data. Because we are not cloning at each node.
             return {type: e.type, data:e.data, clientId: e.clientId, connection:e.connection, token:e.token, user:e.user, httpRequest:e.httpRequest};
          });
-		 
+		 channelE.getRegisteredClients = function () {
+                     var map = dataManager.dataRegB.valueNow() || {};
+                     var val = map[newKey] || [];
+                     var tokenMap = {};
+                     var clientMap = authentication.clientMapB.valueNow() || {};
+                     
+                     val.forEach(function (clientId) {
+                         var token  = clientMap[clientId];
+                         if (token) {
+                             tokenMap[token] = (tokenMap[token] || []);
+                             tokenMap[token].push(clientId);
+                         }
+                     });
+                     var res = [];
+                     for (var token in tokenMap) {
+                         res.push({token: token, clients: tokenMap[token]});
+                     }
+                     return res;
+                 };
 		 channelE.toClientE = F.receiverE();
 		 
 		channelE.send = function(data, connection, filter){
@@ -885,6 +903,7 @@ var DATA = (function(dataManager, aurora, http, binary, authentication){
         modChannelE.filterKeyValueE = function (k, v) {
             return modChannelE.filterE(function (pkt) { return pkt.data[k] === v; });
         };
+        modChannelE.getRegisteredClients = channelE.getRegisteredClients;
     	return modChannelE;
     };
 
