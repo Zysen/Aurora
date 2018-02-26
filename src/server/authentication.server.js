@@ -151,8 +151,10 @@ var AUTHENTICATION = (function(authentication, http, aurora){
             case "LOGOUT":{   
             	TABLES.UTIL.removeRow(sessionTable, update.token);
             	OBJECT.remove(tokenIndex, update.token);
-
-                serverLogoutChannelE.send("logout", update.clientId);
+                var allClients = function (token) {
+                    return function (con, curToken) {return curToken === token};
+                };
+                serverLogoutChannelE.send("logout", undefined ,allClients(update.token));
 
                 break;
             }
