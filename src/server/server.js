@@ -7,8 +7,6 @@ var configLog = LOG.createModule("CONFIG");
 
 var configPath = (process.argv.length>2)?process.argv[2]:__dirname+"/config.json";
 
-
-
 var configChangedE = FILE.watchE(configPath).delayE(1000);
 //fs.unwatchFile(configPath)
 var config = JSON.parse(fs.readFileSync(configPath, 'utf8').replaceAll("\r", "").replaceAll("\n", ""));
@@ -437,7 +435,14 @@ var HTTP = (function(http, dataManager, authentication){
     });
     
     http.wsConnectionOpenE.mapE(function(packet){  //Sideeffects and updaters go here.
-        packet.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.VERSION, data: AURORA.VERSION}));
+        if (packet.connection.connected) {
+            try {
+                packet.connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.VERSION, data: AURORA.VERSION}));
+            }
+            catch (e) {
+                LOG.error('error opening connection');
+            }
+        }
     });
     
     var wsEventE = F.receiverE();
@@ -518,8 +523,11 @@ var HTTP = (function(http, dataManager, authentication){
     http.requestPageE.mapE(function(packet){
         var pagePath = __dirname+"/resources/pages/"+packet.data.data.replaceAll("../", "").replaceAll("./", "")+".html";
         log.debug("Requesting "+pagePath);
+
         if(fs.exists(pagePath, function(exists){
+            if (packet.connection.connected) {
         	packet.connection.sendUTF(JSON.stringify({command: AURORA.RESPONSES.PAGE, data: exists?fs.readFileSync(pagePath, "utf8"):theme404}));
+            }
         }));
     });
     return http;
@@ -623,16 +631,23 @@ var DATA = (function(dataManager, aurora, http, binary, authentication){
             for(var index in DATA_REG[key]){
             	var found = false;
                 var clientId = DATA_REG[key][index];
-                if(connections[clientId]!=undefined){                    
-                    if(type==="binary"){
-                        connections[clientId].sendBytes(value);
+                var con = connections[clientId]; 
+                if(con!=undefined && con.connected){                    
+                    try {
+                        if(type==="binary"){
+                            con.sendBytes(value);
+                        }
+                        else{
+                            con.sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: key, data: value}));
+                        }
+
                     }
-                    else{
-                       connections[clientId].sendUTF(JSON.stringify({command: aurora.COMMANDS.UPDATE_DATA, key: key, data: value}));
+                    catch (e) {
+                        LOG.error("error sending bytes", e);
                     }
                 }
                 else{
-                	log.debug("No parties interested in "+key);
+                    log.debug("No parties interested in "+key);
                 }
             }
         }
@@ -847,11 +862,17 @@ var DATA = (function(dataManager, aurora, http, binary, authentication){
                         if (filter || connection !== undefined) {
                             for (var k in candidateConnections) {
                                 var con = candidateConnections[k];
-                                if (con && myFilter(con, con.token)) {
+                                if (con && con.connected && myFilter(con, con.token)) {
 		     		    if(handleAuthentication===false || 
-                                       authentication.clientCanRead(con.clientId, pluginId,channelId)){                                       
+                                       authentication.clientCanRead(con.clientId, pluginId,channelId)){ 
+                                        try {
+                                            con.sendBytes(buf);
+                                        }
+                                        catch (e) {
+                                            LOG.error("error sending bytes", e);
+                                        }
 
-                                        con.sendBytes(buf);
+                                                                                                                               
 		     		    }
 		     		    else{ 
 		     			AUTHENTICATION.log.warn("User attempted to read "+newKey+" but does not have permission.");
