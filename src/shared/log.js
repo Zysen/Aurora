@@ -44,26 +44,26 @@ var LOG = (function(log, aurora) {
 	var processLogEntry = function(functionTest, moduleName, level, args, colour){
 	    var minLevel = log.level;
             var hasOverride = false;
+	    var levelNum = log.enum[level];
             if (log.overrides && log.overrides[moduleName]) {
                 var override = log.overrides[moduleName];
                 if (typeof(override) === 'string') {
                    if (log.enum.hasOwnProperty(override)) {
                        minLevel = log.enum[override];
-                       hasOverride = true;
+                       hasOverride = levelNum<=minLevel;
                    }
                       
                         
                 }
                 else {
                     minLevel = override;
-                    hasOverride = true;
+                    hasOverride = levelNum<=minLevel;
                 }
             }
 	    functionTest = functionTest || console.log;
 	    colour = colour || "\x1b[37m";
 		
 	    args = Array.prototype.slice.call(args);
-	    var levelNum = log.enum[level];
 	    if(levelNum<=minLevel){
 		if(isServer && syslog!==undefined){
 		    var syslogEntry = moduleName.padRight(9, " ");
@@ -111,7 +111,7 @@ var LOG = (function(log, aurora) {
             usedModules[moduleName] = true;
 		var factory = {};
 		factory.debug = function(){
-			processLogEntry(console.debug, moduleName, "DEBUG", arguments);
+			processLogEntry(isServer ? console.log : console.debug, moduleName, "DEBUG", arguments);
 		};
 		
 		factory.info = function(){
@@ -141,7 +141,7 @@ var LOG = (function(log, aurora) {
 		};
 		
 		factory.emergency = function(){
-			processLogEntry(console.error, moduleName, "EMERGENCY", minLevel, arguments, "\x1b[1m\x1b[31m");
+			processLogEntry(console.error, moduleName, "EMERGENCY", arguments, "\x1b[1m\x1b[31m");
 		};
 		
 		modules[moduleName] = factory;
