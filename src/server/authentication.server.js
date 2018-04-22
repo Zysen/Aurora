@@ -96,7 +96,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
 
     authentication.forceLogoutE = F.receiverE();
 
-    authentication.logoutE = F.mergeE(logoutInternalE, authentication.forceLogoutE);
+    var logoutE = F.mergeE(logoutInternalE, authentication.forceLogoutE);
 
     var expiredSessionsCleanE = F.timerE(sessionExpiryClean).mapE(function(){return {cleanExpiry: true};});
     var sessionTableUpE = F.receiverE();
@@ -111,7 +111,7 @@ var AUTHENTICATION = (function(authentication, http, aurora){
 
 
 
-    var sessionTableStateE = F.mergeE(authentication.logoutE.tagE("LOGOUT"), HTTP.keepAliveE.tagE("KEEP_ALIVE"), HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), F.mergeE(customLoginReceiverE, passwordLoginE).tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}, tokenIndex: {}}, function(taggedPacket, state){
+    var sessionTableStateE = F.mergeE(logoutE.tagE("LOGOUT"), HTTP.keepAliveE.tagE("KEEP_ALIVE"), HTTP.newTokenE.tagE("NEW_TOKEN"), expiredSessionsCleanE.tagE("EXPIRED_CLEAN"), sessionTableUpE.tagE("TABLE_UP"), F.mergeE(customLoginReceiverE, passwordLoginE).tagE("PASSWORD_LOGIN"), http.wsConnectionOpenE.tagE("CONNECTION_OPEN"), http.wsConnectionCloseE.tagE("CONNECTION_CLOSE")).collectE({sessionTable: sessionTable, clientMap:{}, tokenIndex: {}}, function(taggedPacket, state){
         //Todo maintain a clientId to token map.
         //Use this to close properly.
     	var sessionTable = state.sessionTable;
@@ -132,9 +132,11 @@ var AUTHENTICATION = (function(authentication, http, aurora){
                         for(var index in sessionTable.data[rowIndex].instances){
                             OBJECT.remove(clientMap, sessionTable.data[rowIndex].instances[index]);
                         }
-                        TABLES.UTIL.removeRow(sessionTable, sessionTable.data[rowIndex].token);
-                        OBJECT.remove(tokenIndex, update.token);
-                        timeouts.push(update.token);
+                        (function (token) {
+                            timeouts.push(sessionTable.data[rowIndex]);
+                            TABLES.UTIL.removeRow(sessionTable, token);
+                            OBJECT.remove(tokenIndex,token);
+                        })(sessionTable.data[rowIndex].token);
                     }
                 }
                 break;
@@ -247,12 +249,14 @@ var AUTHENTICATION = (function(authentication, http, aurora){
             return F.zeroE();
         }
         var recE = F.receiverE();
-        for(var index in state.timeouts){
-            recE.sendEvent(state.timeouts[index]);
-        }
+        setTimeout(function () {
+            for(var index in state.timeouts){
+                recE.sendEvent(state.timeouts[index]);
+            }
+        },1);
         return recE;
     }).switchE();
-    
+    authentication.logoutE = F.mergeE(logoutE, authentication.sessionTimeoutE);
     authentication.getUser = function(token, httpRequest){
         var sessionTable = authentication.sessionsByTokenB.valueNow();
         if(sessionTable[token]===undefined){
