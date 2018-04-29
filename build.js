@@ -1,20 +1,73 @@
-var fs = require("fs");
-const childProcess = require('child_process');
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const child_process = require('child_process');
+
+var buildConfigStr = (process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json";
+process.title = "aurora_build";
+
+if(Object.values===undefined){
+	Object.prototype.values = function(){
+		var v = [];
+		for(var index in this){
+			if(this.hasOwnProperty(index)){
+				v.push(this[index]);
+			}
+		}
+		return v;
+	}
+}
+
+String.prototype.replaceAll = function (find, replace) {
+    var str = this;
+    return str.replace(new RegExp(find.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replace);
+};
+
+function scanExports(str, startPos){
+	var pos = str.indexOf("@export", startPos);
+	if(pos>=0){
+		var endBlockPos = str.indexOf("*/", pos);
+		var eqPos = str.indexOf("=", endBlockPos);
+		var chunk = str.substring(endBlockPos, eqPos);
+		var elPos = chunk.lastIndexOf("\n");
+		var name = chunk.substring(elPos+1).replaceAll(" ", "").replaceAll("\t", "");
+		if(name.length>200){
+			eqPos = pos+10;
+		}
+		var next = scanExports(str, eqPos);
+		if(next){
+			return [name].concat(next);
+		}
+		return [name];
+	}
+}
+
+function findExports(sources){
+	return [].concat.apply([], sources.map(function(e){
+		return scanExports(fs.readFileSync(e).toString(), 0);
+	}).filter(function(v){return v!==undefined;}));
+}
+
+function createDir(p){
+	if(!fs.existsSync(p)){
+		fs.mkdirSync(p);
+	}
+}
 
 function copyDirectorySync(src, dest){
 	if(!fs.existsSync(src)){return false;}
 	if(!fs.existsSync(dest)){fs.mkdirSync(dest);}
 	fs.readdirSync(src).forEach(function(filename){
-		var stat = fs.statSync(src+"/"+filename);
+		var stat = fs.statSync(src+path.sep+filename);
 		if(stat.isFile()){
-			fs.copyFileSync(src+"/"+filename, dest+"/"+filename);
+			fs.copyFileSync(src+path.sep+filename, dest+path.sep+filename);
 		}
 		else if(stat.isDirectory()){
-			copyDirectorySync(src+"/"+filename, dest+"/"+filename);
+			copyDirectorySync(src+path.sep+filename, dest+path.sep+filename);
 		}
 	});
 }
-var frameworkConfigString = fs.readFileSync(__dirname+"/build_config.json");
+var frameworkConfigString = fs.readFileSync(buildConfigStr);
 try{var config = JSON.parse(frameworkConfigString);}
 catch(e){
 	console.log(e);
@@ -23,12 +76,16 @@ catch(e){
 var startTime = new Date().getTime();
 console.log("Starting Aurora Builder");
 
+config.output = config.output || "output";
+createDir(config.output);
+createDir(config.output+path.sep+"resources");
+
 var dependencyTree = {};
 var buildScriptCalls = {};
 config.plugins.forEach(function(pluginDir){
 	fs.readdirSync(pluginDir).forEach(function(pluginName){
 		if(pluginName.endsWith("disabled")){return;}
-		try{var pluginConfigStr = fs.readFileSync(pluginDir+"/"+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
+		try{var pluginConfigStr = fs.readFileSync(pluginDir+path.sep+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
 		try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
 		dependencyTree[pluginName] = [];
 		if(pluginConfig.dependencies){
@@ -37,11 +94,11 @@ config.plugins.forEach(function(pluginDir){
 			});
 		}
 		if(buildScriptCalls[pluginName]===undefined){buildScriptCalls[pluginName] = {name: pluginName,scripts:[]};}
-		fs.readdirSync(pluginDir+"/"+pluginName).forEach(function(pluginFileName){
+		fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
 			if(pluginFileName.endsWith("build.js")){
 				buildScriptCalls[pluginName].scripts.push(function(doneCb){
 					console.log("Building "+pluginName);
-					var child = childProcess.fork(pluginDir+"/"+pluginName+"/"+pluginFileName, [pluginConfigStr, __dirname], {silent:true}).on('exit', function (code) {
+					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, config.output], {silent:true}).on('exit', function (code) {
 						doneCb();
 					});
 					child.stdout.on('data', function(d){
@@ -108,16 +165,13 @@ function processQueue(queue, done){
 	else{done();}
 }
 processQueue(orderedScripts, function(){
-	config.output = config.output || "output";
-	if(!fs.existsSync(config.output)){
-		fs.mkdirSync(config.output);
-	}
 	//Match build targets and output to output dir.
 	var buildTargets = {};
 	config.build_targets.forEach(function(target){
 		buildTargets[target.filename] = target;
 		buildTargets[target.filename].sources = [];
 	});
+	
 	var pluginConfigs = {};
 	config.plugins.forEach(function(pluginDir){
 		fs.readdirSync(pluginDir).sort(function(a,b){
@@ -130,16 +184,16 @@ processQueue(orderedScripts, function(){
 					target.searchExp = [target.searchExp];
 				}
 				target.searchExp.forEach(function(searchExpStr){
-					fs.readdirSync(pluginDir+"/"+pluginName).forEach(function(pluginFileName){
-						var stat = fs.statSync(pluginDir+"/"+pluginName+"/"+pluginFileName);
-						copyDirectorySync(pluginDir+"/"+pluginName+"/resources", config.output+"/resources");
+					fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
+						var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
+						copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
 						if(stat.isFile()){
 							if(pluginFileName==="config.json"){
-								pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+"/"+pluginName+"/"+pluginFileName).toString());
+								pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
 							}
 							var match = pluginFileName.match(searchExpStr);
 							if(match!==null){
-								buildTargets[target.filename].sources.push(pluginDir+"/"+pluginName+"/"+pluginFileName);
+								buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
 							}	
 						}
 					});
@@ -156,82 +210,162 @@ processQueue(orderedScripts, function(){
 	}	
 	
 	fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
-	Object.values(buildTargets).forEach(function(target){
-		if(target.compiled===true){
-			/*
-				angularPass	false	Generate $inject properties for AngularJS for functions annotated with @ngInject
-				applyInputSourceMaps	true	Compose input source maps into output source map
-				assumeFunctionWrapper	false	Enable additional optimizations based on the assumption that the output will be wrapped with a function wrapper. This flag is used to indicate that "global" declarations will not actually be global but instead isolated to the compilation unit. This enables additional optimizations.
-				checksOnly	false	Don't generate output. Run checks, but no optimization passes.
-				compilationLevel	SIMPLE	Specifies the compilation level to use.
-				Options: WHITESPACE_ONLY, SIMPLE, ADVANCED
-				dartPass	false	
-				defines	null	Overrides the value of variables annotated with @define, an object mapping names to primitive types
-				env	BROWSER	Determines the set of builtin externs to load.
-				Options: BROWSER, CUSTOM
-				exportLocalPropertyDefinitions	false	
-				generateExports	false	Generates export code for those marked with @export.
-				languaqgeIn	ES6	Sets what language spec that input sources conform to.
-				languageOut	ES5	Sets what language spec the output should conform to.
-				newTypeInf	false	Checks for type errors using the new type inference algorithm.
-				outputWrapper	null	Interpolate output into this string, replacing the token %output%
-				polymerVersion	null	Specify the Polymer version pass to use.
-				preserveTypeAnnotations	false	
-				processCommonJsModules	false	Process CommonJS modules to a concatenable form, i.e., support require statements.
-				renamePrefixNamespace		Specifies the name of an object that will be used to store all non-extern globals.
-				rewritePolyfills	true	Rewrite ES6 library calls to use polyfills provided by the compiler's runtime.
-				useTypesForOptimization	false	Enable or disable the optimizations based on available type information. Inaccurate type annotations may result in incorrect results.
-				warningLevel	DEFAULT	Specifies the warning level to use.
-				Options: QUIET, DEFAULT, VERBOSE
-				jsCode	[]	Specifies the source code to compile.
-				externs	[]	Additional externs to use for this compile.
-				createSourceMap	false	Generates a source map mapping the generated source file back to its original sources.
-			*/
-			const compile = require('google-closure-compiler-js').compile;
-			target.compilationLevel = target.compilationLevel || "SIMPLE";
-			const flags = {
-				jsCode: target.sources.map(function(p){
-					return {src: fs.readFileSync(p).toString()};
-				}),
-				compilationLevel: target.compilationLevel,
-				languageIn		  :	 "ECMASCRIPT6",
-				languageOut		  : "ECMASCRIPT6",
-				warningLevel	  : "QUIET"					//QUIET, DEFAULT, VERBOSE
-			};
-			if(target.browser){
-				flags.env = "BROWSER";
-			}
-			if(target.sourceMap){
-				flags.createSourceMap = true;
-			}
-			
-			console.log("Compiling "+target.filename);
-			const out = compile(flags);
-			if(out.warnings.length>0){
-				console.warn("Warnings");
-				out.warnings.forEach(function(w){
-					console.warn(w);
+	processQueue(Object.values(buildTargets).map(function(target){
+		return function(doneCb){
+			if(target.compiled===true){
+				console.log("Compiling "+target.filename);
+				target.sources = target.sources.map(function(p){
+					if(p.startsWith(__dirname)){
+						return p.substr(__dirname.length+1);
+					}
+					return p;
 				});
-			}
-			if(out.errors.length>0){
-				console.error("Errors");
-				out.errors.forEach(function(w){
-					console.log(w);
+				
+				var entryFilePath = os.tmpdir()+path.sep+"aurora.entry.js";
+				var entryPoints = findExports(target.sources);
+				//console.log("Entry Points", entryPoints.join(" "));
+				var entryStr = "goog.provide(\"entrypoints\");"+entryPoints.map(function(v){
+					return "goog.require(\""+v+"\");";
+				}).join("\r\n");
+				//console.log("Entry Points: ", entryStr);
+				fs.writeFileSync(entryFilePath, entryStr);
+				
+				if(target.sourcesFile){
+					config.plugins.forEach(function(pluginDir){
+						fs.readdirSync(pluginDir).filter(function(pluginName){
+							return !pluginName.endsWith(".disabled");
+						}).forEach(function(pluginName){
+							var sourcesPath = path.resolve(pluginDir+path.sep+pluginName+path.sep+target.sourcesFile);
+							if(fs.existsSync(sourcesPath)){
+								target.sources = target.sources.concat(JSON.parse(fs.readFileSync(sourcesPath)));
+							}
+						});
+					});
+				}
+				//https://github.com/google/closure-compiler.git
+				//process_common_js_modules 
+				//--new_type_inf
+				//closure-compiler/contrib/nodejs
+				
+				
+				
+				//var nodeJsExterns = target.nodejs===true?" --externs closure-compiler/contrib/nodejs/**.js":"";
+				
+				var nodeJsExterns = target.nodejs===true?" --externs nodejs-externs/*.js --externs nodejs-externs/redundant/*.js --externs nodejs-externs/contrib/mime.js":"";
+				
+				//var nodeJsExterns = target.nodejs===true?" --externs plugins/nodejs-externs/node.js-closure-compiler-externs/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/redundant/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/contrib/mime.js":"";
+				//var buildCommand = "java -jar closure-compiler-v20180204.jar --env="+target.env+""+nodeJsExterns+" --js='"+entryFilePath+"' --js='"+target.sources.join("' --js='")+"' --dependency_mode=STRICT --entry_point=aurora --compilation_level=ADVANCED_OPTIMIZATIONS --warning_level=VERBOSE --jscomp_error=checkTypes --js_output_file '"+config.output + path.sep + target.filename+"' --create_source_map='"+config.output + path.sep + target.filename+".map' --source_map_format=V3";
+				
+				var buildCommandArray = ["java -jar closure-compiler-v20180204.jar",
+					"--env="+target.env+""+nodeJsExterns,
+					"--js='"+entryFilePath+"'",
+					"--js='"+target.sources.join("' --js='")+"'",
+					"--dependency_mode=STRICT",
+					"--entry_point=entrypoints",
+					"--compilation_level="+(target.compilationLevel || "ADVANCED_OPTIMIZATIONS"),
+					"--warning_level=VERBOSE",
+					"--jscomp_error=checkTypes",
+					"--js_output_file='"+config.output + path.sep + target.filename+"'",
+					"--create_source_map='"+config.output + path.sep + target.filename+".map'",
+					"--source_map_format=V3",
+					"--source_map_include_content=true"
+					//"--generate_exports=true"
+				];
+				
+				if(target.env==="BROWSER"){
+					buildCommandArray.push("--isolation_mode=IIFE");
+				}
+				
+				if(target.nodejs){
+					buildCommandArray.push("--output_wrapper_file=output_wrapper.txt");
+				}
+				
+				var buildCommand = buildCommandArray.join(" ");
+				
+				//console.log("\n"+buildCommand+"\n");
+				var ex = child_process.exec(buildCommand, function(err, stdout, stderr){
+					if(err){
+						console.log(stderr);
+						process.exit(1);
+						return;
+					}
+					console.log(stdout);
+					console.log(stderr);
+					fs.unlink(entryFilePath, function(err){
+						if(err){console.error(err);}
+						doneCb();
+					});
 				});
-				process.exit();
+				/*
+				const compile = require('closure-compiler-js').compile;
+				target.compilationLevel = target.compilationLevel || "SIMPLE";
+				const flags = {
+					jsCode: target.sources.map(function(p){
+						console.log(path.resolve(p));
+						//return {path: p};
+						return {src: fs.readFileSync(path.resolve(p)).toString()};
+					}),
+					compilationLevel: target.compilationLevel,
+					//languageIn		  :	 "ECMASCRIPT6",
+					//languageOut		  : "ECMASCRIPT6",
+					//warningLevel	  : "QUIET"					//QUIET, DEFAULT, VERBOSE
+					dependencyMode	: "STRICT",
+					entryPoint : "ice.cream.Shop"
+				};
+				
+				if(target.browser){
+					flags.env = "BROWSER";
+				}
+				if(target.sourceMap){
+					flags.createSourceMap = true;
+				}
+				
+				console.log("Compiling "+target.filename);
+				const out = compile(flags);
+				if(out.warnings.length>0){
+					console.warn("Warnings");
+					out.warnings.forEach(function(w){
+						console.warn(w);
+					});
+				}
+				if(out.errors.length>0){
+					console.error("Errors");
+					out.errors.forEach(function(w){
+						console.log(w);
+					});
+					process.exit();
+				}
+				else{
+					console.log("Compilation Successful");
+					console.log(out.compiledCode);
+					fs.writeFileSync(config.output + "/" + target.filename, out.compiledCode);
+				}
+				*/
 			}
 			else{
-				console.log("Compilation Successful");
-				fs.writeFileSync(config.output + "/" + target.filename, out.compiledCode);
+				console.log("Concatenating "+target.filename);
+				fs.writeFileSync(config.output+path.sep+target.filename, "");
+				target.sources.forEach(function(sourceFile){
+					fs.appendFileSync(config.output+path.sep+target.filename, fs.readFileSync(sourceFile));
+					fs.appendFileSync(config.output+path.sep+target.filename, "\n");
+				});
+				doneCb();
 			}
 		}
-		else{
-			fs.writeFileSync(config.output+"/"+target.filename, "");
-			target.sources.forEach(function(sourceFile){
-				fs.appendFileSync(config.output+"/"+target.filename, fs.readFileSync(sourceFile));
-				fs.appendFileSync(config.output+"/"+target.filename, "\n");
-			});
-		}
+	}), function(){
+		console.log("Build took "+(new Date().getTime()-startTime)+"ms");
 	});
-	console.log("Build took "+(new Date().getTime()-startTime)+"ms");
 });
+
+//@export, @export {SomeType}
+//When properties are marked with @export and the compiler is run with the --generate_exports flag, a corresponding goog.exportSymbol statement will be generated:
+/** @export */
+//foo.MyPublicClass.prototype.myPublicMethod = function() {
+  // ...
+//};
+//goog.exportSymbol('foo.MyPublicClass.prototype.myPublicMethod',
+//foo.MyPublicClass.prototype.myPublicMethod);
+//You can write /** @export {SomeType} */ as a shorthand for /** @export @type {SomeType} */.
+//Code that uses the @export annotation must either:
+ //   include closure/base.js, or
+   // define both goog.exportSymbol and goog.exportProperty with the same method signature in their own codebase.

@@ -1,30 +1,27 @@
 {
 	"plugins":["./plugins"],
 	"output":"output",
-	"build_targets":[{
-		"filename": "client.js",
-		"searchExp": [".*.shared.js", ".*.client.js"],
-		"compiled": false,
-		"browser": true
-	},
+	"build_targets":[
 	{
 		"filename": "client.min.js",
 		"searchExp": [".*.shared.js", ".*.client.js"],
 		"compiled": true,
-		"browser": true,
-		"sourceMap": true,
-		"compilationLevel":"ADVANCED"
+		"sourcesFile":"sources.client.json",
+		"env":"BROWSER",
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
 	},
 	{
-		"filename": "server.js",
-		"searchExp": [".*.shared.js", ".*.server.js"],
-		"compiled": false
+		"filename": "client.libs.js",
+		"searchExp": [".*.shared.min.js", ".*.client.min.js"]
 	},
 	{
 		"filename": "server.min.js",
 		"searchExp": [".*.shared.js", ".*.server.js"],
 		"compiled": true,
-		"compilationLevel":"SIMPLE"
+		"sourcesFile":"sources.server.json",
+		"env":"CUSTOM",
+		"nodejs":true,
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
 	},
 	{
 		"filename": "style.css",

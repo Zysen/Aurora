@@ -1,2 +1,3 @@
 build_config.json
 node_modules/*
+output/

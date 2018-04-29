@@ -3,7 +3,9 @@
 		{
 			"port": 80,
 			"protocol": "http",
-			"websocket":true
+			"websocket":true,
+			"httpsRedirect":8443,
+			"strictTransportSecurity":31536000
 		},
 		{
 			"port": 443,
@@ -14,5 +16,6 @@
 	"directoryBrowsing": true,
 	"defaultPage": "home",
 	"serverDescription": "AuroraHTTP",
-	"theme":"aurora"
+	"theme":"aurora",
+	"sourceDirectory":".."
 }
