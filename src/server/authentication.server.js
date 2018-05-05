@@ -362,6 +362,9 @@ var AUTHENTICATION = (function(authentication, http, aurora){
         }
         return false;
     };
+    authentication.setActiveExpiry = function (ms) {
+        activeSessionExpiry = ms;
+    };
 
     return authentication;
 })(AUTHENTICATION || {}, HTTP, AURORA);
