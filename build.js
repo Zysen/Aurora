@@ -98,7 +98,7 @@ config.plugins.forEach(function(pluginDir){
 			if(pluginFileName.endsWith("build.js")){
 				buildScriptCalls[pluginName].scripts.push(function(doneCb){
 					console.log("Building "+pluginName);
-					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, config.output], {silent:true}).on('exit', function (code) {
+					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output)], {silent:true}).on('exit', function (code) {
 						doneCb();
 					});
 					child.stdout.on('data', function(d){
@@ -215,8 +215,8 @@ processQueue(orderedScripts, function(){
 			if(target.compiled===true){
 				console.log("Compiling "+target.filename);
 				target.sources = target.sources.map(function(p){
-					if(p.startsWith(__dirname)){
-						return p.substr(__dirname.length+1);
+					if(p.startsWith(process.cwd())){
+						return p.substr(process.cwd()+1);
 					}
 					return p;
 				});
@@ -251,12 +251,12 @@ processQueue(orderedScripts, function(){
 				
 				//var nodeJsExterns = target.nodejs===true?" --externs closure-compiler/contrib/nodejs/**.js":"";
 				
-				var nodeJsExterns = target.nodejs===true?" --externs nodejs-externs/*.js --externs nodejs-externs/redundant/*.js --externs nodejs-externs/contrib/mime.js":"";
+				var nodeJsExterns = target.nodejs===true?" --externs "+__dirname+"/nodejs-externs/*.js --externs "+__dirname+"/nodejs-externs/redundant/*.js --externs "+__dirname+"/nodejs-externs/contrib/mime.js":"";
 				
 				//var nodeJsExterns = target.nodejs===true?" --externs plugins/nodejs-externs/node.js-closure-compiler-externs/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/redundant/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/contrib/mime.js":"";
 				//var buildCommand = "java -jar closure-compiler-v20180204.jar --env="+target.env+""+nodeJsExterns+" --js='"+entryFilePath+"' --js='"+target.sources.join("' --js='")+"' --dependency_mode=STRICT --entry_point=aurora --compilation_level=ADVANCED_OPTIMIZATIONS --warning_level=VERBOSE --jscomp_error=checkTypes --js_output_file '"+config.output + path.sep + target.filename+"' --create_source_map='"+config.output + path.sep + target.filename+".map' --source_map_format=V3";
 				
-				var buildCommandArray = ["java -jar closure-compiler-v20180204.jar",
+				var buildCommandArray = ["java -jar "+__dirname+"/closure-compiler-v20180204.jar",
 					"--env="+target.env+""+nodeJsExterns,
 					"--js='"+entryFilePath+"'",
 					"--js='"+target.sources.join("' --js='")+"'",
@@ -277,7 +277,7 @@ processQueue(orderedScripts, function(){
 				}
 				
 				if(target.nodejs){
-					buildCommandArray.push("--output_wrapper_file=output_wrapper.txt");
+					buildCommandArray.push("--output_wrapper_file="+__dirname+"/output_wrapper.txt");
 				}
 				
 				var buildCommand = buildCommandArray.join(" ");

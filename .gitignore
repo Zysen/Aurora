@@ -1,3 +1,7 @@
 build_config.json
 node_modules/*
 output/
+*.gen.shared.js
+*.gen.client.js
+*.gen.server.js
+

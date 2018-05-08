@@ -21,10 +21,8 @@ var fs = require("fs");
 var path = require("path");
 	
 console.log("HTTP Build");
-
 var config = JSON.parse(process.argv[2]);
-var frameworkBuildDir = process.argv[3]+path.sep+process.argv[4];
-
+var frameworkBuildDir = process.argv[4];
 if(config.generateCertificates){
 	var forge = require('node-forge');
 	config.generateCertificates.forEach(function(certGenReq){
