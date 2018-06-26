@@ -146,89 +146,108 @@ var HTTP = (function(httpPublic){
 	headers.set('Content-Disposition', 'attachment;filename='+filename);
 	httpPublic.sendFile(path, request, response, headers);
     };
-    httpPublic.sendFile = function(path, request, response, headers){
+    httpPublic.sendFile = function(path, request, response, headers, cb){
 	request.on('error', function(err) {
             HTTP.writeError(500, response);
         });
+
+        var sendFileInternal = function (path, gz) {
+	    fs.stat(path, function(err, stats){
+	        if (err) {
+		    response.writeHead(500);
+		    response.end();
+		}
+		else{         
+		    /*
+		     var reqETag = request.headers['if-none-match'];
+		     
+		     if((reqDate!==undefined && new Date(reqDate).getTime()>=new Date(stats.mtime).getTime()) || (reqETag!=undefined && crypto.createHash('md5').update(data).digest('hex')===reqETag)){
+		     httpPublic.writeNotModified(response);
+		     }
+		     */
+		    var reqDate = request.headers['if-modified-since'];
+		    if(reqDate!==undefined && new Date(reqDate).getTime()===new Date(stats.mtime).getTime()){
+                        
+                        
+		        httpPublic.writeNotModified(response);
+		    }
+		    else{
+		        headers.set('Content-Length',stats.size);
+                        if (gz) {
+		            headers.set('Content-Type',mime.getType(gz));
+                            headers.set('Content-Encoding', 'gzip');
+                        }
+                        else {
+		            headers.set('Content-Type',mime.getType(path));
+                        }
+		        headers.set('Accept-Ranges',"bytes");
+                        // headers.set('Expires',"-1");
+                        // headers.set("Cache-Control", "must-revalidate");
+                        headers.set("Cache-Control", "no-cache");
+		        //headers.set('ETag',crypto.createHash('md5').update(data).digest('hex'));
+		        headers.set('Last-Modified',stats.mtime);
+		        response.writeHead(200, headers.toClient());
+		        var readStream = fs.createReadStream(path);
+		        readStream.pipe(response);
+		        readStream.on('error', function(err) {
+		            if(response!==null){
+		                HTTP.writeError(500, response);
+		            }
+		        });
+		        readStream.on('end', function(err) {
+		            if(response!==null){
+		                response.end();
+		            }
+		        });
+		        request.on('close', function() {
+		            readStream.unpipe(response);
+		            readStream.destroy();
+		            if(response!==null){
+		                response.end();
+		            }
+			});
+		        request.on('aborted', function() {
+		            readStream.unpipe(response);
+		            readStream.destroy();
+		            if(response!==null){
+		                try{
+		                    response.end();
+		                }
+		                catch(e){
+		                    log.error("Assertion error during http abort.", e);
+		                }
+		            }
+			});
+			onFinished(response, function (err) {
+			    destroy(readStream);
+			});
+		    }
+		}
+		err = null;
+		stats = null;
+		path=null;
+                gz = null;
+		request = null;
+		//response = null;
+	    });
+        };
+            
 	fs.exists(path, function(exists){
 	    if(exists){
-	        fs.stat(path, function(err, stats){
-	            if (err) {
-			response.writeHead(500);
-			response.end();
-		    }
-		    else{         
-		        /*
-			 var reqETag = request.headers['if-none-match'];
-		         
-		         if((reqDate!==undefined && new Date(reqDate).getTime()>=new Date(stats.mtime).getTime()) || (reqETag!=undefined && crypto.createHash('md5').update(data).digest('hex')===reqETag)){
-		         httpPublic.writeNotModified(response);
-		         }
-		         */
-			var reqDate = request.headers['if-modified-since'];
-			if(reqDate!==undefined && new Date(reqDate).getTime()===new Date(stats.mtime).getTime()){
-
-
-		            httpPublic.writeNotModified(response);
-		        }
-		        else{
-		            headers.set('Content-Length',stats.size);
-		            headers.set('Content-Type',mime.getType(path));
-		            headers.set('Accept-Ranges',"bytes");
-                            //		                    headers.set('Expires',"-1");
-                            //                                    headers.set("Cache-Control", "must-revalidate");
-                            headers.set("Cache-Control", "no-cache");
-		            //headers.set('ETag',crypto.createHash('md5').update(data).digest('hex'));
-		            headers.set('Last-Modified',stats.mtime);
-		            response.writeHead(200, headers.toClient());
-		            var readStream = fs.createReadStream(path);
-		            readStream.pipe(response);
-		            readStream.on('error', function(err) {
-		                if(response!==null){
-		                    HTTP.writeError(500, response);
-		                }
-		            });
-		            readStream.on('end', function(err) {
-		                if(response!==null){
-		                    response.end();
-		                }
-		            });
-		            request.on('close', function() {
-		                readStream.unpipe(response);
-		                readStream.destroy();
-		                if(response!==null){
-		                    response.end();
-		                }
-			    });
-		            request.on('aborted', function() {
-		                readStream.unpipe(response);
-		                readStream.destroy();
-		                if(response!==null){
-		                    try{
-		                    	response.end();
-		                    }
-		                    catch(e){
-		                    	log.error("Assertion error during http abort.", e);
-		                    }
-		                }
-			    });
-			    onFinished(response, function (err) {
-				destroy(readStream);
-			    });
-		        }
-		    }
-		    exists = null;
-		    err = null;
-		    stats = null;
-		    path=null;
-		    request = null;
-		    //response = null;
-	        });            
+                sendFileInternal(path, false);
 	    }
 	    else{
-	        log.warn("File Does not Exist "+path);
-	        HTTP.writeError(404, response);
-	    }
+                fs.exists(path + '.gz', function (exists) {
+                    if (exists) {
+                        sendFileInternal(path + '.gz', path);
+                        
+                    }
+                    else {
+                        log.warn("File Does not Exist "+path);
+	                HTTP.writeError(404, response);
+                    }
+                });
+            }
 	});
     };
     httpPublic.redirect = function(response, url){
