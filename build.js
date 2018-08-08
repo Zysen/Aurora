@@ -3,7 +3,7 @@ const path = require("path");
 const os = require("os");
 const child_process = require('child_process');
 
-var buildConfigStr = (process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json";
+var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
 process.title = "aurora_build";
 
 if(Object.values===undefined){
@@ -79,6 +79,7 @@ console.log("Starting Aurora Builder");
 config.output = config.output || "output";
 createDir(config.output);
 createDir(config.output+path.sep+"resources");
+fs.copyFileSync(__dirname+path.sep+"output_wrapper.txt", config.output+path.sep+"output_wrapper.txt");
 
 var dependencyTree = {};
 var buildScriptCalls = {};
@@ -98,7 +99,7 @@ config.plugins.forEach(function(pluginDir){
 			if(pluginFileName.endsWith("build.js")){
 				buildScriptCalls[pluginName].scripts.push(function(doneCb){
 					console.log("Building "+pluginName);
-					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output)], {silent:true}).on('exit', function (code) {
+					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output), buildConfigStr], {silent:true}).on('exit', function (code) {
 						doneCb();
 					});
 					child.stdout.on('data', function(d){
@@ -164,6 +165,24 @@ function processQueue(queue, done){
 	if(queue.length>0){queue.pop()(function(){processQueue(queue, done);});}
 	else{done();}
 }
+
+function getExportedString(name, globalStr){
+	var newStr = [];
+	var sp = name.split(".");
+	for(var index in sp){
+		var line = [];
+		for(var index2 in sp){
+			line.push(sp[index2]);
+			if(index===index2){
+				break;
+			}
+		}
+		newStr.push(globalStr+"['"+line.join("']['")+"']");
+	}
+	return newStr.join(" = {};")+" = "+name+";";		//"/** @suppress{this} */"+
+	
+}
+
 processQueue(orderedScripts, function(){
 	//Match build targets and output to output dir.
 	var buildTargets = {};
@@ -221,13 +240,14 @@ processQueue(orderedScripts, function(){
 					return p;
 				});
 				
-				var entryFilePath = os.tmpdir()+path.sep+"aurora.entry.js";
+				var entryFilePath = config.output+path.sep+"aurora.entry.js";		//os.tmpdir()
 				var entryPoints = findExports(target.sources);
 				//console.log("Entry Points", entryPoints.join(" "));
-				var entryStr = "goog.provide(\"entrypoints\");"+entryPoints.map(function(v){
-					return "goog.require(\""+v+"\");";
+				var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
+					return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global");
 				}).join("\r\n");
-				//console.log("Entry Points: ", entryStr);
+
+				//console.log("Entry Points:\r\n", entryStr);
 				fs.writeFileSync(entryFilePath, entryStr);
 				
 				if(target.sourcesFile){
@@ -242,21 +262,9 @@ processQueue(orderedScripts, function(){
 						});
 					});
 				}
-				//https://github.com/google/closure-compiler.git
-				//process_common_js_modules 
-				//--new_type_inf
-				//closure-compiler/contrib/nodejs
-				
-				
-				
-				//var nodeJsExterns = target.nodejs===true?" --externs closure-compiler/contrib/nodejs/**.js":"";
 				
 				var nodeJsExterns = target.nodejs===true?" --externs "+__dirname+"/nodejs-externs/*.js --externs "+__dirname+"/nodejs-externs/redundant/*.js --externs "+__dirname+"/nodejs-externs/contrib/mime.js":"";
-				
-				//var nodeJsExterns = target.nodejs===true?" --externs plugins/nodejs-externs/node.js-closure-compiler-externs/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/redundant/*.js --externs plugins/nodejs-externs/node.js-closure-compiler-externs/contrib/mime.js":"";
-				//var buildCommand = "java -jar closure-compiler-v20180204.jar --env="+target.env+""+nodeJsExterns+" --js='"+entryFilePath+"' --js='"+target.sources.join("' --js='")+"' --dependency_mode=STRICT --entry_point=aurora --compilation_level=ADVANCED_OPTIMIZATIONS --warning_level=VERBOSE --jscomp_error=checkTypes --js_output_file '"+config.output + path.sep + target.filename+"' --create_source_map='"+config.output + path.sep + target.filename+".map' --source_map_format=V3";
-				
-				var buildCommandArray = ["java -jar "+__dirname+"/closure-compiler-v20180204.jar",
+				var buildCommandArray = ["java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
 					"--env="+target.env+""+nodeJsExterns,
 					"--js='"+entryFilePath+"'",
 					"--js='"+target.sources.join("' --js='")+"'",
@@ -268,8 +276,10 @@ processQueue(orderedScripts, function(){
 					"--js_output_file='"+config.output + path.sep + target.filename+"'",
 					"--create_source_map='"+config.output + path.sep + target.filename+".map'",
 					"--source_map_format=V3",
-					"--source_map_include_content=true"
-					//"--generate_exports=true"
+					"--source_map_include_content=true",
+					//"--export_local_property_definitions"
+					//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
+					//,"--generate_exports=true"
 				];
 				
 				if(target.env==="BROWSER"){
@@ -296,51 +306,6 @@ processQueue(orderedScripts, function(){
 						doneCb();
 					});
 				});
-				/*
-				const compile = require('closure-compiler-js').compile;
-				target.compilationLevel = target.compilationLevel || "SIMPLE";
-				const flags = {
-					jsCode: target.sources.map(function(p){
-						console.log(path.resolve(p));
-						//return {path: p};
-						return {src: fs.readFileSync(path.resolve(p)).toString()};
-					}),
-					compilationLevel: target.compilationLevel,
-					//languageIn		  :	 "ECMASCRIPT6",
-					//languageOut		  : "ECMASCRIPT6",
-					//warningLevel	  : "QUIET"					//QUIET, DEFAULT, VERBOSE
-					dependencyMode	: "STRICT",
-					entryPoint : "ice.cream.Shop"
-				};
-				
-				if(target.browser){
-					flags.env = "BROWSER";
-				}
-				if(target.sourceMap){
-					flags.createSourceMap = true;
-				}
-				
-				console.log("Compiling "+target.filename);
-				const out = compile(flags);
-				if(out.warnings.length>0){
-					console.warn("Warnings");
-					out.warnings.forEach(function(w){
-						console.warn(w);
-					});
-				}
-				if(out.errors.length>0){
-					console.error("Errors");
-					out.errors.forEach(function(w){
-						console.log(w);
-					});
-					process.exit();
-				}
-				else{
-					console.log("Compilation Successful");
-					console.log(out.compiledCode);
-					fs.writeFileSync(config.output + "/" + target.filename, out.compiledCode);
-				}
-				*/
 			}
 			else{
 				console.log("Concatenating "+target.filename);

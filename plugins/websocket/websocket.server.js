@@ -89,7 +89,6 @@ aurora.websocket.Server.prototype.onMessage = function(connection, message) {
 	if (message['type'] === 'utf8') {
 		try{
 			var m = (JSON.parse(message['utf8Data']));
-			console.log("COMMAND", m['command'], m.command);
 			switch(m['command']){
 				case aurora.websocket.enums.COMMANDS.REGISTER:
 					var channelKey = m['pluginId']+"_"+m['channelId'];

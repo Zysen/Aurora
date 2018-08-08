@@ -128,7 +128,8 @@ aurora.http.Server;
 							headers.set('Content-Length',stats.size);
 							headers.set('Content-Type',mime.getType(path));
 							headers.set('Accept-Ranges',"bytes");
-							headers.set('Last-Modified',stats.mtime.toGMTString());
+							headers.set('Cache-Control',"no-cache, no-store, must-revalidate");
+							//headers.set('Last-Modified',stats.mtime.toGMTString());
 							response.writeHead(200, headers.toClient());
 							
 							var readStream = fs.createReadStream(path);

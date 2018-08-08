@@ -1,4 +1,0 @@
-{
-	"dependencies": ["widgets", "http"],
-	"requiredNPMModules":[]
-}
