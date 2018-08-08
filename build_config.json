@@ -1,0 +1,34 @@
+{
+	"plugins":["./plugins"],
+	"output":"output",
+	"build_targets":[
+	{
+		"filename": "client.min.js",
+		"searchExp": [".*.shared.js", ".*.client.js"],
+		"compiled": true,
+		"sourcesFile":"sources.client.json",
+		"env":"BROWSER",
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
+	},
+	{
+		"filename": "client.libs.js",
+		"searchExp": [".*.shared.min.js", ".*.client.min.js"]
+	},
+	{
+		"filename": "server.min.js",
+		"searchExp": [".*.shared.js", ".*.server.js"],
+		"compiled": true,
+		"sourcesFile":"sources.server.json",
+		"env":"CUSTOM",
+		"nodejs":true,
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
+	},
+	{
+		"filename": "style.css",
+		"searchExp": ".*.css"
+	},
+	{
+		"filename": "LICENSE.txt",
+		"searchExp": ".*LICENSE"
+	}]
+}
