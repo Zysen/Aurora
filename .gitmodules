@@ -1,9 +1,3 @@
-[submodule "plugins/recoil/recoil"]
-	path = plugins/recoil/recoil
-	url = https://github.com/evaks/recoil.git
-[submodule "plugins/closure-library/closure-library"]
-	path = plugins/closure-library/closure-library
-	url = https://github.com/evaks/closure-library.git
 [submodule "nodejs-externs"]
 	path = nodejs-externs
 	url = https://github.com/Zysen/node.js-closure-compiler-externs.git
