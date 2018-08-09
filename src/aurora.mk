@@ -1,1 +1,0 @@
-nodejs build.js ../$(CONFIG) all
