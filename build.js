@@ -4,6 +4,19 @@ const os = require("os");
 const child_process = require('child_process');
 
 var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
+var debug = false;
+var build = null;
+if (process.argv.length >= 4) {
+    let type = process.argv[3];
+    debug = type.startsWith('debug-') || type == 'debug';
+    if (type !== 'debug' && debug) {
+        build = type.substring(6);
+    }
+    else if (type !== 'debug'){
+        build = type;
+    }
+    console.log("BUILD Type", build);
+};
 process.title = "aurora_build";
 
 if(Object.values===undefined){
@@ -179,17 +192,22 @@ function getExportedString(name, globalStr){
 		}
 		newStr.push(globalStr+"['"+line.join("']['")+"']");
 	}
-	return newStr.join(" = {};")+" = "+name+";";		//"/** @suppress{this} */"+
+    return 'goog.exportSymbol(' + JSON.stringify(name)+ ', ' + name + ')';
 	
 }
 
 processQueue(orderedScripts, function(){
 	//Match build targets and output to output dir.
-	var buildTargets = {};
-	config.build_targets.forEach(function(target){
-		buildTargets[target.filename] = target;
-		buildTargets[target.filename].sources = [];
-	});
+    var buildTargets = {};
+    var shouldBuild = function (target) {
+        return build === null || (target.types && target.types.indexOf(build) !== -1);
+    };
+    config.build_targets.forEach(function(target){
+        if (shouldBuild(target)) {
+	    buildTargets[target.filename] = target;
+	    buildTargets[target.filename].sources = [];
+        }
+    });
 	
 	var pluginConfigs = {};
 	config.plugins.forEach(function(pluginDir){
@@ -198,38 +216,45 @@ processQueue(orderedScripts, function(){
 		}).filter(function(pluginName){
 			return !pluginName.endsWith(".disabled");
 		}).forEach(function(pluginName){
-			config.build_targets.forEach(function(target){
+		    config.build_targets.forEach(function(target){
 				if((target.searchExp instanceof Array)===false){
 					target.searchExp = [target.searchExp];
 				}
 				target.searchExp.forEach(function(searchExpStr){
 					fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
-						var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
-						copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
-						if(stat.isFile()){
-							if(pluginFileName==="config.json"){
-								pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
-							}
-							var match = pluginFileName.match(searchExpStr);
-							if(match!==null){
-								buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
-							}	
+					    var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
+                                            if (shouldBuild(target)) { 
+					        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
+                                            }
+					    if(stat.isFile()){
+						if(pluginFileName==="config.json"){
+						    pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
 						}
+                                                if (!shouldBuild(target)) { 
+                                                    return;
+                                                }
+                                            
+						var match = pluginFileName.match(searchExpStr);
+						if(match!==null){
+						    buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
+						}	
+					    }
 					});
 				});
 			});
 		});
 	});
 
-	var customConfig = JSON.parse(fs.readFileSync("config.json"));
-	for(var pluginName in customConfig){
-		for(var key in customConfig[pluginName]){
-			pluginConfigs[pluginName][key] = customConfig[pluginName][key];
-		}
-	}	
+    var customConfig = JSON.parse(fs.readFileSync("config.json"));
+    for(var pluginName in customConfig){
+	for(var key in customConfig[pluginName]){
+	    pluginConfigs[pluginName][key] = customConfig[pluginName][key];
+	}
+    }	
 	
-	fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
-	processQueue(Object.values(buildTargets).map(function(target){
+    fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
+
+    processQueue(Object.values(buildTargets).map(function(target){
 		return function(doneCb){
 			if(target.compiled===true){
 				console.log("Compiling "+target.filename);
@@ -251,10 +276,11 @@ processQueue(orderedScripts, function(){
 				fs.writeFileSync(entryFilePath, entryStr);
 				
 				if(target.sourcesFile){
-					config.plugins.forEach(function(pluginDir){
+				    config.plugins.forEach(function(pluginDir){
 						fs.readdirSync(pluginDir).filter(function(pluginName){
 							return !pluginName.endsWith(".disabled");
 						}).forEach(function(pluginName){
+
 							var sourcesPath = path.resolve(pluginDir+path.sep+pluginName+path.sep+target.sourcesFile);
 							if(fs.existsSync(sourcesPath)){
 								target.sources = target.sources.concat(JSON.parse(fs.readFileSync(sourcesPath)));
@@ -262,23 +288,32 @@ processQueue(orderedScripts, function(){
 						});
 					});
 				}
-				
-				var nodeJsExterns = target.nodejs===true?" --externs "+__dirname+"/nodejs-externs/*.js --externs "+__dirname+"/nodejs-externs/redundant/*.js --externs "+__dirname+"/nodejs-externs/contrib/mime.js":"";
-				var buildCommandArray = ["java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
-					"--env="+target.env+""+nodeJsExterns,
-					"--js='"+entryFilePath+"'",
-					"--js='"+target.sources.join("' --js='")+"'",
-					"--dependency_mode=STRICT",
-					"--entry_point=entrypoints",
-					"--compilation_level="+(target.compilationLevel || "ADVANCED_OPTIMIZATIONS"),
-					"--warning_level=VERBOSE",
-					"--jscomp_error=checkTypes",
-					"--js_output_file='"+config.output + path.sep + target.filename+"'",
-					"--create_source_map='"+config.output + path.sep + target.filename+".map'",
-					"--source_map_format=V3",
-					"--source_map_include_content=true",
-					//"--export_local_property_definitions"
-					//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
+
+                            var ext = [];
+                            (target.externs || []).forEach(function (v) {ext.push(__dirname + "/../" + v);});
+
+			    var nodeJsExterns = target.nodejs===true?" --externs "+__dirname+"/nodejs-externs/*.js --externs "+__dirname+"/nodejs-externs/redundant/*.js --externs "+__dirname+"/nodejs-externs/contrib/mime.js":"";
+                            if (ext.length > 0) {
+                                nodeJsExterns += " --externs " + ext.join("--externs");
+                            }
+                            var level = debug ? "WHITESPACE_ONLY" : (target.compilationLevel || "ADVANCED_OPTIMIZATIONS");
+			    var buildCommandArray = [
+                                "java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
+				"--env="+target.env+""+nodeJsExterns,
+                                "--hide_warnings_for=closure/goog/base.js",
+				"--js='"+entryFilePath+"'",
+				"--js='"+target.sources.join("' --js='")+"'",
+				"--dependency_mode=STRICT",
+				"--entry_point=entrypoints",
+				"--compilation_level="+level,
+				"--warning_level=VERBOSE",
+				"--jscomp_error=checkTypes",
+				"--js_output_file='"+config.output + path.sep + target.filename+"'",
+				"--create_source_map='"+config.output + path.sep + target.filename+".map'",
+				"--source_map_format=V3",
+				"--source_map_include_content=true",
+				//"--export_local_property_definitions"
+				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
 				];
 				
@@ -292,7 +327,7 @@ processQueue(orderedScripts, function(){
 				
 				var buildCommand = buildCommandArray.join(" ");
 				
-				//console.log("\n"+buildCommand+"\n");
+				console.log("\n"+buildCommand+"\n");
 				var ex = child_process.exec(buildCommand, function(err, stdout, stderr){
 					if(err){
 						console.log(stderr);

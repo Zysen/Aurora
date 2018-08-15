@@ -4,7 +4,7 @@
 	"build_targets":[
 	{
 		"filename": "client.min.js",
-		"searchExp": [".*.shared.js", ".*.client.js"],
+		"searchExp": [".*.shared.js$", ".*.client.js$"],
 		"compiled": true,
 		"sourcesFile":"sources.client.json",
 		"env":"BROWSER",
@@ -15,8 +15,9 @@
 		"searchExp": [".*.shared.min.js", ".*.client.min.js"]
 	},
 	{
-		"filename": "server.min.js",
-		"searchExp": [".*.shared.js", ".*.server.js"],
+	    "filename": "server.min.js",
+	    "types": ["server"],
+		"searchExp": [".*\\.shared\\.js$", ".*\\.server\\.js$"],
 		"compiled": true,
 		"sourcesFile":"sources.server.json",
 		"env":"CUSTOM",
@@ -24,10 +25,12 @@
 		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
 	},
 	{
+	    "types": ["client","resources"],
 		"filename": "style.css",
 		"searchExp": ".*.css"
 	},
 	{
+	    "types": ["resources"],
 		"filename": "LICENSE.txt",
 		"searchExp": ".*LICENSE"
 	}]

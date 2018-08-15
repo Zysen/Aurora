@@ -4,4 +4,5 @@ output/
 *.gen.shared.js
 *.gen.client.js
 *.gen.server.js
+*~
 
