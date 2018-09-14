@@ -78,6 +78,9 @@ aurora.http.Server;
     aurora.http.addPreRequestCallback = function (pattern, callback) {
         aurora.http.addRequestCallback(0, pattern, callback);
     };
+    aurora.http.addMidRequestCallback = function (pattern, callback) {
+        aurora.http.addRequestCallback(5, pattern, callback);
+    };
     
     function startServer (type, port, callback, opt_options) {
         var running = true;
@@ -222,8 +225,28 @@ aurora.http.Server;
     var sourceDir = path.resolve(__dirname+path.sep+config['http'].sourceDirectory);
     //Strict-Transport-Security: max-age=31536000 
     //config.strictTransportSecurity
+    var allRequests = [];
+    aurora.http.printPending = function () {
+        allRequests.forEach(function (s) {
+            if (!s.response['finished'] || (s.response['socket'] && !s.response['socket']['destroyed'])) {
+                console.log("pending", s.request.url);
+            }
+        });
+    };
+    
     function httpRequestHandler(request, response){
         try{
+            var newRequests = [];
+            allRequests.forEach(function (s) {
+                if (!s.response['finished']) {
+                    newRequests.push(s);
+                }
+                
+            });
+            if (newRequests.length > 0)  {
+                console.log("pending requests", newRequests.length);
+            }
+            allRequests = newRequests;
             var responseHeaders = responseHeadersDef();
             var cookies = {};
             request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function( cookie ) {
@@ -231,9 +254,11 @@ aurora.http.Server;
                 cookies[parts[0].trim()] = (parts[1] || '').trim();
             });
 
+            
             var url = path.normalize(decodeURIComponent(request.url));
             var exit = false;
             var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: urlLib.parse(url), outUrl: url};
+//            allRequests.push(state);
             callbacks.inOrderTraverse(function (cb) {
                 for (var i = 0; i < cb.callbacks.length; i++) {
                     var cur = cb.callbacks[i];

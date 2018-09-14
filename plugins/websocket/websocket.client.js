@@ -42,18 +42,36 @@ var onReadyCallbacks = [];
 	@public
 */
 aurora.websocket.onReady = function(cb){
-	onReadyCallbacks.push(cb);
+    onReadyCallbacks.push(cb);
+    if (connection && connection.ready) {
+        cb();
+    }
+};
+
+aurora.websocket.pending_ = [];
+    
+aurora.websocket.onReady = function(cb){
+    onReadyCallbacks.push(cb);
+    if (connection && connection.ready) {
+        cb();
+    }
 };
 
 var connection;
 window.addEventListener("load",function(){
-	window.WebSocket = window.WebSocket || window.MozWebSocket;
-	connection = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+window.location.hostname+":"+window.location.port+"/websocket");
+    window.WebSocket = window.WebSocket || window.MozWebSocket;
+    connection = new WebSocket((location.protocol==="https:"?"wss":"ws")+"://"+window.location.hostname+":"+window.location.port+"/websocket");
+    connection.ready = false;
 	connection.onopen = function () {
-		console.log("WS connection established");
-		onReadyCallbacks.forEach(function(cb){
-			cb();
-		});
+	    console.log("WS connection established");
+	    onReadyCallbacks.forEach(function(cb){
+		cb();
+	    });
+            var pending = aurora.websocket.pending_;
+            while (pending.length > 0) {
+                pending.shift()();
+            }
+            connection.ready = true;
 	};
 	connection.onerror = function (error) {
 		console.log("WS ERROR");
@@ -100,36 +118,68 @@ window.addEventListener("load",function(){
  * @constructor
  */
 function Channel(pluginId, channelId, messageCb) {
-	var callbacks = [messageCb];
-	connection.send(JSON.stringify({"command": aurora.websocket.enums.COMMANDS.REGISTER, "pluginId": pluginId, "channelId":channelId}));
-	this.send = function(sendBuffer){
-		var data = convertData(sendBuffer);
-		connection.send(new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data]));
-	};
-	this.destroy = function(){
-		connection.send(JSON.stringify({command: aurora.websocket.enums.COMMANDS.UNREGISTER, pluginId: pluginId, channelId:channelId}));
-	}
-	this.addCallback = function(cb){
-		callbacks.push(cb);
-	}
-	this.receive = function(data){
-		callbacks.forEach(function(cb){
-			cb(data);
-		});
-	}
+    var callbacks = [messageCb];
+    aurora.websocket.onReady(function () {
+        connection.send(JSON.stringify({"command": aurora.websocket.enums.COMMANDS.REGISTER, "pluginId": pluginId, "channelId":channelId}));
+    });
+    
+    this.send = function(sendBuffer){
+	var data = convertData(sendBuffer);
+        var doIt = function () {
+            connection.send(new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data]));
+        };
+        if (connection && connection.ready) {
+            doIt();
+        }
+        else {
+            aurora.websocket.pending_.push(doIt);
+        }
+
+
+    };
+    this.destroy = function(){
+	connection.send(JSON.stringify({command: aurora.websocket.enums.COMMANDS.UNREGISTER, pluginId: pluginId, channelId:channelId}));
+    };
+    this.addCallback = function(cb){
+	callbacks.push(cb);
+    };
+    this.receive = function(data){
+	callbacks.forEach(function(cb){
+	    cb(data);
+	});
+    };
 }
 
+/**
+ * @param {string} pluginName
+ * @param {number} channelId
+ * @param {function(?)} messageCallback
+ * @return {?Channel}
+ */
 aurora.websocket.getChannel = function(pluginName, channelId, messageCallback){
-	var pluginId = aurora.websocket.constants.plugins.indexOf(pluginName);
-	if(pluginId<0){
-		console.error("websocket.getChannel no plugin called "+pluginName);
-		return;
-	}
-	if(channels[pluginId+"_"+channelId]===undefined){
-		channels[pluginId+"_"+channelId] = new Channel(pluginId, channelId, messageCallback)
-	}
-	else{
-		channels[pluginId+"_"+channelId].addCallback(messageCallback);
-	}
-	return new Channel(pluginId, channelId, messageCallback);
+    var pluginId = aurora.websocket.constants.plugins.indexOf(pluginName);
+    if(pluginId<0){
+	console.error("websocket.getChannel no plugin called "+pluginName);
+	return null;
+    }
+    if(channels[pluginId+"_"+channelId]===undefined){
+	channels[pluginId+"_"+channelId] = new Channel(pluginId, channelId, messageCallback);
+    }
+    else{
+	channels[pluginId+"_"+channelId].addCallback(messageCallback);
+    }
+    return new Channel(pluginId, channelId, messageCallback);
+};
+
+/**
+ * @param {string} pluginName
+ * @param {number} channelId
+ * @param {function(?)} messageCallback
+ * @return {?Channel}
+ */
+ 
+aurora.websocket.getObjectChannel = function(pluginName, channelId, messageCallback) {
+    return aurora.websocket.getChannel(pluginName, channelId, function (v) {
+        messageCallback(v.data);
+    });
 };

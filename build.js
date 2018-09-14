@@ -109,27 +109,27 @@ config.plugins.forEach(function(pluginDir){
 		}
 		if(buildScriptCalls[pluginName]===undefined){buildScriptCalls[pluginName] = {name: pluginName,scripts:[]};}
 		fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
-			if(pluginFileName.endsWith("build.js")){
-				buildScriptCalls[pluginName].scripts.push(function(doneCb){
-					console.log("Building "+pluginName);
-					var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output), buildConfigStr], {silent:true}).on('exit', function (code) {
-						doneCb();
-					});
-					child.stdout.on('data', function(d){
-						console.log(d.toString());
-					});
-					var errored = false;
-					child.stderr.on('data', function(d){
-						errored = true;
-						console.log(d.toString());
-					}).on('end', function(){
-						if(errored){
-							console.log("Error while compiling "+pluginName+" plugin");
-							process.exit();
-						}
-					});
-				});		
-			}
+		    if(pluginFileName.endsWith("build.js")){
+			buildScriptCalls[pluginName].scripts.push(function(doneCb){
+			    console.log("Building "+pluginName);
+			    var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output), buildConfigStr], {silent:true}).on('exit', function (code) {
+				doneCb();
+			    });
+			    child.stdout.on('data', function(d){
+				console.log(d.toString());
+			    });
+			    var errored = false;
+			    child.stderr.on('data', function(d){
+				errored = true;
+				console.log(d.toString());
+			    }).on('end', function(){
+				if(errored){
+				    console.log("Error while compiling "+pluginName+" plugin");
+				    process.exit();
+				}
+			    });
+			});		
+		    }
 		});
 	});
 });
@@ -208,7 +208,7 @@ processQueue(orderedScripts, function(){
 	    buildTargets[target.filename].sources = [];
         }
     });
-	
+
 	var pluginConfigs = {};
 	config.plugins.forEach(function(pluginDir){
 		fs.readdirSync(pluginDir).sort(function(a,b){
@@ -253,71 +253,219 @@ processQueue(orderedScripts, function(){
     }	
 	
     fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
+    var regEscape = function (c) {
+        if (['.','(',')','*','?','[', ']', '\\'].indexOf(c) !== -1) {
+            return '\\' + c;
+        }
+        return c;
+    };
 
+    var parseGlob = function (part) {
+        var escape = false;
+        var isGlob = false;
+        var regExp = "^(";
+        var prevC = null;
+        var isRec = false;
+        for (var i = 0; i < part.length; i++) {
+            var ch = part[i];
+            if (!escape) {
+                if (ch === '*' && prevC === '*') {
+                    prevC = null;
+                    isRec = true;
+                }
+                else if (ch === '*' || ch === '?') {
+                    prevC = ch;
+                    isGlob = true;
+                    regExp += '.';
+                    
+                    if (ch === '*') {
+                        regExp += '*';
+                    }
+                    
+                }
+                else {
+                    escape = part[i] === '\\';
+                    if (!escape) {
+                        regExp += regEscape(part[i]);
+                    }
+                    prevC = ch;
+                }
+                    
+            }
+            else {
+                prevC = null;
+                escape = false;
+                regExp += regEscape(part[i]);
+                
+            }
+        }
+        regExp += ')$';
+        var e = new RegExp(regExp);
+        return {glob: isGlob, isRec: isRec, pat: function (v) {return e.test(v);}, exp: regExp};
+    };
+    
+    var isGlob = function (part) {
+        return parseGlob(part).glob;
+    };
+
+    var testGlob = function (p, expected) {
+        var res = isGlob(p);
+        
+        if (res !== expected) {
+            console.log("glob", p, "FAILED");
+            throw "match glob failed";
+        }
+    };
+    testGlob("*", true);
+    testGlob("fred*.js", true);
+    testGlob("fred\\\\*.js", true);
+    testGlob("fred\\*.js", false);
+    testGlob("\\*", false);
+    testGlob("**", true);
+
+    var scanGlobRec = function (parts, split, cb) {
+        if (split >= parts.length) {
+            cb(parts.join(path.sep));
+            return;
+        }
+
+        var base = parts.slice(0,split).join(path.sep);
+        var gInfo = parseGlob(parts[split]);
+        
+        
+        fs.readdirSync(base).forEach(function(filename){
+            var subFile = path.join(base,filename);
+	    var stat = fs.statSync(subFile);
+            var match = gInfo.pat(filename);
+            var last = split + 1 === parts.length;
+
+	    if(stat.isFile()){
+                if (match && last) {
+                    cb(subFile);
+                }
+	    }
+	    else if(stat.isDirectory()){
+                if (match && last) {
+                    cb(subFile);
+                }
+                else if (gInfo.isRec) {
+                    var pre = parts.slice(0,split);
+                    pre.push(filename);
+                    
+                    scanGlobRec(pre.concat(parts.slice(split)), split + 1, cb);
+                }
+	    }
+           
+	});
+
+    };
+        
+    var scanGlob = function (file, cb) {
+        var f = path.normalize(file);
+        var parts = f.split(path.sep);
+        var firstGlob = 0;
+        
+        for (var i = 0; i < parts.length; i++) {
+            if (isGlob(parts[i])) {
+                break;
+            }
+                
+            firstGlob++;
+        }
+        scanGlobRec(parts, firstGlob, cb);
+        
+    };
+    var hasFileArgs = false;
+    var scanAndAddFiles = function (argFile, baseDir, arg, rel) {
+        return function (v) {
+            scanGlob(path.join(baseDir,v), function (file) {
+                hasFileArgs = true;
+                if (rel) {
+                    var bd = path.normalize(baseDir);
+                    file = file.substring(bd.length);
+                }
+                fs.appendFileSync(argFile, arg + file + "\n");
+            });
+        };
+    };
+    
     processQueue(Object.values(buildTargets).map(function(target){
-		return function(doneCb){
-			if(target.compiled===true){
-				console.log("Compiling "+target.filename);
-				target.sources = target.sources.map(function(p){
-					if(p.startsWith(process.cwd())){
-						return p.substr(process.cwd()+1);
-					}
-					return p;
-				});
-				
-				var entryFilePath = config.output+path.sep+"aurora.entry.js";		//os.tmpdir()
-				var entryPoints = findExports(target.sources);
-				//console.log("Entry Points", entryPoints.join(" "));
-				var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
-					return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global");
-				}).join("\r\n");
+        var argsFile = config.output+"/compile." + target.filename + ".args";
+	return function(doneCb){
+	    if(target.compiled===true){
+                fs.writeFileSync(argsFile, "");
+		console.log("Compiling "+target.filename);
+		target.sources = target.sources.map(function(p){
+		    if(p.startsWith(process.cwd())){
+			return p.substr(process.cwd()+1);
+		    }
+		    return p;
+		});
+		
+		var entryFilePath = config.output+path.sep+"aurora.entry.js";		//os.tmpdir()
+		var entryPoints = findExports(target.sources);
+		//console.log("Entry Points", entryPoints.join(" "));
+		var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
+		    return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global");
+		}).join("\r\n");
+                
+		//console.log("Entry Points:\r\n", entryStr);
+		fs.writeFileSync(entryFilePath, entryStr);
+		
+		if(target.sourcesFile){
+		    config.plugins.forEach(function(pluginDir){
+			fs.readdirSync(pluginDir).filter(function(pluginName){
+			    return !pluginName.endsWith(".disabled");
+			}).forEach(function(pluginName){
+                            
+			    var sourcesPath = path.resolve(pluginDir+path.sep+pluginName+path.sep+target.sourcesFile);
+			    if(fs.existsSync(sourcesPath)){
+				target.sources = target.sources.concat(JSON.parse(fs.readFileSync(sourcesPath)));
+			    }
+			});
+		    });
+                }
 
-				//console.log("Entry Points:\r\n", entryStr);
-				fs.writeFileSync(entryFilePath, entryStr);
-				
-				if(target.sourcesFile){
-				    config.plugins.forEach(function(pluginDir){
-						fs.readdirSync(pluginDir).filter(function(pluginName){
-							return !pluginName.endsWith(".disabled");
-						}).forEach(function(pluginName){
 
-							var sourcesPath = path.resolve(pluginDir+path.sep+pluginName+path.sep+target.sourcesFile);
-							if(fs.existsSync(sourcesPath)){
-								target.sources = target.sources.concat(JSON.parse(fs.readFileSync(sourcesPath)));
-							}
-						});
-					});
-				}
+                var argsFileFlag = [];
 
-                            var ext = [];
-                            (target.externs || []).forEach(function (v) {ext.push(__dirname + "/../" + v);});
+                (target.externs || []).forEach(scanAndAddFiles(argsFile, __dirname + "/../", "--externs "));
+                (target.no_warnings || []).forEach(scanAndAddFiles(argsFile, __dirname + "/../", "--hide_warnings_for=", true));
+                
+                if (target.nodejs === true) {
+                    [
+                        "/nodejs-externs/contrib/mime.js",
+                        "/nodejs-externs/redundant/*.js",
+                        "/nodejs-externs/*.js"].forEach(scanAndAddFiles(argsFile, __dirname , "--externs "));
+                }                                
 
-			    var nodeJsExterns = target.nodejs===true?" --externs "+__dirname+"/nodejs-externs/*.js --externs "+__dirname+"/nodejs-externs/redundant/*.js --externs "+__dirname+"/nodejs-externs/contrib/mime.js":"";
-                            if (ext.length > 0) {
-                                nodeJsExterns += " --externs " + ext.join("--externs");
-                            }
-                            var level = debug ? "WHITESPACE_ONLY" : (target.compilationLevel || "ADVANCED_OPTIMIZATIONS");
-			    var buildCommandArray = [
-                                "java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
-				"--env="+target.env+""+nodeJsExterns,
-                                "--hide_warnings_for=closure/goog/base.js",
-				"--js='"+entryFilePath+"'",
-				"--js='"+target.sources.join("' --js='")+"'",
-				"--dependency_mode=STRICT",
-				"--entry_point=entrypoints",
-				"--compilation_level="+level,
-				"--warning_level=VERBOSE",
-				"--jscomp_error=checkTypes",
-				"--js_output_file='"+config.output + path.sep + target.filename+"'",
-				"--create_source_map='"+config.output + path.sep + target.filename+".map'",
-				"--source_map_format=V3",
-				"--source_map_include_content=true",
-				//"--export_local_property_definitions"
+                var level = debug ? "WHITESPACE_ONLY" : (target.compilationLevel || "ADVANCED_OPTIMIZATIONS");
+                if (hasFileArgs) {
+                    argsFileFlag = ['--flagfile', argsFile];
+                }
+
+		var buildCommandArray = 
+                        ["java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
+			 "--env="+target.env+""].concat(
+                             argsFileFlag, target.args || [],
+                             ["--hide_warnings_for=closure/goog/base.js",
+			      "--js='"+entryFilePath+"'",
+			      "--js='"+target.sources.join("' --js='")+"'",
+			      "--dependency_mode=STRICT",
+			      "--entry_point=entrypoints",
+			      "--compilation_level="+level,
+			      "--warning_level=VERBOSE",
+			      "--jscomp_error=checkTypes",
+			      "--js_output_file='"+config.output + path.sep + target.filename+"'",
+			      "--create_source_map='"+config.output + path.sep + target.filename+".map'",
+			      "--source_map_format=V3",
+			      "--source_map_include_content=true"]);
+			    //"--export_local_property_definitions"
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
-				];
 				
-				if(target.env==="BROWSER"){
+				
+				if(target.env==="BROWSER" && !debug){
 					buildCommandArray.push("--isolation_mode=IIFE");
 				}
 				
