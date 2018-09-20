@@ -19,6 +19,113 @@ if (process.argv.length >= 4) {
 };
 process.title = "aurora_build";
 
+var regEscape = function (c) {
+    if (['.','(',')','*','?','[', ']', '\\'].indexOf(c) !== -1) {
+        return '\\' + c;
+    }
+    return c;
+};
+
+var parseGlob = function (part) {
+    var escape = false;
+    var isGlob = false;
+    var regExp = "^(";
+    var prevC = null;
+    var isRec = false;
+    for (var i = 0; i < part.length; i++) {
+        var ch = part[i];
+        if (!escape) {
+            if (ch === '*' && prevC === '*') {
+                prevC = null;
+                isRec = true;
+            }
+            else if (ch === '*' || ch === '?') {
+                prevC = ch;
+                isGlob = true;
+                regExp += '.';
+                
+                if (ch === '*') {
+                    regExp += '*';
+                }
+                
+            }
+            else {
+                escape = part[i] === '\\';
+                if (!escape) {
+                    regExp += regEscape(part[i]);
+                }
+                prevC = ch;
+            }
+            
+        }
+        else {
+            prevC = null;
+            escape = false;
+            regExp += regEscape(part[i]);
+            
+        }
+    }
+    regExp += ')$';
+    var e = new RegExp(regExp);
+    return {glob: isGlob, isRec: isRec, pat: function (v) {return e.test(v);}, exp: regExp};
+};
+
+var isGlob = function (part) {
+    return parseGlob(part).glob;
+};
+var scanGlobRec = function (parts, split, cb) {
+    if (split >= parts.length) {
+        cb(parts.join(path.sep));
+        return;
+    }
+
+    var base = parts.slice(0,split).join(path.sep);
+    var gInfo = parseGlob(parts[split]);
+    
+    
+    fs.readdirSync(base).forEach(function(filename){
+        var subFile = path.join(base,filename);
+	var stat = fs.statSync(subFile);
+        var match = gInfo.pat(filename);
+        var last = split + 1 === parts.length;
+
+	if(stat.isFile()){
+            if (match && last) {
+                cb(subFile);
+            }
+	}
+	else if(stat.isDirectory()){
+            if (match && last) {
+                cb(subFile);
+            }
+            else if (gInfo.isRec) {
+                var pre = parts.slice(0,split);
+                pre.push(filename);
+                
+                scanGlobRec(pre.concat(parts.slice(split)), split + 1, cb);
+            }
+	}
+        
+    });
+
+};
+
+var scanGlob = function (file, cb) {
+    var f = path.normalize(file);
+    var parts = f.split(path.sep);
+    var firstGlob = 0;
+    
+    for (var i = 0; i < parts.length; i++) {
+        if (isGlob(parts[i])) {
+            break;
+        }
+        
+        firstGlob++;
+    }
+    scanGlobRec(parts, firstGlob, cb);
+    
+};
+
 if(Object.values===undefined){
 	Object.prototype.values = function(){
 		var v = [];
@@ -84,7 +191,7 @@ var frameworkConfigString = fs.readFileSync(buildConfigStr);
 try{var config = JSON.parse(frameworkConfigString);}
 catch(e){
 	console.log(e);
-	process.exit();
+	process.exit(1);
 }
 var startTime = new Date().getTime();
 console.log("Starting Aurora Builder");
@@ -122,12 +229,13 @@ config.plugins.forEach(function(pluginDir){
 			    child.stderr.on('data', function(d){
 				errored = true;
 				console.log(d.toString());
-			    }).on('end', function(){
-				if(errored){
-				    console.log("Error while compiling "+pluginName+" plugin");
-				    process.exit();
-				}
 			    });
+                            child.on('exit', function (code) {
+                                if (code) {
+				    console.log("Error while compiling "+pluginName+" plugin");
+                                    process.exit(code);
+                                }
+                            });
 			});		
 		    }
 		});
@@ -209,7 +317,19 @@ processQueue(orderedScripts, function(){
         }
     });
 
-	var pluginConfigs = {};
+    var pluginConfigs = {};
+    config.build_targets.forEach(function (target) {
+        if (shouldBuild(target) && target.preSearch) {
+            target.preSearch.forEach(function (search) {
+                scanGlob(search, function (fname) {
+                    target.preSearch, buildTargets[target.filename].sources.push(fname);
+                });
+            });
+            
+        }
+    });
+
+
 	config.plugins.forEach(function(pluginDir){
 		fs.readdirSync(pluginDir).sort(function(a,b){
 			return pluginDepth[a]-pluginDepth[b];
@@ -217,9 +337,9 @@ processQueue(orderedScripts, function(){
 			return !pluginName.endsWith(".disabled");
 		}).forEach(function(pluginName){
 		    config.build_targets.forEach(function(target){
-				if((target.searchExp instanceof Array)===false){
-					target.searchExp = [target.searchExp];
-				}
+			if((target.searchExp instanceof Array)===false){
+			    target.searchExp = [target.searchExp];
+			}
 				target.searchExp.forEach(function(searchExpStr){
 					fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
 					    var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
@@ -253,60 +373,6 @@ processQueue(orderedScripts, function(){
     }	
 	
     fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
-    var regEscape = function (c) {
-        if (['.','(',')','*','?','[', ']', '\\'].indexOf(c) !== -1) {
-            return '\\' + c;
-        }
-        return c;
-    };
-
-    var parseGlob = function (part) {
-        var escape = false;
-        var isGlob = false;
-        var regExp = "^(";
-        var prevC = null;
-        var isRec = false;
-        for (var i = 0; i < part.length; i++) {
-            var ch = part[i];
-            if (!escape) {
-                if (ch === '*' && prevC === '*') {
-                    prevC = null;
-                    isRec = true;
-                }
-                else if (ch === '*' || ch === '?') {
-                    prevC = ch;
-                    isGlob = true;
-                    regExp += '.';
-                    
-                    if (ch === '*') {
-                        regExp += '*';
-                    }
-                    
-                }
-                else {
-                    escape = part[i] === '\\';
-                    if (!escape) {
-                        regExp += regEscape(part[i]);
-                    }
-                    prevC = ch;
-                }
-                    
-            }
-            else {
-                prevC = null;
-                escape = false;
-                regExp += regEscape(part[i]);
-                
-            }
-        }
-        regExp += ')$';
-        var e = new RegExp(regExp);
-        return {glob: isGlob, isRec: isRec, pat: function (v) {return e.test(v);}, exp: regExp};
-    };
-    
-    var isGlob = function (part) {
-        return parseGlob(part).glob;
-    };
 
     var testGlob = function (p, expected) {
         var res = isGlob(p);
@@ -323,58 +389,6 @@ processQueue(orderedScripts, function(){
     testGlob("\\*", false);
     testGlob("**", true);
 
-    var scanGlobRec = function (parts, split, cb) {
-        if (split >= parts.length) {
-            cb(parts.join(path.sep));
-            return;
-        }
-
-        var base = parts.slice(0,split).join(path.sep);
-        var gInfo = parseGlob(parts[split]);
-        
-        
-        fs.readdirSync(base).forEach(function(filename){
-            var subFile = path.join(base,filename);
-	    var stat = fs.statSync(subFile);
-            var match = gInfo.pat(filename);
-            var last = split + 1 === parts.length;
-
-	    if(stat.isFile()){
-                if (match && last) {
-                    cb(subFile);
-                }
-	    }
-	    else if(stat.isDirectory()){
-                if (match && last) {
-                    cb(subFile);
-                }
-                else if (gInfo.isRec) {
-                    var pre = parts.slice(0,split);
-                    pre.push(filename);
-                    
-                    scanGlobRec(pre.concat(parts.slice(split)), split + 1, cb);
-                }
-	    }
-           
-	});
-
-    };
-        
-    var scanGlob = function (file, cb) {
-        var f = path.normalize(file);
-        var parts = f.split(path.sep);
-        var firstGlob = 0;
-        
-        for (var i = 0; i < parts.length; i++) {
-            if (isGlob(parts[i])) {
-                break;
-            }
-                
-            firstGlob++;
-        }
-        scanGlobRec(parts, firstGlob, cb);
-        
-    };
     var hasFileArgs = false;
     var scanAndAddFiles = function (argFile, baseDir, arg, rel) {
         return function (v) {
@@ -491,18 +505,18 @@ processQueue(orderedScripts, function(){
 				});
 			}
 			else{
-				console.log("Concatenating "+target.filename);
-				fs.writeFileSync(config.output+path.sep+target.filename, "");
-				target.sources.forEach(function(sourceFile){
-					fs.appendFileSync(config.output+path.sep+target.filename, fs.readFileSync(sourceFile));
-					fs.appendFileSync(config.output+path.sep+target.filename, "\n");
-				});
-				doneCb();
+			    console.log("Concatenating "+target.filename);
+			    fs.writeFileSync(config.output+path.sep+target.filename, "");
+			    target.sources.forEach(function(sourceFile){
+				fs.appendFileSync(config.output+path.sep+target.filename, fs.readFileSync(sourceFile));
+				fs.appendFileSync(config.output+path.sep+target.filename, "\n");
+			    });
+			    doneCb();
 			}
-		}
-	}), function(){
-		console.log("Build took "+(new Date().getTime()-startTime)+"ms");
-	});
+	};
+    }), function(){
+	console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+    });
 });
 
 //@export, @export {SomeType}

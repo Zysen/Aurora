@@ -173,8 +173,9 @@ aurora.auth.SessionTable.prototype.updateSession_ = function (session, cb) {
         this.expiry_.remove(session);
     }
     cb();
+    
     if (session.expiry !== null) {
-        session.expiry = new Date().getTime() + session.timeout;
+        session.expiry = process.hrtime()[0] * 1000 + session.timeout;
         this.expiry_.add(session);
     }
     this.updateExpire_();
@@ -206,7 +207,7 @@ aurora.auth.SessionTable.prototype.removeSeriesId = function (seriesId) {
  * @param {Object} data
  */
 aurora.auth.SessionTable.prototype.createSession = function (token, seriesId, constToken, timeout, data) {
-    var exp = timeout === null ? null : new Date().getTime() + timeout;
+    var exp = timeout === null ? null : (process.hrtime()[0] * 1000 + timeout);
     var session = {expiry: exp, token: token, constToken: constToken, seriesId: seriesId, data: data, timeout: timeout, clients:{}}; 
     this.expiry_.add(session);
     this.table_[token] = session;
@@ -268,7 +269,7 @@ aurora.auth.SessionTable.prototype.touch_ = function (token) {
  * expires all sessions past there expiry time
  */
 aurora.auth.SessionTable.prototype.expire = function () {
-    var now = new Date().getTime();
+    var now = process.hrtime()[0] * 1000;
     var me = this;
     var toRemove = [];
     this.expiry_.inOrderTraverse(function (s) {
@@ -312,7 +313,7 @@ aurora.auth.SessionTable.prototype.setSessionExpiresWithClient = function (val) 
  * set the callback to check the next expiry time
  */
 aurora.auth.SessionTable.prototype.updateExpire_ = function () {
-    var now = new Date().getTime();
+    var now = process.hrtime()[0] * 1000;
     var toRemove = [];
     var me = this;
     if (me.nextExpire_) {
@@ -320,6 +321,7 @@ aurora.auth.SessionTable.prototype.updateExpire_ = function () {
         this.nextExpire_ = null;
     }
 
+    var curTime  = process.hrtime()[0] * 1000;
     this.expiry_.inOrderTraverse(function (s) {
        
         if (s.expiry !== null) {
@@ -331,7 +333,7 @@ aurora.auth.SessionTable.prototype.updateExpire_ = function () {
             me.nextExpire_ = setTimeout(function () {
                 me.nextExpire_ = null;
                 me.expire();
-            }, Math.max(1, 1 + s.expiry - new Date().getTime()));
+            }, Math.max(1, 1 + s.expiry - curTime));
         }
         return true;
     });
@@ -372,10 +374,10 @@ aurora.auth.Auth = function () {
         var request = state.request;
         var response = state.response;
         if (state.url.pathname === '/logout') {
-            var sesh = decodeURIComponent(state.cookies['sesh'] || '').split('-');
-            var token = sesh.length == 2 ? sesh[0] : undefined;
-            var seriesId = sesh.length == 2 ? sesh[1] : undefined;
-            var session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
+            let sesh = decodeURIComponent(state.cookies['sesh'] || '').split('-');
+            let token = sesh.length == 2 ? sesh[0] : undefined;
+            let seriesId = sesh.length == 2 ? sesh[1] : undefined;
+            let session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
             if (session) {
                 me.sessions_.remove(token);
                 var referer = state.request.headers['referer'];
@@ -428,7 +430,7 @@ aurora.auth.Auth = function () {
             // update  cookies so that the have the new token
             state.responseHeaders.set('Set-Cookie',[
                 "sesh="+ encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) +'; Path=/;']);
-            me.login(tokenInfo.token, tokenInfo.seriesId, credentials.remember, state.clientId, credentials, state);
+            me.login(tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state);
         };
         var credentials = me.getCredentials(state, doLogin);
         if (credentials !== null) {
@@ -492,11 +494,8 @@ aurora.auth.Auth.prototype.getCredentials = function (state, cb) {
  *
  */
 aurora.auth.Auth.prototype.addAllowedExp = function (pattern) {
-    function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
-    }
     if (typeof(pattern) === 'string') {
-        this.allowedPrefixes_.push(new RegExp('^' + escapeRegExp(pattern)));
+        this.allowedPrefixes_.push(new RegExp('^' + aurora.http.escapeRegExp(pattern)));
     }
     else {
         this.allowedPrefixes_.push(pattern);
@@ -509,16 +508,14 @@ aurora.auth.Auth.prototype.setLoginPage = function (cb) {
     this.loginPageCb_ = cb;
 };
 
-aurora.auth.Auth.prototype.x = 1;
 /**
  * @param {string} token
  * @param {string} seriesId
  * @param {boolean} rememberMe
- * @param {string} clientId
  * @param {Object} credentials
  * @param {aurora.http.RequestState} state
  **/
-aurora.auth.Auth.prototype.login = function (token, seriesId, rememberMe, clientId, credentials, state) {
+aurora.auth.Auth.prototype.login = function (token, seriesId, rememberMe, credentials, state) {
 
     // check to see if the token exists if not
     var res = {token : token, seriesId : seriesId};

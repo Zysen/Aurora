@@ -2,13 +2,19 @@ goog.provide("aurora.http");
 goog.require("config");
 goog.require('goog.structs.AvlTree');
 goog.require('recoil.util.object');
+
+/**
+ * @typedef {{set:function(string,?),get:function(string),toClient:function():Array<string>}}
+ */
+aurora.http.ResponseHeaders;
+
 /**
  * @typedef {{port:number,protocol:string,websocket:?boolean,key:?buffer.Buffer,cert:?buffer.Buffer}}
  */
 aurora.http.ConfigServerType;
-
 /**
- * @typedef {{responseHeaders:?,request:?, response:?}}
+ * @typedef {{responseHeaders:aurora.http.ResponseHeaders,request:http.IncomingMessage, response:http.ServerResponse,
+ *          data:?, outUrl:string, cookies:Object<string,string>,url:url.URL}}
  */
 aurora.http.RequestState;
 
@@ -21,6 +27,14 @@ aurora.http.ConfigType;
  * @typedef {{server:?,config:aurora.http.ConfigServerType}}
  */
 aurora.http.Server;
+
+/**
+ * @param {string} str
+ * @return {string}
+ */
+aurora.http.escapeRegExp = function (str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+};
 
 (function(){
     
@@ -61,7 +75,7 @@ aurora.http.Server;
      * @param {number} priority lower priority go first also if callback returns a non-false value
      * all other requests of the same priority are skipped
      * @param {RegExp|string} pattern
-     * @param {function(?)} callback
+     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
      */
     aurora.http.addRequestCallback = function (priority, pattern, callback) {
         var existing = callbacks.findFirst({key: priority});
@@ -74,10 +88,17 @@ aurora.http.Server;
             callbacks.add({key: priority, callbacks: [data]});
         }
     };
-    
+    /**
+     * @param {RegExp|string} pattern
+     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     */
     aurora.http.addPreRequestCallback = function (pattern, callback) {
         aurora.http.addRequestCallback(0, pattern, callback);
     };
+    /**
+     * @param {RegExp|string} pattern
+     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     */
     aurora.http.addMidRequestCallback = function (pattern, callback) {
         aurora.http.addRequestCallback(5, pattern, callback);
     };
@@ -385,7 +406,7 @@ aurora.http.Server;
     }
 
     var httpServers = {};
-    function loadServers(){
+    function loadServers() {
         shutdownAllServers(Object.values(httpServers), function(){
             httpServers = {};
             config['http']['servers'].forEach(function(serverConfig){
@@ -410,7 +431,41 @@ aurora.http.Server;
             });
             aurora.http.serversUpdatedE.emit("update", httpServers);
         });
-    } 
+    }
+
+    /**
+     * @param {string} filePath the location of the physical file
+     * @param {http.IncomingMessage} request
+     * @param {http.ServerResponse} response
+     * @param {?} headers
+     * @param {string=} opt_filename
+     */
+    aurora.http.sendFileDownload = function(filePath, request, response, headers, opt_filename){
+        if (opt_filename) {
+	    headers.set('Content-Disposition', 'attachment;filename='+path.basename(opt_filename));
+        }
+	sendFile(filePath, request, response, headers);
+    };
+    /**
+     * @param {RegExp} url
+     * @param {string} file
+     * @param {function(function(string))|string} sendFileNameCB a callback or a string to get the filename, this may be nessary because you may want to
+     * send the modified date or the current date as part of the filename
+     */
+    aurora.http.sendFileDownloadToURL = function (url, file, sendFileNameCB) {
+        var nameCallback = typeof(sendFileNameCB) === 'string' ?
+                function (cb1) {
+                    cb1(sendFileNameCB);
+                } : sendFileNameCB;
+    
+        aurora.http.addMidRequestCallback(url, function (state) {
+            nameCallback(function (name) {
+                aurora.http.sendFileDownload(file, state.request, state.response, state.responseHeaders, name);
+            });
+            return false;
+        });
+    };
+    
     process.chdir(__dirname);
     config.configE.on("http/theme", loadTheme);
     config.configE.on("http/servers", loadServers);

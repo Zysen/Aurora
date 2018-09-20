@@ -5,6 +5,7 @@ goog.require("aurora.http");
 goog.require("aurora.websocket.enums");
 goog.require("aurora.websocket.constants");
 goog.require('aurora.auth.Auth');
+goog.require('aurora.log');
 
 /**
  * This could possibly be deprecated. Its not used right now.
@@ -93,53 +94,66 @@ aurora.websocket.Server.prototype.onM = function(){};
  * @param {aurora.websocket.MessageType} message 
  */
 aurora.websocket.Server.prototype.onMessage = function(connection, message) {
-	if (message['type'] === 'utf8') {
-		try{
-			var m = (JSON.parse(message['utf8Data']));
-			switch(m['command']){
-			case aurora.websocket.enums.COMMANDS.REGISTER:
-			    var channelKey = m['pluginId']+"_"+m['channelId'];
-                            if (!this.channels[channelKey]) {
-                                break; // invalid channel ignore
-                            }
-                            
-			    this.channels[channelKey].register(connection.id, connection);
-			    if(this.channelsByClientId[connection.id]===undefined){
-				this.channelsByClientId[connection.id] = {};
-			    }
-			    this.channelsByClientId[connection.id][channelKey] = this.channels[channelKey];
-			    break;
-			case aurora.websocket.enums.COMMANDS.UNREGISTER:
-			    this.channels[m['pluginId']+"_"+m['channelId']].unregister(connection.id);
-			    break;
-			default:
-			    console.log("Unknown Command", m['command'], m);
-			    break;
-			}
+    let log = aurora.log.createModule('WEBSOCKET');
+    // todo if the channel or plugin id don't exist we shouldn't die this is asecurity risk
+    if (message['type'] === 'utf8') {
+	try{
+	    var m = (JSON.parse(message['utf8Data']));
+	    switch(m['command']){
+	    case aurora.websocket.enums.COMMANDS.REGISTER:
+		var channelKey = m['pluginId']+"_"+m['channelId'];
+                if (!this.channels[channelKey]) {
+                    break; // invalid channel ignore
+                }
+                
+		this.channels[channelKey].register(connection.id, connection);
+		if(this.channelsByClientId[connection.id]===undefined){
+		    this.channelsByClientId[connection.id] = {};
 		}
-		catch(e){console.log(e);}
+		this.channelsByClientId[connection.id][channelKey] = this.channels[channelKey];
+		break;
+	    case aurora.websocket.enums.COMMANDS.UNREGISTER:
+		this.channels[m['pluginId']+"_"+m['channelId']].unregister(connection.id);
+		break;
+	    default:
+		console.log("Unknown Command", m['command'], m);
+		break;
+	    }
 	}
-	else if(message['type'] === 'binary'){
-		var pluginId = message['binaryData'].readUInt16LE(0);
-		var channelId = message['binaryData'].readUInt16LE(2);
-		var type = message['binaryData'].readUInt16LE(4);
-		var payload = message['binaryData'].slice(6);
-		
-		if(type===aurora.websocket.enums.types.STRING){
-			payload = payload.toString();
-		}
-		else if(type===aurora.websocket.enums.types.OBJECT){
-		    payload = JSON.parse(payload.toString());
-		}
+	catch(e){console.log(e);}
+    }
+    else if(message['type'] === 'binary'){
+        try {
+	    var pluginId = message['binaryData'].readUInt16LE(0);
+	    var channelId = message['binaryData'].readUInt16LE(2);
+	    var type = message['binaryData'].readUInt16LE(4);
+	    var payload = message['binaryData'].slice(6);
+
+	    if(type===aurora.websocket.enums.types.STRING){
+	        payload = payload.toString();
+	    }
+	    else if(type===aurora.websocket.enums.types.OBJECT){
+	        payload = JSON.parse(payload.toString());
+	    }
 	    else if(type!==aurora.websocket.enums.types.BINARY){
-		console.error("Websocket Unknown Type "+type);
-		return;
+	        console.error("Websocket Unknown Type "+type);
+	        return;
 	    }
 	    //console.log("WS ", pluginId, channelId, type, payload);
             var token = aurora.auth.instance.getClientToken(connection.id);
-	    this.channels[pluginId+"_"+channelId].receive({token: token, clientId: connection.id, connection: connection, data: payload});
-	}
-}
+	    let c = this.channels[pluginId+"_"+channelId];
+            if (c) {
+                c.receive({token: token, clientId: connection.id, connection: connection, data: payload});
+            }
+            else {
+                log.error("unable to find plugin channel", aurora.websocket.constants.plugins[pluginId], "pluginid", pluginId, "channelid", channelId);
+            }
+        }
+        catch (e) {
+            console.log(e);
+        }
+    }
+};
 
 /**
  * @private
@@ -210,7 +224,7 @@ aurora.websocket.Server.prototype.getChannel = function(pluginName, channelId, m
 		//TODO throw new exceptionm here instead 
 		return null;
 	}
-	var channelIdStr = pluginId+"_"+channelId;
+    var channelIdStr = pluginId+"_"+channelId;
 	if(this.channels[channelIdStr]===undefined){
 	    this.channels[channelIdStr] = new aurora.websocket.Channel(pluginId, channelId, messageCallback, opt_clientCloseCallback);
 	}
@@ -239,12 +253,22 @@ aurora.websocket.ChannelMessage;
 aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCloseCallback) {
     var clientRegistration = {};
     var callbacks = [messageCb];
+    var registerCallbacks = [];
     
     var channelHeader = new global.Buffer(4);
     channelHeader.writeUInt16LE(pluginId, 0);
     channelHeader.writeUInt16LE(channelId, 2);
     this.register = function(clientId, connection){
 	clientRegistration[clientId] = connection;
+        registerCallbacks.forEach(function (cb) {
+            cb(connection);
+        });
+    };
+    /**
+     * @param {function(?)} callback
+     */
+    this.onRegister = function (callback) {
+        registerCallbacks.push(callback);
     };
     this.unregister = function(clientId){
         var token =  aurora.auth.instance.getClientToken(clientId);
@@ -272,7 +296,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
 	 * This function sends a message.
 	 * @public
 	 * @param {string|buffer.Buffer|Object} message Message payload
-	 * @param {string=} clientId If specified the message will only be sent to this client.
+	 * @param {(string|?)=} clientId If specified the message will only be sent to this client.
          * @param {function(?, string):boolean=} filter
 	 */
     this.send = function(message, clientId, filter){
@@ -281,15 +305,18 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
 	typeBuffer.writeUInt16LE(message.type, 0);
 	message = global.Buffer.concat([channelHeader, typeBuffer, new global.Buffer(message.data)]);
 	if(clientId!==undefined){
-	    var connection = clientId;
+	    let connection = clientId;
 	    if(typeof(clientId)==="string"){
 		connection = clientRegistration[clientId];
 	    }
-	    connection.send(message);
+            if (connection) {
+                // client my have been deregistered don't send to it if it has
+	        connection.send(message);
+            }
 	}
 	else{
 	    for(var clientId2 in clientRegistration){
-		var connection = clientRegistration[clientId2];
+		let connection = clientRegistration[clientId2];
                 if (!filter || filter(connection, aurora.auth.instance.getClientToken(clientId2))) {
 		    connection.send(message);
                 }
