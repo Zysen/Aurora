@@ -411,6 +411,7 @@ aurora.auth.Auth = function () {
         var seriesId = sesh.length == 2 ? sesh[1] : undefined;
         var session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
         if (session) {
+            state.token = session.constToken;
             me.sessions_.touch_(token);
             return undefined;
         }

@@ -14,7 +14,7 @@ aurora.http.ResponseHeaders;
 aurora.http.ConfigServerType;
 /**
  * @typedef {{responseHeaders:aurora.http.ResponseHeaders,request:http.IncomingMessage, response:http.ServerResponse,
- *          data:?, outUrl:string, cookies:Object<string,string>,url:url.URL}}
+ *          data:?, outUrl:string, cookies:Object<string,string>,url:url.URL, token:?}}
  */
 aurora.http.RequestState;
 
@@ -390,15 +390,7 @@ aurora.http.escapeRegExp = function (str) {
                     theme.error404HTML = theme.template.replace("{BODY}",template404.toString());
                     fs.readFile(themeDir+"http500.html", function(err, template500){
                         theme.error500HTML = theme.template.replace("{BODY}",template500.toString());
-                        fs.readFile([__dirname, "style.css"].join(path.sep), function(err, pluginStyle){
-                            fs.readFile(themeDir+"style.css", function(err, themeStyle){
-                                fs.writeFile([__dirname, "resources", "htdocs", "style.css"].join(path.sep), pluginStyle+"\n"+themeStyle, function(err){
-                                    if(doneCb!==undefined && typeof(doneCb)==="function"){
-                                        doneCb();
-                                    }
-                                });
-                            });
-                        });
+                        doneCb();
                     });
                 });
             });
@@ -464,6 +456,57 @@ aurora.http.escapeRegExp = function (str) {
             });
             return false;
         });
+    };
+
+    aurora.http.sendDataAsyncDownload = function(request, response, headers, filename) {
+        headers.set('Content-Disposition', 'attachment;filename='+filename);
+	request.on('error', function(err) {
+            done = true;
+            aurora.http.writeError(500, response, headers);
+        });
+
+	headers.set('Content-Type',mime.getType(filename));
+	headers.set('Accept-Ranges',"bytes");
+	//headers.set('ETag',crypto.createHash('md5').update(data).digest('hex')); 
+
+        var gotData = false;
+        var done = false;
+        return {
+            dataCB : function (data) {
+                if (done) {
+                    return;
+                }
+                if (!gotData) {
+	            response.writeHead(200, headers.toClient());
+                }
+                gotData = true;
+	        response.write(data);
+            },
+            endCB: function (error) {
+                if (done) {
+                    return;
+                }
+
+                done = true;
+                if (!gotData && error) {
+                    response.writeHead(500);
+                }
+                response.end();
+
+            }
+        };
+    };
+
+    aurora.http.writeError = function(code, response, headers){
+	response.writeHead(code, headers);
+	if(code===404){
+            response.writeHead(404);
+            response.end(theme.error404HTML);
+	}
+	else{
+	    console.error("An unknown error has occured with code "+code);
+	    response.end("An unknown error has occured "+code, 'utf8');
+	}
     };
     
     process.chdir(__dirname);
