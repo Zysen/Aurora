@@ -1,10 +1,13 @@
 goog.provide('skeleton');
 
-skeleton.PLUGIN_NAME = "skeleton";
+/**
+ *
+ */
+skeleton.PLUGIN_NAME = 'skeleton';
 
 /** @enum {number} */
 skeleton.CHANNELS = {
-	TEST_CHANNEL: 0
+    TEST_CHANNEL: 0
 };
 
 
