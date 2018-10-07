@@ -70,6 +70,14 @@ aurora.auth.SessionTable = function(auth) {
 };
 
 /**
+ */
+aurora.auth.SessionTable.prototype.print = function () {
+    console.log("Session table");
+    for (var k in this.table_) {
+        console.log(k + " -> ", this.table_[k]);
+    }
+};
+/**
  * @typedef {?}
  */
 aurora.auth.SessionTable.ClientEntry;

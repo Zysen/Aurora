@@ -375,7 +375,6 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
      * @param {function(?, string):boolean=} filter
      */
     this.sendBinary = function(message, clientId, filter) {
-        console.log('type', typeof(message), message);
         sendRaw(aurora.websocket.enums.types.BINARY, message, clientId, filter);
     };
 
