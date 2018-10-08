@@ -3,6 +3,13 @@ goog.provide('aurora.websocket');
 goog.require('aurora.websocket.constants');
 goog.require('aurora.websocket.enums');
 
+/**
+ * @enum {number}
+ */
+aurora.websocket.CON_STATUS = {
+    DISCONNECTED: 0, CONNECTED: 1, ERRORED: 2
+};
+
 function convertData(data) {
     if (typeof(data) === 'string') {
         return {type: aurora.websocket.enums.types.STRING, data: data};
@@ -41,8 +48,30 @@ var onReadyCallbacks = [];
 /**
  * @private
  */
+aurora.websocket.statusCallbacks_ = [];
+/**
+ * @private
+ */
+aurora.websocket.status_ = aurora.websocket.CON_STATUS.DISCONNECTED;
+
+/**
+ * @private
+ */
 aurora.websocket.pending_ = [];
+/**
+ * @type {WebSocket}
+ */
 var connection;
+
+/**
+ * @param {function(aurora.websocket.CON_STATUS)} cb
+ */
+aurora.websocket.onStatusChanged = function(cb) {
+    aurora.websocket.statusCallbacks_.push(cb);
+    if (connection && connection.ready) {
+        cb(aurora.websocket.status_);
+    }
+};
 
 /**
  * @param {function()} cb
@@ -54,8 +83,12 @@ aurora.websocket.onReady = function(cb) {
     }
 };
 
-window.addEventListener('load', function() {
-    window.WebSocket = window.WebSocket || window.MozWebSocket;
+/**
+ */
+aurora.websocket.connect = function () {
+    if (connection) {
+        return;
+    }
     connection = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.hostname + ':' + window.location.port + '/websocket');
     connection.ready = false;
     connection.onopen = function() {
@@ -65,13 +98,31 @@ window.addEventListener('load', function() {
         onReadyCallbacks.slice(0).forEach(function(cb) {
             cb();
         });
+        aurora.websocket.status_ = aurora.websocket.CON_STATUS.CONNECTED;
+        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+            cb(aurora.websocket.status_);
+        });
         var pending = aurora.websocket.pending_;
         while (pending.length > 0) {
             pending.shift()();
         }
     };
     connection.onerror = function(error) {
-        console.log('WS ERROR');
+        aurora.websocket.status_ = aurora.websocket.CON_STATUS.ERRORED;
+        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+            cb(aurora.websocket.status_);
+        });
+    };
+    connection.onclose = function(error) {
+        aurora.websocket.status_ = aurora.websocket.CON_STATUS.DISCONNECTED;
+        connection = null;
+        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+            cb(aurora.websocket.status_);
+        });
+
+	setTimeout(function(){
+	    aurora.websocket.connect();
+	}, 4000);
     };
     connection.onmessage = function(packet) {
         if (packet.data instanceof Blob) {
@@ -109,6 +160,11 @@ window.addEventListener('load', function() {
         }
 
     };
+};
+
+window.addEventListener('load', function() {
+    window.WebSocket = window.WebSocket || window.MozWebSocket;
+    aurora.websocket.connect();
 }, false);
 
 /**
@@ -122,14 +178,21 @@ function Channel(pluginId, channelId, messageCb) {
     console.log('new channel' , pluginId, channelId);
     aurora.websocket.onReady(function() {
         console.log('channel ready' , pluginId, channelId);
-
-        connection.send(JSON.stringify({'command': aurora.websocket.enums.COMMANDS.REGISTER, 'pluginId': pluginId, 'channelId': channelId}));
+        if (connection) {
+            connection.send(JSON.stringify({'command': aurora.websocket.enums.COMMANDS.REGISTER, 'pluginId': pluginId, 'channelId': channelId}));
+        }
     });
 
     this.send = function(sendBuffer) {
         var data = convertData(sendBuffer);
         var doIt = function() {
-            connection.send(new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data]));
+            if (connection) {
+                /**
+                 * according to the documentation and it works you can send a blob but the 
+                 * compiler is complaining
+                 */
+                connection.send(/** @type {?} */ (new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data])));
+            }
         };
         if (connection && connection.ready) {
             doIt();
@@ -141,7 +204,9 @@ function Channel(pluginId, channelId, messageCb) {
 
     };
     this.destroy = function() {
-        connection.send(JSON.stringify({command: aurora.websocket.enums.COMMANDS.UNREGISTER, pluginId: pluginId, channelId: channelId}));
+        if (connection) {
+            connection.send(JSON.stringify({command: aurora.websocket.enums.COMMANDS.UNREGISTER, pluginId: pluginId, channelId: channelId}));
+        }
     };
     this.addCallback = function(cb) {
         callbacks.push(cb);
