@@ -13,6 +13,19 @@ aurora.websocket.enums.types = {
 };
 
 /**
+ * @const
+ */
+aurora.websocket.PLUGIN_ID = 'websocket';
+
+/**
+ * @const
+ * @enum {number}
+ */
+aurora.websocket.error = {
+    NO_SESSION : -1
+};
+
+/**
  * Enum for channel management message aurora.websocket.types.
  * @enum {number}
  */

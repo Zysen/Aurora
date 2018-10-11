@@ -515,7 +515,22 @@ processQueue(orderedScripts, function(){
 			}
 	};
     }), function(){
-	console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+        if (config.post_process) {
+            const exec = require('child_process').exec;
+            exec(config.post_process.command, function (err, stdout, stderr) {
+
+                console.log(stdout);
+                console.error(stderr);
+                if (err) {
+                    console.error("failed to execute", config.post_process.command);
+                    process.exit(-1);
+                }
+	        console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+            });
+        }
+        else {
+	    console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+        }
     });
 });
 

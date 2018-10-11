@@ -49,6 +49,13 @@ var onReadyCallbacks = [];
  * @private
  */
 aurora.websocket.statusCallbacks_ = [];
+
+/**
+ * @private
+ * at the moment this can only be NO_SESSION
+ */
+aurora.websocket.errorCallbacks_ = [];
+
 /**
  * @private
  */
@@ -73,6 +80,12 @@ aurora.websocket.onStatusChanged = function(cb) {
     }
 };
 
+/**
+ * @param {function({error:aurora.websocket.error})} cb
+ */
+aurora.websocket.onError = function(cb) {
+    aurora.websocket.errorCallbacks_.push(cb);
+};
 /**
  * @param {function()} cb
  */
@@ -124,6 +137,8 @@ aurora.websocket.connect = function () {
 	    aurora.websocket.connect();
 	}, 4000);
     };
+    var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');
+    
     connection.onmessage = function(packet) {
         if (packet.data instanceof Blob) {
             var reader = new FileReader();
@@ -134,17 +149,29 @@ aurora.websocket.connect = function () {
                 var channelId = header[1];
                 var type = header[2];
                 var channel = channels[pluginId + '_' + channelId];
+                var decodedData = null;
                 if (type === aurora.websocket.enums.types.STRING) {
-                    channel.receive({data: arrayBufferToString(reader.result.slice(6))});
+                    decodedData = arrayBufferToString(reader.result.slice(6));
                 }
                 else if (type === aurora.websocket.enums.types.OBJECT) {
-                    channel.receive({data: JSON.parse(arrayBufferToString(reader.result.slice(6)))});
+                    decodedData = JSON.parse(arrayBufferToString(reader.result.slice(6)));
                 }
                 else if (type === aurora.websocket.enums.types.BINARY) {
-                    channel.receive({data: reader.result.slice(6)});
+                    decodedData = reader.result.slice(6);
                 }
                 else {
                     console.error('Websocket Receive: Unknown Type', type);
+                    return;
+                }
+
+                if (channel) {
+                    channel.receive({data: decodedData});
+                }
+                else if (pluginId === websocketPluginId) {
+                    console.log("recived webSocket error");
+                    aurora.websocket.errorCallbacks_.slice(0).forEach(function (cb) {
+                        cb(decodedData);
+                    });
                 }
             };
             reader.readAsArrayBuffer(packet.data);
@@ -175,9 +202,7 @@ window.addEventListener('load', function() {
  */
 function Channel(pluginId, channelId, messageCb) {
     var callbacks = [messageCb];
-    console.log('new channel' , pluginId, channelId);
     aurora.websocket.onReady(function() {
-        console.log('channel ready' , pluginId, channelId);
         if (connection) {
             connection.send(JSON.stringify({'command': aurora.websocket.enums.COMMANDS.REGISTER, 'pluginId': pluginId, 'channelId': channelId}));
         }

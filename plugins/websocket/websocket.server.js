@@ -61,6 +61,8 @@ aurora.websocket.Server = function() {
                             });
                         }
                         else {
+                            this.sendError_(connection, aurora.websocket.error.NO_SESSION);
+
                             serverInstance.onClose_(connection, 'INVALIDTOKEN', 'invalid token');
                             delete wsServer.clients[socketId];
                         }
@@ -71,6 +73,7 @@ aurora.websocket.Server = function() {
         }
     });
 };
+
 
 /**
  *    @constructor
@@ -95,10 +98,28 @@ aurora.websocket.Server.prototype.lastSockets_ = function() {};
 
 /**
  * @param {*} connection
+ * @param {aurora.websocket.error} errorno
+ */
+aurora.websocket.Server.prototype.sendError_ = function(connection, errorno) {
+    var header = new global.Buffer(6);
+    var error = aurora.websocket.Server.instance.convertData_({'error': errorno});
+    var pluginId = aurora.websocket.constants.plugins.indexOf('websocket');
+    header.writeUInt16LE(pluginId, 0);
+    header.writeUInt16LE(0, 2);
+    header.writeUInt16LE(error.type, 4);
+    connection.send(global.Buffer.concat([header, error.data]));
+};
+/**
+ * @param {*} connection
  * @param {aurora.websocket.MessageType} message
  */
 aurora.websocket.Server.prototype.onMessage = function(connection, message) {
     let log = aurora.log.createModule('WEBSOCKET');
+
+    if (!aurora.auth.instance.validClient(connection.id)) {
+        this.sendError_(connection, aurora.websocket.error.NO_SESSION);
+        return;
+    }
     // todo if the channel or plugin id don't exist we shouldn't die this is asecurity risk
     if (message['type'] === 'utf8') {
         try {

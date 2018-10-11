@@ -228,6 +228,14 @@ aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, con
     this.updateExpire_();
 };
 
+
+/**
+ * @param {string|undefined} clientId
+ * @return {boolean}
+ */
+aurora.auth.SessionTable.prototype.validClient = function(clientId) {
+    return this.clients_[clientId] !== undefined;
+};
 /**
  * @param {string|undefined} token
  */
@@ -636,6 +644,13 @@ aurora.auth.Auth.prototype.registerClientToken = function(request, clientId, con
 
 };
 
+/**
+ * @param {string|undefined} clientId
+ * @return {boolean}
+ */
+aurora.auth.Auth.prototype.validClient = function(clientId) {
+    return this.sessions_.validClient(clientId);
+};
 /**
  * @param {string} clientId
  */
