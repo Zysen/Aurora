@@ -122,16 +122,24 @@ aurora.websocket.connect = function () {
     };
     connection.onerror = function(error) {
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.ERRORED;
+        console.log("errored ws", error);
         aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
             cb(aurora.websocket.status_);
         });
     };
-    connection.onclose = function(error) {
+    connection.onclose = function(evt) {
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.DISCONNECTED;
         connection = null;
-        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
-            cb(aurora.websocket.status_);
-        });
+        if (evt.code !== 1000) {
+            // if 1000 is a normal closure basically we are changing pages
+            // in firefox don't send events because it behaves differently on
+            // firefox than chrome don't send message websocket should never close
+            // under normal circumstances
+            
+            aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+                cb(aurora.websocket.status_);
+            });
+        }
 
 	setTimeout(function(){
 	    aurora.websocket.connect();
