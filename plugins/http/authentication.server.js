@@ -109,6 +109,20 @@ aurora.auth.SessionTable.prototype.getClientToken = function(clientId) {
     return (this.clients_[clientId] || {}).constToken;
 };
 
+
+/**
+ * gets a constant token from token that is in the cookie
+ *
+ * @param {string} token
+ * @return {?string}
+ */
+aurora.auth.SessionTable.prototype.getToken = function(token) {
+    var session = this.findSessions_(token);
+    if (session) {
+        return session.constToken;
+    }
+    return null;
+};
 /**
  * @param {string} token
  * @return {string}
@@ -373,6 +387,7 @@ aurora.auth.Auth = function() {
     this.sessions_ = new aurora.auth.SessionTable(this);
     this.crypto_ = require('crypto');
     this.nextToken_ = new recoil.util.Sequence();
+    this.blockAutoLogin_ = null;
     /**
      * @private
      * @param {aurora.http.RequestState} state
@@ -450,11 +465,33 @@ aurora.auth.Auth = function() {
             me.sessions_.remove(token);
         }
         var doLogin = function(credentials) {
-            var tokenInfo = me.generateToken();
+
+            // if credentials already have a token that means we just want to login from a different ip
+            var tokenInfo = credentials.token ? credentials.token : me.generateToken();
             // update  cookies so that the have the new token
             state.responseHeaders.set('Set-Cookie', [
                 'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + '; Path=/;']);
-            me.login(tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state);
+            if (credentials.token) {
+                if (credentials.token.token === '') {
+                    credentials.response({message: 'no token given'}, state);
+                }
+                // if the autologin is blocked autologin will just look like the login failed but all it will do is extend block
+                else if (!this.blockAutoLogin_ && me.sessions_.findSessions_(credentials.token.token, credentials.token.seriesId)) {
+                    credentials.response(null, state);
+                }
+                else {
+                    // wait 5 minutes before we can do another password login from that ip
+                    if (me.blockAutoLogin_) {
+                        clearTimeout(me.blockAutoLogin_);
+                    }
+                    me.blockAutoLogin_ = setTimeout(function () {
+                        me.blockAutoLogin_ = null;
+                    }, 5*60000);
+                }
+            }
+            else {
+                me.login(tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state);
+            }
         };
         var credentials = me.getCredentials(state, doLogin);
         if (credentials !== null) {
@@ -468,6 +505,42 @@ aurora.auth.Auth = function() {
         me.loginPageCb_(state);
         return false;
     });
+};
+
+/**
+ * @param {string} cookies
+ * @return {?{token:string,seriesId:string}}
+ */
+aurora.auth.Auth.getSessionFromCookies = function(cookies) {
+    if (!cookies) {
+        return null;
+    }
+    
+    var parts = cookies.split(";");
+    for (var i =0 ; i < parts.length; i++) {
+        var cookie = parts[i].trim();
+        if (cookie.startsWith('sesh=')) {
+            var sessParts = cookie.split('=');
+            if (sessParts.length > 1) {
+                return aurora.auth.Auth.parseSessionToken(sessParts[1]);
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * @param {string} token
+ * @return {?{token:string,seriesId:string}}
+ */
+aurora.auth.Auth.parseSessionToken = function(token) {
+    if (token) {
+        var parts = token.split('-');
+        if (parts.length === 2) {
+            return {token: parts[0], seriesId : parts[1]};
+        }
+    }
+    return null;
 };
 
 /**
@@ -631,6 +704,17 @@ aurora.auth.Auth.prototype.getClientToken = function(clientId) {
  */
 aurora.auth.Auth.prototype.getInternalToken_ = function(token) {
     return this.sessions_.getInternalToken(token);
+};
+
+
+/**
+ * gets a constant token from token that is in the cookie
+ *
+ * @param {string} token
+ * @return {?string}
+ */
+aurora.auth.Auth.prototype.getToken = function(token) {
+    return this.sessions_.getToken(token);
 };
 
 /**

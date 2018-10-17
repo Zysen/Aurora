@@ -57,6 +57,13 @@ aurora.http.escapeRegExp = function(str) {
     aurora.http.theme = theme;
     var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
 
+    /**
+     * @param {!aurora.http.RequestState} state
+     **/
+    aurora.http.notFound = function (state) {
+        state.response.writeHead(404, state.responseHeaders.toClient());
+        state.response.end(theme.error404HTML);
+    };
     aurora.http.getPost = function(request, callback) {
         if (request.method == 'POST') {
             var body = '';
@@ -304,13 +311,14 @@ aurora.http.escapeRegExp = function(str) {
 
 
             var url = path.normalize(decodeURIComponent(request.url));
+            var parsedUrl = urlLib.parse(url);
             var exit = false;
-            var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: urlLib.parse(url), outUrl: url};
+            var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
             //            allRequests.push(state);
             callbacks.inOrderTraverse(function(cb) {
                 for (var i = 0; i < cb.callbacks.length; i++) {
                     var cur = cb.callbacks[i];
-                    if (cur.pattern.test(url)) {
+                    if (cur.pattern.test(parsedUrl.pathname)) {
                         var res = cur.callback(state);
                         if (res === false) {
                             exit = true;
