@@ -1,3 +1,0 @@
-[submodule "nodejs-externs"]
-	path = nodejs-externs
-	url = ssh://git@nz-swbuild42:2222/gui/node.js-closure-compiler-externs.git
