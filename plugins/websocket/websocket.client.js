@@ -26,7 +26,7 @@ function convertData(data) {
 }
 
 function arrayBufferToString(ab) {
-    return String.fromCharCode.apply(null, new Uint8Array(ab));
+    return new TextDecoder("utf-8").decode(new Uint8Array(ab));
 }
 
 function toUInt16ArrayBuffer(data, littleEndian) {
