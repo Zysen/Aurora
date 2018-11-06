@@ -2,7 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const child_process = require('child_process');
+const JAVA_HOME = process.env.JAVA_HOME || '';
 
+var JAVA = path.join(JAVA_HOME,'java');
 var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
 var debug = false;
 var build = null;
@@ -459,7 +461,7 @@ processQueue(orderedScripts, function(){
                 }
 
 		var buildCommandArray = 
-                        ["java -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
+                        [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
 			 "--env="+target.env+""].concat(
                              argsFileFlag, target.args || [],
                              ["--hide_warnings_for=closure/goog/base.js",
