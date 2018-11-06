@@ -32,6 +32,8 @@ aurora.websocket.WebSocketServer = require('websocket')['server'];
  * @constructor
  */
 aurora.websocket.Server = function() {
+    let log = aurora.log.createModule('WEBSOCKET');
+    
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
         for (var portStr in serverInstance.lastSockets_) {
@@ -40,7 +42,7 @@ aurora.websocket.Server = function() {
         for (var portStr in servers) {
             var server = servers[portStr];
             if (server.config['websocket'] === true) {
-                console.log('Starting Websocket Server attached to ' + server.config.protocol + ' port ' + server.config.port);
+                log.info('Starting Websocket Server attached to ' + server.config.protocol + ' port ' + server.config.port);
                 var wsServer = new aurora.websocket.WebSocketServer({
                     'httpServer': server.server
                 });
