@@ -439,8 +439,8 @@ aurora.http.escapeRegExp = function(str) {
             config['http']['servers'].forEach(function(serverConfig) {
                 if (serverConfig.port !== undefined) {
                     if (serverConfig.protocol === 'https') {
-                        serverConfig['key'] = fs.readFileSync('resources/' + (serverConfig.key || 'defaultKey.pem'));
-                        serverConfig['cert'] = fs.readFileSync('resources/' + (serverConfig.cert || 'defaultCert.pem'));
+                        serverConfig['key'] = fs.readFileSync( (serverConfig.key || 'resources/defaultKey.pem'));
+                        serverConfig['cert'] = fs.readFileSync((serverConfig.cert || 'resources/defaultCert.pem'));
                         httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
