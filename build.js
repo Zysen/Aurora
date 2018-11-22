@@ -489,19 +489,19 @@ processQueue(orderedScripts, function(){
 			    //"--export_local_property_definitions"
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
-				
-				
-				var isolationWrapper = "(function(){%output%}).call(this);";
+
 				if(target.sourceMapLocation && target.sourceMapLocation==="local"){
-					isolationWrapper = "//# sourceMappingURL="+target.filename+".map\n"+isolationWrapper;
+					fs.writeFileSync(config.output+path.sep+"output_wrapper_custom.txt", "//# sourceMappingURL="+target.filename+".map\n(function(){%output%}).call(this);");
+					buildCommandArray.push("--output_wrapper_file=\""+config.output+path.sep+"output_wrapper_custom.txt\"");
 				}
-				if(target.env==="BROWSER" && !debug){
-					buildCommandArray.push("--output_wrapper=\""+isolationWrapper+"\"");
+				else if(target.env==="BROWSER" && !debug){
+					fs.writeFileSync(config.output+path.sep+"output_wrapper_custom.txt", "//# sourceMappingURL=http://localhost:8080/"+target.filename+".map\n(function(){%output%}).call(this);");
+					buildCommandArray.push("--output_wrapper_file=\""+config.output+path.sep+"output_wrapper_custom.txt\"");
 				}				
 				else if(target.nodejs){
-					buildCommandArray.push("--output_wrapper=\"//# sourceMappingURL=http://localhost:8080/server.min.js.map\n(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith('server.min.js')){return {url: 'server.min.js.map',map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);\"");
+					buildCommandArray.push("--output_wrapper_file=\""+__dirname+path.sep+"output_wrapper_node.txt\"");
 				}
-				
+
 				var buildCommand = buildCommandArray.join(" ");
 				
 				console.log("\n"+buildCommand+"\n");
