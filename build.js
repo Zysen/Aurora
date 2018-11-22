@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const child_process = require('child_process');
+const exec = require('child_process').exec;
 const JAVA_HOME = process.env.JAVA_HOME || '';
 
 var JAVA = path.join(JAVA_HOME,'java');
@@ -26,6 +27,25 @@ var regEscape = function (c) {
         return '\\' + c;
     }
     return c;
+};
+
+var postProcess = function(config, doneCB){
+	if (config.post_process) {
+		exec(config.post_process.command, function (err, stdout, stderr) {
+
+			console.log(stdout);
+			console.error(stderr);
+			if (err) {
+				console.error("failed to execute", config.post_process.command);
+				process.exit(-1);
+			}
+			doneCB(null);
+		//console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+		});
+	}
+	else{
+		doneCB(null);
+	}
 };
 
 var parseGlob = function (part) {
@@ -515,7 +535,7 @@ processQueue(orderedScripts, function(){
 					console.log(stderr);
 					fs.unlink(entryFilePath, function(err){
 						if(err){console.error(err);}
-						doneCb();
+						postProcess(target, doneCb);
 					});
 				});
 			}
@@ -530,22 +550,9 @@ processQueue(orderedScripts, function(){
 			}
 	};
     }), function(){
-        if (config.post_process) {
-            const exec = require('child_process').exec;
-            exec(config.post_process.command, function (err, stdout, stderr) {
-
-                console.log(stdout);
-                console.error(stderr);
-                if (err) {
-                    console.error("failed to execute", config.post_process.command);
-                    process.exit(-1);
-                }
-	        console.log("Build took "+(new Date().getTime()-startTime)+"ms");
-            });
-        }
-        else {
-	    console.log("Build took "+(new Date().getTime()-startTime)+"ms");
-        }
+		postProcess(config, function(){
+			console.log("Build took "+(new Date().getTime()-startTime)+"ms");
+		});
     });
 });
 
