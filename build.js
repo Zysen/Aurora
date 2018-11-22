@@ -201,12 +201,14 @@ console.log("Starting Aurora Builder");
 config.output = config.output || "output";
 createDir(config.output);
 createDir(config.output+path.sep+"resources");
-fs.copyFileSync(__dirname+path.sep+"output_wrapper.txt", config.output+path.sep+"output_wrapper.txt");
 
 var dependencyTree = {};
 var buildScriptCalls = {};
 config.plugins.forEach(function(pluginDir){
 	fs.readdirSync(pluginDir).forEach(function(pluginName){
+		if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
+			return;
+		}
 		if(pluginName.endsWith("disabled")){return;}
 		try{var pluginConfigStr = fs.readFileSync(pluginDir+path.sep+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
 		try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
@@ -338,6 +340,10 @@ processQueue(orderedScripts, function(){
 		}).filter(function(pluginName){
 			return !pluginName.endsWith(".disabled");
 		}).forEach(function(pluginName){
+			if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
+				return;
+			}
+
 		    config.build_targets.forEach(function(target){
 			if((target.searchExp instanceof Array)===false){
 			    target.searchExp = [target.searchExp];
@@ -349,33 +355,37 @@ processQueue(orderedScripts, function(){
 					        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
                                             }
 					    if(stat.isFile()){
-						if(pluginFileName==="config.json"){
-						    pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
-						}
-                                                if (!shouldBuild(target)) { 
-                                                    return;
-                                                }
-                                            
-						var match = pluginFileName.match(searchExpStr);
-						if(match!==null){
-						    buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
-						}	
+							if(pluginFileName==="config.json"){
+								pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
+							}
+													if (!shouldBuild(target)) { 
+														return;
+													}
+												
+							var match = pluginFileName.match(searchExpStr);
+							if(match!==null){
+								buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
+							}	
 					    }
 					});
 				});
 			});
 		});
 	});
-
-    var customConfig = JSON.parse(fs.readFileSync("config.json"));
-    for(var pluginName in customConfig){
-	for(var key in customConfig[pluginName]){
-	    pluginConfigs[pluginName][key] = customConfig[pluginName][key];
+	try{
+		var configStat = fs.statSync("config.json");		//This will throw an exception if the config doesnt exist.
+		var customConfig = JSON.parse(fs.readFileSync("config.json"));
+		for(var pluginName in customConfig){
+			for(var key in customConfig[pluginName]){
+				pluginConfigs[pluginName][key] = customConfig[pluginName][key];
+			}
+		}	
 	}
-    }	
+	catch(e){}	//Do nothing intentionally.
 	
-    fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
-
+	if(Object.keys(pluginConfigs).length>0){
+		fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
+	}
     var testGlob = function (p, expected) {
         var res = isGlob(p);
         
@@ -481,12 +491,15 @@ processQueue(orderedScripts, function(){
 					//,"--generate_exports=true"
 				
 				
-				if(target.env==="BROWSER" && !debug){
-					buildCommandArray.push("--isolation_mode=IIFE");
+				var isolationWrapper = "(function(){%output%}).call(this);";
+				if(target.sourceMapLocation && target.sourceMapLocation==="local"){
+					isolationWrapper = "//# sourceMappingURL="+target.filename+".map\n"+isolationWrapper;
 				}
-				
-				if(target.nodejs){
-					buildCommandArray.push("--output_wrapper_file="+__dirname+"/output_wrapper.txt");
+				if(target.env==="BROWSER" && !debug){
+					buildCommandArray.push("--output_wrapper=\""+isolationWrapper+"\"");
+				}				
+				else if(target.nodejs){
+					buildCommandArray.push("--output_wrapper=\"//# sourceMappingURL=http://localhost:8080/server.min.js.map\n(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith('server.min.js')){return {url: 'server.min.js.map',map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);\"");
 				}
 				
 				var buildCommand = buildCommandArray.join(" ");
