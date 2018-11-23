@@ -229,6 +229,10 @@ config.plugins.forEach(function(pluginDir){
 		if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
 			return;
 		}
+		if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
+			return;
+		}
+			
 		if(pluginName.endsWith("disabled")){return;}
 		try{var pluginConfigStr = fs.readFileSync(pluginDir+path.sep+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
 		try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
@@ -363,7 +367,10 @@ processQueue(orderedScripts, function(){
 			if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
 				return;
 			}
-
+			if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
+				return;
+			}
+			
 		    config.build_targets.forEach(function(target){
 			if((target.searchExp instanceof Array)===false){
 			    target.searchExp = [target.searchExp];
