@@ -8,7 +8,8 @@
 		"compiled": true,
 		"sourcesFile":"sources.client.json",
 		"env":"BROWSER",
-		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS",
+		"sourceMapLocation":"http://localhost:8080"
 	},
 	{
 		"filename": "client.libs.js",
@@ -22,7 +23,8 @@
 		"sourcesFile":"sources.server.json",
 		"env":"CUSTOM",
 		"nodejs":true,
-		"compilationLevel":"ADVANCED_OPTIMIZATIONS"
+		"compilationLevel":"ADVANCED_OPTIMIZATIONS",
+		"sourceMapLocation":"http://localhost:8080"
 	},
 	{
 	    "types": ["client","resources"],

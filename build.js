@@ -473,7 +473,18 @@ processQueue(orderedScripts, function(){
                             
 			    var sourcesPath = path.resolve(pluginDir+path.sep+pluginName+path.sep+target.sourcesFile);
 			    if(fs.existsSync(sourcesPath)){
-				target.sources = target.sources.concat(JSON.parse(fs.readFileSync(sourcesPath)));
+					var customSources = JSON.parse(fs.readFileSync(sourcesPath));
+					if(!(customSources instanceof Array)){
+						throw "Invalid Custom Sources File "+sourcesPath;
+					}
+					customSources = customSources.map(function(source){
+						if(source.charAt(0)==='!'){
+							return "!"+pluginDir+path.sep+pluginName+path.sep+(source.substring(1));
+						}
+						return pluginDir+path.sep+pluginName+path.sep+source;
+					});
+					
+				target.sources = target.sources.concat(customSources);
 			    }
 			});
 		    });
@@ -517,16 +528,20 @@ processQueue(orderedScripts, function(){
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
 
-				if(target.sourceMapLocation && target.sourceMapLocation==="local"){
-					fs.writeFileSync(config.output+path.sep+"output_wrapper_custom.txt", "//# sourceMappingURL="+target.filename+".map\n(function(){%output%}).call(this);");
-					buildCommandArray.push("--output_wrapper_file=\""+config.output+path.sep+"output_wrapper_custom.txt\"");
-				}
-				else if(target.env==="BROWSER" && !debug){
-					fs.writeFileSync(config.output+path.sep+"output_wrapper_custom.txt", "//# sourceMappingURL=http://localhost:8080/"+target.filename+".map\n(function(){%output%}).call(this);");
-					buildCommandArray.push("--output_wrapper_file=\""+config.output+path.sep+"output_wrapper_custom.txt\"");
-				}				
-				else if(target.nodejs){
-					buildCommandArray.push("--output_wrapper_file=\""+__dirname+path.sep+"output_wrapper_node.txt\"");
+				var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
+				if(target.sourceMapLocation){
+					if(target.sourceMapLocation==="local"){
+						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.filename+".map\n(function(){%output%}).call(this);");
+						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
+					}
+					else if(target.env==="BROWSER" && !debug){
+						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n(function(){%output%}).call(this);");
+						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
+					}				
+					else if(target.nodejs){
+						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith(\"server.min.js\")){return {url: \"server.min.js.map\",map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);");
+						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
+					}
 				}
 
 				var buildCommand = buildCommandArray.join(" ");
@@ -542,7 +557,10 @@ processQueue(orderedScripts, function(){
 					console.log(stderr);
 					fs.unlink(entryFilePath, function(err){
 						if(err){console.error(err);}
-						postProcess(target, doneCb);
+						fs.unlink(customOutputWrapperPath, function(err){
+							if(err){}
+							postProcess(target, doneCb);
+						});
 					});
 				});
 			}
@@ -562,16 +580,3 @@ processQueue(orderedScripts, function(){
 		});
     });
 });
-
-//@export, @export {SomeType}
-//When properties are marked with @export and the compiler is run with the --generate_exports flag, a corresponding goog.exportSymbol statement will be generated:
-/** @export */
-//foo.MyPublicClass.prototype.myPublicMethod = function() {
-  // ...
-//};
-//goog.exportSymbol('foo.MyPublicClass.prototype.myPublicMethod',
-//foo.MyPublicClass.prototype.myPublicMethod);
-//You can write /** @export {SomeType} */ as a shorthand for /** @export @type {SomeType} */.
-//Code that uses the @export annotation must either:
- //   include closure/base.js, or
-   // define both goog.exportSymbol and goog.exportProperty with the same method signature in their own codebase.
