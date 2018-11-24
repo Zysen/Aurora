@@ -1,0 +1,3 @@
+[submodule "nodejs-externs"]
+	path = nodejs-externs
+	url = https://github.com/Zysen/node.js-closure-compiler-externs.git

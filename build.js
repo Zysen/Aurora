@@ -232,8 +232,14 @@ config.plugins.forEach(function(pluginDir){
 		if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
 			return;
 		}
-			
 		if(pluginName.endsWith("disabled")){return;}
+		
+		var pluginStat = fs.statSync(pluginDir+path.sep+pluginName);
+		if(!pluginStat.isDirectory()){
+			return;
+		}
+			
+		
 		try{var pluginConfigStr = fs.readFileSync(pluginDir+path.sep+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
 		try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
 		dependencyTree[pluginName] = [];
@@ -370,7 +376,11 @@ processQueue(orderedScripts, function(){
 			if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
 				return;
 			}
-			
+			var pluginStat = fs.statSync(pluginDir+path.sep+pluginName);
+			if(!pluginStat.isDirectory()){
+				return;
+			}
+		
 		    config.build_targets.forEach(function(target){
 			if((target.searchExp instanceof Array)===false){
 			    target.searchExp = [target.searchExp];
@@ -496,12 +506,12 @@ processQueue(orderedScripts, function(){
                 (target.externs || []).forEach(scanAndAddFiles(argsFile, __dirname + "/../", "--externs "));
                 (target.no_warnings || []).forEach(scanAndAddFiles(argsFile, __dirname + "/../", "--hide_warnings_for=", true));
                 
-                if (target.nodejs === true) {
+				if (target.nodejs === true) {
                     [
                         "/nodejs-externs/contrib/mime.js",
                         "/nodejs-externs/redundant/*.js",
                         "/nodejs-externs/*.js"].forEach(scanAndAddFiles(argsFile, __dirname , "--externs "));
-                }                                
+                }
 
                 var level = debug ? "WHITESPACE_ONLY" : (target.compilationLevel || "ADVANCED_OPTIMIZATIONS");
                 if (hasFileArgs) {
