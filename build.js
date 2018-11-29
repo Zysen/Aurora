@@ -531,11 +531,11 @@ processQueue(orderedScripts, function(){
 				var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
 				if(target.sourceMapLocation){
 					if(target.sourceMapLocation==="local"){
-						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.filename+".map\n(function(){%output%}).call(this);");
+						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.filename+".map\n%output%");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
 					}
 					else if(target.env==="BROWSER" && !debug){
-						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n(function(){%output%}).call(this);");
+						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n%output%");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
 					}				
 					else if(target.nodejs){
@@ -559,7 +559,10 @@ processQueue(orderedScripts, function(){
 						if(err){console.error(err);}
 						fs.unlink(customOutputWrapperPath, function(err){
 							if(err){}
-							postProcess(target, doneCb);
+							fs.unlink(argsFile, function(err){
+								if(err){}
+								postProcess(target, doneCb);
+							});
 						});
 					});
 				});
