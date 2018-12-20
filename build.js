@@ -3,9 +3,25 @@ const path = require("path");
 const os = require("os");
 const child_process = require('child_process');
 const exec = require('child_process').exec;
-const JAVA_HOME = process.env.JAVA_HOME || '';
+var JAVA = null;
 
-var JAVA = path.join(JAVA_HOME,'java');
+if (process.env.JAVA_HOME) {
+
+	var opts = [path.join('jdk','bin','java'), path.join('jre','bin','java'),'java'];
+	for (var i = 0; i < opts.length; i++) {
+		var opt = opts[i];
+        JAVA = path.join(process.env.JAVA_HOME,opt);
+        if (fs.existsSync(JAVA)) {
+        	break;
+		}
+	}
+
+
+}
+else {
+	JAVA = 'java'
+}
+
 var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
 var debug = false;
 var build = null;
