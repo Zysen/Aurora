@@ -391,10 +391,15 @@ processQueue(orderedScripts, function(){
 			if((target.searchExp instanceof Array)===false){
 			    target.searchExp = [target.searchExp];
 			}
+                        
+                        if (target.ignorePlugins && target.ignorePlugins.indexOf(pluginName) !== -1) {
+                            return;
+                        }
+
 				target.searchExp.forEach(function(searchExpStr){
 					fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
 					    var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
-                                            if (shouldBuild(target)) { 
+                                            if (shouldBuild(target)) {
 					        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
                                             }
 					    if(stat.isFile()){
@@ -404,7 +409,8 @@ processQueue(orderedScripts, function(){
 													if (!shouldBuild(target)) { 
 														return;
 													}
-												
+
+                                                
 							var match = pluginFileName.match(searchExpStr);
 							if(match!==null){
 								buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
@@ -586,6 +592,7 @@ processQueue(orderedScripts, function(){
 			else{
 			    console.log("Concatenating "+target.filename);
 			    fs.writeFileSync(config.output+path.sep+target.filename, "");
+
 			    target.sources.forEach(function(sourceFile){
 				fs.appendFileSync(config.output+path.sep+target.filename, fs.readFileSync(sourceFile));
 				fs.appendFileSync(config.output+path.sep+target.filename, "\n");
