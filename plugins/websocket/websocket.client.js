@@ -141,7 +141,11 @@ aurora.websocket.connect = function () {
     if (connection) {
         return;
     }
-    connection = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.hostname + ':' + window.location.port + '/websocket');
+    // Edge gets all confused if port is blank
+    var port = window.location.port === '' ? '' : ':' + window.location.port;
+
+    var conurl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.hostname + port + '/websocket';
+    connection = new WebSocket(conurl);
     connection.ready = false;
     connection.onopen = function() {
         console.log('WS connection established');
@@ -184,6 +188,7 @@ aurora.websocket.connect = function () {
 	    aurora.websocket.connect();
 	}, 4000);
     };
+
     var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');
     // reader may load out of order we need to make sure that doesn't
     var pendingReader = [];
