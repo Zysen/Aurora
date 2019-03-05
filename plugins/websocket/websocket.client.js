@@ -185,54 +185,91 @@ aurora.websocket.connect = function () {
 	}, 4000);
     };
     var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');
-    
+    // reader may load out of order we need to make sure that doesn't
+    var pendingReader = [];
+    var count = 0;
+    var prev = -1;
+
+    var schedule = function (doit) {
+        var cb = function () {
+            pendingReader.shift();
+            if (pendingReader.length > 0) {
+                pendingReader[0](cb);
+            };
+        };
+        var safe = function () {
+            try {
+                doit(cb);
+            }
+            catch (e) {
+                cb();
+            }
+        };
+        pendingReader.push (safe);
+        if (pendingReader.length === 1) {
+            pendingReader[0](cb);
+        }
+        
+    };
     connection.onmessage = function(packet) {
         if (packet.data instanceof Blob) {
-            var reader = new FileReader();
-            reader.onload = function() {
-                var data = reader.result;
-                var header = new Uint16Array(reader.result.slice(0, 6));
-                var pluginId = header[0];
-                var channelId = header[1];
-                var type = header[2];
-                var channel = channels[pluginId + '_' + channelId];
-                var decodedData = null;
-                if (type === aurora.websocket.enums.types.STRING) {
-                    decodedData = arrayBufferToString(reader.result.slice(6));
-                }
-                else if (type === aurora.websocket.enums.types.OBJECT) {
-                    decodedData = JSON.parse(arrayBufferToString(reader.result.slice(6)));
-                }
-                else if (type === aurora.websocket.enums.types.BINARY) {
-                    decodedData = reader.result.slice(6);
-                }
-                else {
-                    console.error('Websocket Receive: Unknown Type', type);
-                    return;
-                }
+            var myCount = count++;
+            
+            schedule(function (done) {
+                var reader = new FileReader();
+                reader.onload = function() {
+                    var data = reader.result;
+                    var header = new Uint16Array(reader.result.slice(0, 6));
+                    var pluginId = header[0];
+                    var channelId = header[1];
+                    var type = header[2];
+                    var channel = channels[pluginId + '_' + channelId];
+                    var decodedData = null;
+                    if ( myCount < prev) {
+                        console.log("out of order recieved", pluginId, prev, myCount);
+                    }
+                    prev = myCount;
+                    if (type === aurora.websocket.enums.types.STRING) {
+                        decodedData = arrayBufferToString(reader.result.slice(6));
+                    }
+                    else if (type === aurora.websocket.enums.types.OBJECT) {
+                        decodedData = JSON.parse(arrayBufferToString(reader.result.slice(6)));
+                    }
+                    else if (type === aurora.websocket.enums.types.BINARY) {
+                        decodedData = reader.result.slice(6);
+                    }
+                    else {
+                        console.error('Websocket Receive: Unknown Type', type);
+                        done();
+                        return;
+                    }
+                    if (channel) {
+                        channel.receive({data: decodedData});
+                    }
+                    else if (pluginId === websocketPluginId) {
+                        console.log("recived webSocket error");
+                        aurora.websocket.errorCallbacks_.slice(0).forEach(function (cb) {
+                            cb(decodedData);
+                        });
+                    }
+                    done();
 
-                if (channel) {
-                    channel.receive({data: decodedData});
-                }
-                else if (pluginId === websocketPluginId) {
-                    console.log("recived webSocket error");
-                    aurora.websocket.errorCallbacks_.slice(0).forEach(function (cb) {
-                        cb(decodedData);
-                    });
-                }
-            };
-            reader.readAsArrayBuffer(packet.data);
+                };
+                reader.readAsArrayBuffer(packet.data);
+            });
+            
         }
         else {
-            try {
-                var m = JSON.parse(packet.data);
-                console.log('Internal Channel Message', m);
-            } catch (e) {
-                console.log("This doesn't look like valid JSON: ", packet.data, e);
-                return;
-            }
+            schedule(function (done) {
+                try {
+                    var m = JSON.parse(packet.data);
+                    console.log('Internal Channel Message', m);
+                } catch (e) {
+                    console.log("This doesn't look like valid JSON: ", packet.data, e);
+                }
+                done();
+            });
         }
-
     };
 };
 
