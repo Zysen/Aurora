@@ -627,7 +627,7 @@ aurora.auth.Auth.prototype.login = function(token, seriesId, rememberMe, credent
     var doAuth = function(i) {
         if (i >= me.authenticators_.length) {
             me.sessions_.createSession(token, seriesId, constToken, rememberMe ? null : me.activeSessionExpiry_, data);
-            credentials.response(null, state);
+            credentials.response(null, state, data);
             return;
         }
         var auth = me.authenticators_[i];
@@ -638,7 +638,7 @@ aurora.auth.Auth.prototype.login = function(token, seriesId, rememberMe, credent
                 for (var j = i - 1; j >= 0; j--) {
                     me.authenticators_[j].unregister(constToken);
                 }
-                credentials.response(message, state);
+                credentials.response(message, state, data);
             } else {
                 doAuth(i + 1);
             }
