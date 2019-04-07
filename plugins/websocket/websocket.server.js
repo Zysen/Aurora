@@ -143,7 +143,10 @@ aurora.websocket.Server.prototype.onMessage = function(connection, message) {
                 this.channels_[m['pluginId'] + '_' + m['channelId']].unregister(connection.id);
                 break;
             default:
-                console.log('Unknown Command', m['command'], m);
+                // if command is undefined this it is just a ping request to see if the connection is alive
+                if (m['command'] !== undefined) {
+                    console.log('Unknown Command', m['command'], m);
+                }
                 break;
             }
         }
