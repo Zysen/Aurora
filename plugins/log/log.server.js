@@ -241,8 +241,8 @@ aurora.log.refresh = function() {
  * @return {?string}
  */
 aurora.log.getLogPath = function() {
-    if (config && config.config) {
-        return config.config['logOverride'] === true ? 'log.config' : config.config['logOverride'];
+    if (config && config['config']) {
+        return config['config']['logOverride'] === true ? 'log.config' : config['config']['logOverride'];
     }
     return null;
 };
