@@ -37,7 +37,9 @@ aurora.websocket.Server = function() {
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
         for (var portStr in serverInstance.lastSockets_) {
-            serverInstance.lastSockets_[portStr].close();
+            console.log("closing socket", serverInstance.lastSockets_[portStr]);
+            serverInstance.lastSockets_[portStr]['shutDown']();
+            console.log("closing socket done");
         }
         for (var portStr in servers) {
             var server = servers[portStr];
