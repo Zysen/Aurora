@@ -30,7 +30,7 @@ aurora.widgets = (function() {
         var element = document.createElement('div');
         element.innerHTML = html;
         return element.children;
-    };
+    }
 
     function inflateWidgets(element) {
         if (element.className != undefined && typeof(element.className) === 'string' && element.className.startsWith('widget_')) {
@@ -65,7 +65,7 @@ aurora.widgets = (function() {
         for (var i = 0; i < element.children.length; i++) {
             inflateWidgets(element.children[i]);
         }
-    };
+    }
 
     window.addEventListener('load', function() {
         inflateWidgets(document.body);

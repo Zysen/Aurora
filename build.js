@@ -481,11 +481,13 @@ processQueue(orderedScripts, function(){
 		var entryPoints = findExports(target.sources);
 		//console.log("Entry Points", entryPoints.join(" "));
 		var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
-		    return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global");
-		}).join("\r\n");
+		    return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global") + ';';
+		}).join("\n");
                 
 		//console.log("Entry Points:\r\n", entryStr);
-		fs.writeFileSync(entryFilePath, entryStr);
+		fs.writeFileSync(entryFilePath,'/**\n * @fileoverview automatically generated file for exports\n');
+                fs.appendFileSync(entryFilePath, ' * @suppress {lintChecks}\n */');
+                fs.appendFileSync(entryFilePath, entryStr);
 		
 		if(target.sourcesFile){
 		    config.plugins.forEach(function(pluginDir){
@@ -536,6 +538,7 @@ processQueue(orderedScripts, function(){
                              argsFileFlag, target.args || [],
                              ["--hide_warnings_for=closure/goog/base.js",
 			      "--js='"+entryFilePath+"'",
+                              "--jscomp_error=lintChecks",
 			      "--js='"+target.sources.join("' --js='")+"'",
 			      "--dependency_mode=STRICT",
 			      "--entry_point=entrypoints",

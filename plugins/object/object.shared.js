@@ -75,7 +75,7 @@ aurora.object.clone = function(source) {
     else if (source instanceof Object || typeof(source) == 'object') {
         var copy = {};
         for (var attr in source) {
-            if (source.hasOwnProperty(attr)) {copy[attr] = aurora.object.clone(source[attr])}
+            if (source.hasOwnProperty(attr)) {copy[attr] = aurora.object.clone(source[attr]);}
         }
         return copy;
     }else if (typeof(source) === 'string') {

@@ -131,7 +131,7 @@ aurora.http.escapeRegExp = function(str) {
         };
         httpServer.listen(port);
         return httpServer;
-    };
+    }
 
     var responseHeadersDef = (function() {
         var headers = {'Server': [config['http']['serverDescription'] || 'AuroraHTTP'], 'Date': [(new Date()).toGMTString()]};
@@ -269,7 +269,7 @@ aurora.http.escapeRegExp = function(str) {
             });
         };
         checkAndSend(path, !path.endsWith('.gz') && opt_sendGz, null);
-    };
+    }
 
 
     var resourcesBasePath = [__dirname, 'resources'].join(path.sep) + path.sep;

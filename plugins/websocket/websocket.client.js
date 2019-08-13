@@ -10,6 +10,10 @@ aurora.websocket.CON_STATUS = {
     DISCONNECTED: 0, CONNECTED: 1, ERRORED: 2
 };
 
+/**
+ * @param {?} data
+ * @return {?}
+ */
 function convertData(data) {
     if (typeof(data) === 'string') {
         return {type: aurora.websocket.enums.types.STRING, data: data};
@@ -24,7 +28,10 @@ function convertData(data) {
         console.error('convertData Unknown type ' + typeof(data));
     }
 }
-
+/**
+ * @param {!Uint8Array} array
+ * @return {string}
+ */
 function Utf8ArrayToStr(array) {
     var out, i, len, c;
     var char2, char3;
@@ -59,6 +66,10 @@ function Utf8ArrayToStr(array) {
     return out;
 }
 
+/**
+ * @param {?} ab
+ * @return {string}
+ */
 function arrayBufferToString(ab) {
     if (window.TextDecoder) {
         return new TextDecoder("utf-8").decode(new Uint8Array(ab));
@@ -67,7 +78,11 @@ function arrayBufferToString(ab) {
         return Utf8ArrayToStr(new Uint8Array(ab));
     }
 }
-
+/**
+ * @param {Array} data
+ * @param {boolean} littleEndian
+ * @return {!ArrayBuffer}
+ */ 
 function toUInt16ArrayBuffer(data, littleEndian) {
     littleEndian = littleEndian || true;
     if (typeof(data) === 'number') {
@@ -75,7 +90,7 @@ function toUInt16ArrayBuffer(data, littleEndian) {
     }
     var ab = new ArrayBuffer(data.length * 2);
     var dv = new DataView(ab);
-    for (var index in data) {
+    for (var index = 0; index < data.length; index++) {
         dv.setUint16(index * 2, data[index], littleEndian);
     }
     return ab;
@@ -136,6 +151,7 @@ aurora.websocket.onReady = function(cb) {
 };
 
 /**
+ * connect to server websocket
  */
 aurora.websocket.connect = function () {
     if (connection) {
@@ -200,7 +216,7 @@ aurora.websocket.connect = function () {
             pendingReader.shift();
             if (pendingReader.length > 0) {
                 pendingReader[0](cb);
-            };
+            }
         };
         var safe = function () {
             try {

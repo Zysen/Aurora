@@ -69,11 +69,11 @@ String.prototype.replaceBreaks = function() {
 /**
  * String Trim to length or first Stop(.)
  * @param {number} nLen
- * @return {string|String}
+ * @return {string}
  */
 String.prototype.short = function(nLen) {
     var nFSPos = this.indexOf('.');
-    return (this.length > nLen) ? ((nFSPos > -1) && (nFSPos < nLen + 1) && (nFSPos > 3)) ? this.split('.')[0].trim() + '' : this.substring(0, nLen).trim() + '' : this;
+    return (this.length > nLen) ? ((nFSPos > -1) && (nFSPos < nLen + 1) && (nFSPos > 3)) ? this.split('.')[0].trim() + '' : this.substring(0, nLen).trim() + '' : (this + '');
 };
 /**
  * @return {string}
@@ -125,7 +125,7 @@ String.prototype.right = function(n) {
 
 // Pads a string with zeros on the left.
 /**
- * @param {!number} new_length
+ * @param {number} new_length
  * @param {string} character
  * @return {string}
  */
@@ -186,7 +186,7 @@ String.prototype.clearPunc = function() {
 };
 
 /**
- * @return {!Array<!number>}
+ * @return {!Array<number>}
  */
 String.prototype.toByteArray = function() {
     var bytes = [];
@@ -199,7 +199,7 @@ String.prototype.toByteArray = function() {
 };
 
 /**
- * @param {!Array<!number>} bytes
+ * @param {!Array<number>} bytes
  * @return {string}
  */
 String.fromByteArray = function(bytes) {

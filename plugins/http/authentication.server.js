@@ -70,6 +70,7 @@ aurora.auth.SessionTable = function(auth) {
 };
 
 /**
+ * prints the session table to console
  */
 aurora.auth.SessionTable.prototype.print = function () {
     console.log("Session table");
@@ -83,7 +84,7 @@ aurora.auth.SessionTable.prototype.print = function () {
 aurora.auth.SessionTable.ClientEntry;
 
 /**
- * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:!string, expiry:?number, timeout:?number,data:Object}}
+ * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:string, expiry:?number, timeout:?number,data:Object}}
  */
 aurora.auth.SessionTable.Entry;
 /**
