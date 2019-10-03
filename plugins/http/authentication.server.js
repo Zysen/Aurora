@@ -35,18 +35,17 @@ aurora.auth.SessionTable = function(auth) {
         if (y.expiry === null) {
             return -1;
         }
+        
+        var xClients = x.expireWithClients ? false: hasClient(x);
+        var yClients = y.expireWithClients ? false: hasClient(y);
 
-        if (!me.expireSessionsWithClients_) {
-            var xClients = hasClient(x);
-            var yClients = hasClient(y);
-
-            if (xClients != yClients) {
-                if (xClients) {
-                    return 1;
-                }
-                return -1;
+        if (xClients != yClients) {
+            if (xClients) {
+                return 1;
             }
+            return -1;
         }
+
         var res = x.expiry - y.expiry;
 
         if (res === 0) {
@@ -84,7 +83,7 @@ aurora.auth.SessionTable.prototype.print = function () {
 aurora.auth.SessionTable.ClientEntry;
 
 /**
- * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:string, expiry:?number, timeout:?number,data:Object}}
+ * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:string, expiry:?number, expireWithClients: boolean, timeout:?number,data:Object}}
  */
 aurora.auth.SessionTable.Entry;
 /**
@@ -236,7 +235,7 @@ aurora.auth.SessionTable.prototype.removeSeriesId = function(seriesId) {
  */
 aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data) {
     var exp = timeout === null ? null : (process.hrtime()[0] * 1000 + timeout);
-    var session = {expiry: exp, token: token, constToken: constToken, seriesId: seriesId, data: data, timeout: timeout, clients: {}};
+    var session = {expiry: exp, token: token, constToken: constToken, seriesId: seriesId, data: data, timeout: timeout, expireWithClients: this.expireSessionsWithClients_, clients: {}};
     this.expiry_.add(session);
     this.table_[token] = session;
     this.internalTokens_[constToken] = token;
@@ -289,6 +288,30 @@ aurora.auth.SessionTable.prototype.findSession_ = function(token, seriesId, clie
 
 
 /**
+ * for a session set should it expire if it has open clients
+ *
+ * @param {string|undefined} token
+ * @param {boolean} val if true the session will expire even if it has clients
+ */
+
+aurora.auth.SessionTable.prototype.setExpireWithClients = function(token, val) {
+    var session = this.findSessions_(token);
+    if (session && session.expireWithClients != val) {
+        this.updateSession_(session, function() {session.expireWithClients = val;});
+    }
+};
+
+/**
+ * @param {string|undefined} token
+ * @return {boolean}
+ */
+aurora.auth.SessionTable.prototype.getExpireWithClients = function(token) {
+    var session = this.findSessions_(token);
+    return !!(session && session.expireWithClients);
+};
+
+
+/**
  * @private
  * updates the sessions and it expires later
  * @param {string|undefined} token
@@ -310,7 +333,7 @@ aurora.auth.SessionTable.prototype.expire = function() {
     var toRemove = [];
     this.expiry_.inOrderTraverse(function(s) {
         if (s.expiry <= now) {
-            if (!me.expireSessionsWithClients_) {
+            if (!s.expireWithClients) {
                 for (var k in s.clients) {
                     return true;
                 }
@@ -332,7 +355,7 @@ aurora.auth.SessionTable.prototype.expire = function() {
  * @param {boolean} val
  */
 aurora.auth.SessionTable.prototype.setSessionExpiresWithClient = function(val) {
-    if (this.expireSessionsWithClients_ === val) {
+    if (this.expireSessionsWithClients_ !== val) {
         var old = this.expiry_;
         var me = this;
         this.expireSessionsWithClients_ = val;
@@ -361,7 +384,7 @@ aurora.auth.SessionTable.prototype.updateExpire_ = function() {
     this.expiry_.inOrderTraverse(function(s) {
 
         if (s.expiry !== null) {
-            if (!me.expireSessionsWithClients_) {
+            if (!s.expireWithClients) {
                 for (var k in s.clients) {
                     return true;
                 }
@@ -548,7 +571,7 @@ aurora.auth.Auth.parseSessionToken = function(token) {
  * @param {number} timeout
  */
 aurora.auth.Auth.prototype.setSessionExpiryMs = function(timeout) {
-    this.activeSessionExpiry_ = timeout;
+    this.activeSessionExpiry_ = timeout ;
 };
 
 /**
@@ -748,10 +771,32 @@ aurora.auth.Auth.prototype.unregisterClientToken = function(clientId) {
  * I am not sure this works yet it seems to me we should use an constant token
  * and we don't seem to use the series id but probably should
  * @param {string} token
- * @param {string} seriesId
+ * @param {string=} opt_seriesId
  */
-aurora.auth.Auth.prototype.keepAlive = function(token, seriesId) {
-    this.sessions_.touch_(token);
+aurora.auth.Auth.prototype.keepAlive = function(token, opt_seriesId) 
+{
+    this.sessions_.touch_(this.sessions_.getInternalToken(token));
+};
+
+
+/**
+ * for a session set should it expire if it has open clients
+ *
+ * @param {string} token
+ * @param {boolean} val if true the session will expire even if it has clients
+ */
+
+aurora.auth.Auth.prototype.setExpireWithClients = function(token, val) {
+    this.sessions_.setExpireWithClients(this.sessions_.getInternalToken(token), val);
+};
+
+
+/**
+ * @param {string} token
+ * @return {boolean}
+ */
+aurora.auth.Auth.prototype.getExpireWithClients = function(token) {
+    return this.sessions_.getExpireWithClients(this.sessions_.getInternalToken(token));
 };
 
 /**
