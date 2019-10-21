@@ -307,12 +307,33 @@ window.addEventListener('load', function() {
  */
 function Channel(pluginId, channelId, messageCb) {
     var callbacks = [messageCb];
+    var onConnectCallbacks = [];
+    var onConnectCallbacksCalled = false;
     aurora.websocket.onReady(function() {
         if (connection) {
             connection.send(JSON.stringify({'command': aurora.websocket.enums.COMMANDS.REGISTER, 'pluginId': pluginId, 'channelId': channelId}));
+            if (onConnectCallbacks.length > 0) {
+                setTimeout(function () {
+                    onConnectCallbacksCalled = true;
+                    onConnectCallbacks.forEach(function (cb) {
+                        try {
+                            cb();
+                        }
+                        catch (e) {
+                            console.error(e);
+                        }
+                    });
+                },1);
+            }
         }
     });
 
+    this.addOnConnectCallback = function (cb) {
+        onConnectCallbacks.push(cb);
+        if (onConnectCallbacksCalled) {
+            cb();
+        }
+    };
     this.send = function(sendBuffer) {
         var data = convertData(sendBuffer);
         var doIt = function() {
@@ -352,9 +373,10 @@ function Channel(pluginId, channelId, messageCb) {
  * @param {string} pluginName
  * @param {number} channelId
  * @param {function(?)} messageCallback
+ * @param {function()=} opt_onConnectCb
  * @return {?Channel}
  */
-aurora.websocket.getChannel = function(pluginName, channelId, messageCallback) {
+aurora.websocket.getChannel = function(pluginName, channelId, messageCallback, opt_onConnectCb) {
     var pluginId = aurora.websocket.constants.plugins.indexOf(pluginName);
     if (pluginId < 0) {
         console.error('websocket.getChannel no plugin called ' + pluginName);
@@ -370,6 +392,10 @@ aurora.websocket.getChannel = function(pluginName, channelId, messageCallback) {
     else {
         channel.addCallback(messageCallback);
     }
+    if (opt_onConnectCb) {
+        channel.addOnConnectCallback(opt_onConnectCb);
+    }
+    
     return channel;
 };
 
