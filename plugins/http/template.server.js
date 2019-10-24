@@ -7,9 +7,11 @@ goog.require('config');
  * @param {string} location
  * @param {Object} parameters
  * @param {boolean} cache
+ * @param {number=} opt_responseCode http response
+ * @param {function(!aurora.http.RequestState):Object<string,string>=} opt_headers extra http headers
  * @return {function(!aurora.http.RequestState)}
  */
-aurora.template.provide = function(location, parameters, cache) {
+aurora.template.provide = function(location, parameters, cache, opt_responseCode, opt_headers) {
     var fs = require('fs');
     var mime = require('mime');
     return function(state) {
@@ -38,7 +40,16 @@ aurora.template.provide = function(location, parameters, cache) {
                     headers.set('Accept-Ranges', 'bytes');
                     headers.set('Cache-Control', 'no-cache, must-revalidate');
                     headers.set('Last-Modified', stats.mtime.toGMTString());
-                    response.writeHead(200, headers.toClient());
+                    if (opt_headers) {
+                        var extraHeaders = opt_headers(request);
+                        for (var k in extraHeaders) {
+                            if (extraHeaders.hasOwnProperty(k)) {
+                                headers.set(k, extraHeaders[k]);
+                            }
+                        }
+                    }
+                    response.writeHead(opt_responseCode === undefined ? 200 : opt_responseCode,
+                                       headers.toClient());
                     response.write(data);
                     response.end();
                 }
