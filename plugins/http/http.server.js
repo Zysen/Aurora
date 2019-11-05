@@ -1,4 +1,5 @@
 goog.provide('aurora.http');
+goog.require('aurora.websocket.enums');
 goog.require('config');
 goog.require('goog.structs.AvlTree');
 goog.require('recoil.util.object');
@@ -83,11 +84,12 @@ aurora.http.escapeRegExp = function(str) {
      * all other requests of the same priority are skipped
      * @param {RegExp|string} pattern
      * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean} allowLocked (default false)
      */
-    aurora.http.addRequestCallback = function(priority, pattern, callback) {
+    aurora.http.addRequestCallback = function(priority, pattern, callback, allowLocked) {
         var existing = callbacks.findFirst({key: priority});
         var pat = typeof (pattern) === 'string' ? new RegExp('^' + pattern) : pattern;
-        var data = {pattern: pattern, callback: callback};
+        var data = {pattern: pattern, callback: callback, allowLocked: allowLocked};
         if (existing) {
             existing.callbacks.push(data);
         }
@@ -98,16 +100,18 @@ aurora.http.escapeRegExp = function(str) {
     /**
      * @param {RegExp|string} pattern
      * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean=} opt_allowLocked default true, if true no lock check will be performed
      */
-    aurora.http.addPreRequestCallback = function(pattern, callback) {
-        aurora.http.addRequestCallback(0, pattern, callback);
+    aurora.http.addPreRequestCallback = function(pattern, callback, opt_allowLocked) {
+        aurora.http.addRequestCallback(0, pattern, callback, opt_allowLocked == undefined ? true : false);
     };
     /**
      * @param {RegExp|string} pattern
      * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
      */
-    aurora.http.addMidRequestCallback = function(pattern, callback) {
-        aurora.http.addRequestCallback(5, pattern, callback);
+    aurora.http.addMidRequestCallback = function(pattern, callback, opt_allowLocked) {
+        aurora.http.addRequestCallback(5, pattern, callback, !!opt_allowLocked);
     };
 
     function startServer(type, port, callback, opt_options) {
@@ -315,9 +319,13 @@ aurora.http.escapeRegExp = function(str) {
             var exit = false;
             var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
             //            allRequests.push(state);
+            
             callbacks.inOrderTraverse(function(cb) {
                 for (var i = 0; i < cb.callbacks.length; i++) {
                     var cur = cb.callbacks[i];
+                    if (state.locked && !cb.allowLocked) {
+                        continue;
+                    }
                     if (cur.pattern.test(parsedUrl.pathname)) {
                         var res = cur.callback(state);
                         if (res === false) {
@@ -477,9 +485,10 @@ aurora.http.escapeRegExp = function(str) {
      * @param {RegExp} url
      * @param {string} file
      * @param {function(function(string,string=),?=)|string} sendFileNameCB a callback or a string to get the filename, this may be nessary because you may want to
+     * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
      * send the modified date or the current date as part of the filename
      */
-    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB) {
+    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB, opt_allowLocked) {
         var nameCallback = typeof(sendFileNameCB) === 'string' ?
                 function(cb1) {
                     cb1(sendFileNameCB, undefined);
@@ -491,7 +500,7 @@ aurora.http.escapeRegExp = function(str) {
                 aurora.http.sendFileDownload(filePath, state.request, state.response, state.responseHeaders, name);
             }, state);
             return false;
-        });
+        }, opt_allowLocked);
     };
 
     aurora.http.sendDataAsyncDownload = function(request, response, headers, filename) {

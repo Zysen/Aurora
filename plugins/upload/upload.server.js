@@ -14,7 +14,7 @@ aurora.Upload = function() {
 /**
  * @param {string} urlPathPrefix
  * @param {string} fileDestination
- * @param {function(({start:boolean}|{error:?, data:?}))} cb
+ * @param {function(({start:boolean}|{error:?, data:?, url:string, token:string}))} cb
  * @param {{restrictedExtension:(string|undefined),
  *          allowOverwrite:(boolean|undefined),
  *          overrideFilename:(string|undefined),
@@ -47,10 +47,9 @@ aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, 
                 catch (e) {
                     log.error('error removing file', e);
                 }
-
                 return me.handleUpload_(state, fileDestination, opts.restrictedExtension || '', !!opts.allowOverwrite, opts.overrideFilename || '',
                     function(err, data) {
-                        cb({error: err, data: data});
+                        cb({error: err, data: data, url: (state.request.url || ""), token: state.token});
                     });
             }
             return undefined;

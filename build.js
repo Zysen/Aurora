@@ -476,8 +476,7 @@ processQueue(orderedScripts, function(){
 		    }
 		    return p;
 		});
-		
-		var entryFilePath = config.output+path.sep+"aurora.entry.js";		//os.tmpdir()
+		var entryFilePath = config.output+path.sep+target.filename+"-aurora.entry.js";		//os.tmpdir()
 		var entryPoints = findExports(target.sources);
 		//console.log("Entry Points", entryPoints.join(" "));
 		var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
@@ -531,7 +530,7 @@ processQueue(orderedScripts, function(){
                 if (hasFileArgs) {
                     argsFileFlag = ['--flagfile', argsFile];
                 }
-
+                console.log("level", level);
 		var buildCommandArray = 
                         [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
 			 "--env="+target.env+""].concat(
@@ -553,8 +552,8 @@ processQueue(orderedScripts, function(){
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
 
-				var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
-				if(target.sourceMapLocation){
+		var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
+		if(target.sourceMapLocation){
 					if(target.sourceMapLocation==="local"){
 						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.filename+".map\n%output%");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
@@ -563,11 +562,18 @@ processQueue(orderedScripts, function(){
 						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n%output%");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
 					}				
-					else if(target.nodejs){
+				    else if(target.nodejs){
 						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith(\"server.min.js\")){return {url: \"server.min.js.map\",map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
 					}
-				}
+		}
+                else if (target.nodejs && debug) {
+                    buildCommandArray.push("--assume_function_wrapper");
+		    //fs.writeFileSync(customOutputWrapperPath, "(function() {%output%}).call(global);");
+		//				buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
+                }
+
+                    
 
 				var buildCommand = buildCommandArray.join(" ");
 				

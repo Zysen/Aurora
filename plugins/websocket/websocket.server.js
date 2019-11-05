@@ -19,6 +19,12 @@ aurora.websocket.ChannelControlMessage;
 aurora.websocket.MessageType;
 
 /**
+ * @typedef {{lock:(undefined|function(string)), unlock:(undefined|function (string)), 
+ *           receive:(undefined|function(?):boolean), send:(undefined|function(?):boolean)}}
+ */
+aurora.websocket.LockHandler;
+
+/**
  * @final
  */
 aurora.websocket.crypto = require('crypto');
@@ -33,6 +39,24 @@ aurora.websocket.WebSocketServer = require('websocket')['server'];
  */
 aurora.websocket.Server = function() {
     let log = aurora.log.createModule('WEBSOCKET');
+    this.locked_ = {};
+    let me = this;
+    aurora.auth.instance.addLockHandler(function (token, locked) {
+        if (locked) {
+            me.locked_[token] = true;
+        }
+        else {
+            delete me.locked_[token];
+        }
+        try {
+            for (let id in me.channels_) {
+                me.channels_[id].lock(token, locked);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+
+    });
     
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
@@ -290,6 +314,11 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     var clientRegistration = {};
     var callbacks = [messageCb];
     var registerCallbacks = [];
+    var locked =         aurora.websocket.Server.instance.locked_;
+    /**
+     * @type {Array<!aurora.websocket.LockHandler>}
+     */
+    var lockHandlers = [];
 
     var channelHeader = new global.Buffer(4);
     channelHeader.writeUInt16LE(pluginId, 0);
@@ -300,6 +329,52 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
             var token = aurora.auth.instance.getClientToken(connection.id);
             cb(connection, token);
         });
+    };
+
+    this.lock = function (token, locked) {
+        lockHandlers.forEach(function (h) {
+            if (locked) {
+                if (h.lock) {
+                    h.lock(token);
+                }
+            }
+            else {
+                if (h.unlock) {
+                    h.unlock(token);
+                }
+            }
+        });
+    };
+    this.addLockHandler = function (handler) {
+        if (handler.send) {
+            if (!(handler.send instanceof Function)) {
+                console.error("adding invalid handler");
+            }
+        }
+        lockHandlers.push(handler);
+    };
+
+    let isLocked = function (message, cb) {
+        if (message && locked[message.token]) {
+            let allow = false;
+            for (let i = 0; i < lockHandlers.length; i++) {
+                allow = allow || cb(lockHandlers[i],message);
+            }
+            return !allow;
+        }
+        return false;
+    };
+
+    let isSendLocked = function (connection, message, cb) {
+        let token = aurora.auth.instance.getClientToken(connection.id);
+        if (message && locked[token]) {
+            let allow = false;
+            for (let i = 0; i < lockHandlers.length; i++) {
+                allow = allow || cb(lockHandlers[i],message);
+            }
+            return !allow;
+        }
+        return false;
     };
     /**
      * @param {function(?)|function(?,?)} callback
@@ -317,7 +392,12 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     this.addCallback = function(messageCb2) {
         callbacks.push(messageCb2);
     };
+
+    
     this.receive = function(message) {
+        if (isLocked(message, function(h, m) {return (!!h.receive && h.receive(m));})) {
+            return;
+        }
         callbacks.forEach(function(cb) {
             cb(message);
         });
@@ -358,10 +438,12 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
      * @public
      * @param {number} type
      * @param {string|buffer.Buffer|Object} message Message payload
+     * @param {?} origMessage
      * @param {(string|?)=} clientId If specified the message will only be sent to this client.
      * @param {function(?, string):boolean=} filter
      */
-    var sendRaw = function(type, message, clientId, filter) {
+    var sendRaw = function(type, message, origMessage, clientId, filter) {
+
         var typeBuffer = new global.Buffer(2);
         typeBuffer.writeUInt16LE(type, 0);
         message = global.Buffer.concat([channelHeader, typeBuffer, message]);
@@ -372,14 +454,19 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
             }
             if (connection) {
                 // client my have been deregistered don't send to it if it has
-                connection.send(message);
+                if (!isSendLocked(connection, origMessage, function(h, m) {return (!!h.send && h.send(m));})) {
+                    connection.send(message);
+                }
             }
         }
         else {
             for (var clientId2 in clientRegistration) {
                 let connection = clientRegistration[clientId2];
                 if (!filter || filter(connection, aurora.auth.instance.getClientToken(clientId2))) {
-                    connection.send(message);
+                    if (!isSendLocked(connection, origMessage, function(h, m) {
+                        return !!h.send && h.send(m);})) {
+                        connection.send(message);
+                    }
                 }
             }
         }
@@ -393,7 +480,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
      */
     this.send = function(message, clientId, filter) {
         message = aurora.websocket.Server.instance.convertData_(message);
-        sendRaw(message.type, new global.Buffer(message.data), clientId, filter);
+        sendRaw(message.type, new global.Buffer(message.data), message, clientId, filter);
     };
     /**
      * This function sends a message.
@@ -403,7 +490,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
      * @param {function(?, string):boolean=} filter
      */
     this.sendBinary = function(message, clientId, filter) {
-        sendRaw(aurora.websocket.enums.types.BINARY, message, clientId, filter);
+        sendRaw(aurora.websocket.enums.types.BINARY, message, message, clientId, filter);
     };
 
 };

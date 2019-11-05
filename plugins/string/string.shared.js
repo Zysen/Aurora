@@ -1,9 +1,10 @@
 goog.provide('aurora.string');
 
 /**
- @export
+ * @export
  */
 aurora.string = {};
+
 /**
  * @suppress {checkTypes} because of redefinition
  * @param {string} prefix

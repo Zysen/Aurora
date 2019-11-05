@@ -14,6 +14,11 @@ aurora.auth.SessionTable = function(auth) {
     this.log_ = aurora.log.createModule('AUTH');
     this.auth_ = auth;
     this.expireSessionsWithClients_ = false;
+    this.defaultLockTimeout_ = 0;
+    /**
+     * @type {Array<function(string,boolean)>}
+     */
+    this.lockHandlers_ = [];
     var me = this;
     var compareSession = function(x, y) {
         return recoil.util.object.compare([x.token, x.seriesId], [y.token, y.seriesId]);
@@ -25,6 +30,33 @@ aurora.auth.SessionTable = function(auth) {
         }
         return false;
     };
+    /**
+     * @private
+     * @param {!aurora.auth.SessionTable.Entry} s1
+     * @param {!aurora.auth.SessionTable.Entry} s2
+     * @return {number}
+     */
+    this.compareLockExpiry_ = function (s1, s2) {
+        if (s1.locked == s2.locked) {
+            return compareSession(s1, s2);
+        }
+        // locked items come last since they don't expire
+        if (s1.locked || s2.locked) {
+            return s1.locked ? 1 : -1;
+        }
+
+        // deal with never lock
+        if (!s1.lockTime && !s2.lockTime) {
+            return compareSession(s1, s2);
+        }
+
+        if (!s1.lockTime || !s2.lockTime) {
+            return !s1.lockTime ? -1 : 1;
+        }
+        
+        return s1.lockTime - s2.lockTime;
+    };
+    
     this.compareExpiry_ = function(x, y) {
         if (x.expiry === null && y.expiry === null) {
             return compareSession(x, y);
@@ -58,6 +90,11 @@ aurora.auth.SessionTable = function(auth) {
      * @type {goog.structs.AvlTree<!aurora.auth.SessionTable.Entry>}
      */
     this.expiry_ = new goog.structs.AvlTree(this.compareExpiry_);
+    /**
+     * @private
+     * @type {goog.structs.AvlTree<!aurora.auth.SessionTable.Entry>}
+     */
+    this.lockExpiry_ = new goog.structs.AvlTree(this.compareLockExpiry_);
     this.table_ = {};
     this.clients_ = {};
     /**
@@ -83,7 +120,9 @@ aurora.auth.SessionTable.prototype.print = function () {
 aurora.auth.SessionTable.ClientEntry;
 
 /**
- * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:string, expiry:?number, expireWithClients: boolean, timeout:?number,data:Object}}
+ * @typedef {{clients:Object<string,aurora.auth.SessionTable.ClientEntry>, token:string, constToken:string, seriesId:string,
+ *   locked:boolean, lockTimeout:number, lockTime:?number,
+ *   expiry:?number, expireWithClients: boolean, timeout:?number,data:Object}}
  */
 aurora.auth.SessionTable.Entry;
 /**
@@ -99,6 +138,13 @@ aurora.auth.SessionTable.prototype.findSessions_ = function(token, opt_seriesId)
         return undefined;
     }
     return v;
+};
+/**
+ * the function will be called with token and true if locked
+ * @param {function(string,boolean)} callback
+ */
+aurora.auth.SessionTable.prototype.addLockHandler = function (callback) {
+    this.lockHandlers_.push(callback);
 };
 
 /**
@@ -198,8 +244,21 @@ aurora.auth.SessionTable.prototype.updateSession_ = function(session, cb) {
     if (session.expiry !== null) {
         this.expiry_.remove(session);
     }
+
+    this.lockExpiry_.remove(session);
+    
     cb();
 
+    if (!session.locked) {
+        if (session.lockTimeout) {
+            session.lockTime = process.hrtime()[0] * 1000 + session.lockTimeout;
+        }
+        else {
+            session.lockTime = 0;
+        }
+    }
+    this.lockExpiry_.add(session);
+    
     if (session.expiry !== null) {
         session.expiry = process.hrtime()[0] * 1000 + session.timeout;
         this.expiry_.add(session);
@@ -235,8 +294,15 @@ aurora.auth.SessionTable.prototype.removeSeriesId = function(seriesId) {
  */
 aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data) {
     var exp = timeout === null ? null : (process.hrtime()[0] * 1000 + timeout);
-    var session = {expiry: exp, token: token, constToken: constToken, seriesId: seriesId, data: data, timeout: timeout, expireWithClients: this.expireSessionsWithClients_, clients: {}};
+    let lockTime = this.defaultLockTimeout_ ? process.hrtime()[0] * 1000 + this.defaultLockTimeout_ : 0;
+    var session = {
+        locked: false, lockTimeout: this.defaultLockTimeout_ , lockTime: lockTime,
+        expiry: exp, token: token, constToken: constToken, seriesId: seriesId,
+        data: data, timeout: timeout, expireWithClients: this.expireSessionsWithClients_, clients: {}
+    };
+
     this.expiry_.add(session);
+    this.lockExpiry_.add(session);
     this.table_[token] = session;
     this.internalTokens_[constToken] = token;
     this.updateExpire_();
@@ -264,6 +330,10 @@ aurora.auth.SessionTable.prototype.remove = function(token) {
         delete this.table_[token];
         delete this.internalTokens_[session.constToken];
         this.expiry_.remove(session);
+        this.lockExpiry_.remove(session);
+        this.lockHandlers_.forEach(function(h) {
+            h(session.constToken, false);
+        });
         for (var cid in session.clients) {
             delete me.clients_[cid];
         }
@@ -301,6 +371,25 @@ aurora.auth.SessionTable.prototype.setExpireWithClients = function(token, val) {
     }
 };
 
+
+/**
+ * @param {string|undefined} token
+ * @param {boolean} val if true the session will expire even if it has clients
+ */
+
+aurora.auth.SessionTable.prototype.setAllowLock = function(token, val) {
+    var session = this.findSessions_(token);
+    let me = this;
+    if (session) {
+        this.updateSession_(session, function() {
+            if (!session.locked) {
+                session.lockTimeout = val ? me.defaultLockTimeout_ : 0;
+            }
+        });
+    }
+};
+
+
 /**
  * @param {string|undefined} token
  * @return {boolean}
@@ -310,6 +399,15 @@ aurora.auth.SessionTable.prototype.getExpireWithClients = function(token) {
     return !!(session && session.expireWithClients);
 };
 
+
+/**
+ * @param {string|undefined} token
+ * @return {boolean}
+ */
+aurora.auth.SessionTable.prototype.getAllowLock = function(token) {
+    var session = this.findSessions_(token);
+    return !!(session && !!session.lockTimeout);
+};
 
 /**
  * @private
@@ -350,6 +448,77 @@ aurora.auth.SessionTable.prototype.expire = function() {
     this.updateExpire_();
 };
 
+/**
+ * @param {string} token
+ */
+aurora.auth.SessionTable.prototype.unlock = function(token) {
+
+    var session = this.findSessions_(token);
+    if (session) {
+        this.updateSession_(session, function() {
+            session.locked = false;
+        });
+        this.lockHandlers_.forEach(function(h) {
+            h(session.constToken, false);
+        });
+    }
+};
+
+/**
+ * locks a particular session
+ * @param {string} token
+ */
+aurora.auth.SessionTable.prototype.lock = function(token) {
+    var session = this.findSessions_(token);
+    if (session) {
+        this.updateSession_(session, function() {
+            session.locked = true;
+        });
+        this.lockHandlers_.forEach(function(h) {
+            h(session.constToken, true);
+        });
+    }
+};
+
+
+/**
+ * @private
+ * locks all sessions past there lock time
+ */
+aurora.auth.SessionTable.prototype.lock_ = function() {
+    var now = process.hrtime()[0] * 1000;
+    var me = this;
+    var toLock = [];
+    this.lockExpiry_.inOrderTraverse(function(s) {
+        if (!s.locked && s.lockTime && s.lockTime <= now) {
+            toLock.push(s);
+            return false;
+        }
+        return true;
+    });
+    toLock.forEach(function(s) {
+        me.lockExpiry_.remove(s);
+        s.locked = true;
+        me.lockExpiry_.add(s);
+    });
+    toLock.forEach(function(s) {
+        
+        me.lockHandlers_.forEach(function(h) {
+            h(s.constToken, true);
+        });
+    });
+
+    this.updateExpire_();
+};
+
+
+/**
+ * 0 means session never locks
+ * @param {number} val
+ */
+aurora.auth.SessionTable.prototype.setDefaultLockTimeout = function(val) {
+    this.defaultLockTimeout_ = val;
+};
 
 /**
  * @param {boolean} val
@@ -371,7 +540,37 @@ aurora.auth.SessionTable.prototype.setSessionExpiresWithClient = function(val) {
  * @private
  * set the callback to check the next expiry time
  */
+aurora.auth.SessionTable.prototype.updateLockExpire_ = function() {
+    var now = process.hrtime()[0] * 1000;
+    var toRemove = [];
+    var me = this;
+    if (me.nextLockExpire_) {
+        clearTimeout(me.nextLockExpire_);
+        this.nextLockExpire_ = null;
+    }
+
+    var curTime = process.hrtime()[0] * 1000;
+    this.lockExpiry_.inOrderTraverse(function(s) {
+        if (s.locked || !s.lockTime) {
+            // this is locked, or doesn't timeout so everything after is irrelevant
+            return true;
+        }
+        
+        me.nextLockExpire_ = setTimeout(function() {
+            me.nextLockExpire_ = null;
+            me.lock_();
+        }, Math.max(1, 1 + s.lockTime - curTime));
+        return true;
+    });
+
+};
+
+/**
+ * @private
+ * set the callback to check the next expiry time
+ */
 aurora.auth.SessionTable.prototype.updateExpire_ = function() {
+    this.updateLockExpire_();
     var now = process.hrtime()[0] * 1000;
     var toRemove = [];
     var me = this;
@@ -398,6 +597,7 @@ aurora.auth.SessionTable.prototype.updateExpire_ = function() {
     });
 
 };
+
 /**
  * @typedef {{validate:function(string, Object,Object, function(string)), unregister:function(string), getCredentials:?function(aurora.http.RequestState,function (?)):?}}
  */
@@ -474,6 +674,7 @@ aurora.auth.Auth = function() {
         var session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
         if (session) {
             state.token = session.constToken;
+            state.locked = session.locked;
             me.sessions_.touch_(token);
             return undefined;
         }
@@ -791,6 +992,24 @@ aurora.auth.Auth.prototype.setExpireWithClients = function(token, val) {
 };
 
 
+
+/**
+ * @param {string} token
+ * @param {boolean} val if true the session will expire even if it has clients
+ */
+
+aurora.auth.Auth.prototype.setAllowLock = function(token, val) {
+    this.sessions_.setAllowLock(this.sessions_.getInternalToken(token), val);
+};
+
+/**
+ * the function will be called with token and true if locked
+ * @param {function(string,boolean)} callback
+ */
+aurora.auth.Auth.prototype.addLockHandler = function (callback) {
+    this.sessions_.addLockHandler(callback);
+};
+
 /**
  * @param {string} token
  * @return {boolean}
@@ -798,6 +1017,41 @@ aurora.auth.Auth.prototype.setExpireWithClients = function(token, val) {
 aurora.auth.Auth.prototype.getExpireWithClients = function(token) {
     return this.sessions_.getExpireWithClients(this.sessions_.getInternalToken(token));
 };
+
+
+/**
+ * @param {string} token
+ * @return {boolean}
+ */
+aurora.auth.Auth.prototype.getAllowLock = function(token) {
+    return this.sessions_.getAllowLock(this.sessions_.getInternalToken(token));
+};
+
+
+/**
+ * 0 means session never locks
+ * @param {number} val
+ */
+aurora.auth.Auth.prototype.setDefaultLockTimeout = function(val) {
+    this.sessions_.setDefaultLockTimeout(val);
+};
+
+
+/**
+ * @param {string} token
+ */
+aurora.auth.Auth.prototype.unlock = function(token) {
+    this.sessions_.unlock(this.sessions_.getInternalToken(token));
+};
+
+/**
+ * really for debugging only so client can force a lock so I don't have to wait
+ * @param {string} token
+ */
+aurora.auth.Auth.prototype.lock = function(token) {
+    this.sessions_.lock(this.sessions_.getInternalToken(token));
+};
+
 
 /**
  * @return {{token:string, seriesId:string}}
