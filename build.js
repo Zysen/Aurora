@@ -22,6 +22,8 @@ else {
 	JAVA = 'java'
 }
 
+
+
 var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
 var debug = false;
 var build = null;
@@ -110,6 +112,26 @@ var parseGlob = function (part) {
 
 var isGlob = function (part) {
     return parseGlob(part).glob;
+};
+
+
+var forEachSearchExp = function (pluginName, exp, cb) {
+    if (exp instanceof Array) {
+        for (let i = 0; i < exp.length; i++) {
+            let item = exp[i];
+            if (typeof(item) === 'string') {
+                cb(item);
+                                    }
+            else if (item.plugin && parseGlob(item.plugin).pat(pluginName)) {
+                forEachSearchExp(pluginName, item.search, cb);
+                break;
+            }
+        }
+    }
+    else if (typeof(exp) === 'string') {
+        cb(exp);
+    }
+    
 };
 var scanGlobRec = function (parts, split, cb) {
     if (split >= parts.length) {
@@ -396,29 +418,34 @@ processQueue(orderedScripts, function(){
                             return;
                         }
 
-				target.searchExp.forEach(function(searchExpStr){
-					fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
-					    var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
-                                            if (shouldBuild(target)) {
-					        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
-                                            }
-					    if(stat.isFile()){
-							if(pluginFileName==="config.json"){
-								pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
-							}
-													if (!shouldBuild(target)) { 
-														return;
-													}
-
-                                                
-							var match = pluginFileName.match(searchExpStr);
-							if(match!==null){
-								buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
-							}	
-					    }
-					});
-				});
+                        var seenFiles = {};
+                        forEachSearchExp(pluginName, target.searchExp,function(searchExpStr){
+			    fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
+				var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
+                                if (shouldBuild(target)) {
+				    copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
+                                }
+				if(stat.isFile()){
+				    if(pluginFileName==="config.json"){
+					pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
+				    }
+				    if (!shouldBuild(target)) { 
+					return;
+				    }
+                                    
+                                    
+				    var match = pluginFileName.match(searchExpStr);
+				    if(match!==null){
+                                        let fileName = path.resolve(path.join(pluginDir,pluginName, pluginFileName));
+                                        if (!seenFiles[fileName]) {
+                                            seenFiles[fileName] = true;
+					    buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
+                                        }
+				    }	
+				}
+			    });
 			});
+		    });
 		});
 	});
 	try{
@@ -443,6 +470,7 @@ processQueue(orderedScripts, function(){
             throw "match glob failed";
         }
     };
+    console.log(parseGlob("pcr"));
     testGlob("*", true);
     testGlob("fred*.js", true);
     testGlob("fred\\\\*.js", true);
@@ -532,8 +560,8 @@ processQueue(orderedScripts, function(){
                 }
                 console.log("level", level);
 		var buildCommandArray = 
-                        [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
-			 "--env="+target.env+""].concat(
+                    [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
+                     "--env="+target.env+""].concat(
                              argsFileFlag, target.args || [],
                              ["--hide_warnings_for=closure/goog/base.js",
 			      "--js='"+entryFilePath+"'",
@@ -547,11 +575,17 @@ processQueue(orderedScripts, function(){
 			      "--js_output_file='"+config.output + path.sep + target.filename+"'",
 			      "--create_source_map='"+config.output + path.sep + target.filename+".map'",
 			      "--source_map_format=V3",
-			      "--source_map_include_content=true"]);
+			      "--source_map_include_content=true", ]);
 			    //"--export_local_property_definitions"
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
-
+                if (target.defines) {
+                    target.defines.forEach(function (def) {
+                        buildCommandArray.push('-D');
+                        buildCommandArray.push(def);
+                    });
+                        
+                }
 		var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
 		if(target.sourceMapLocation){
 					if(target.sourceMapLocation==="local"){
