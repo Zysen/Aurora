@@ -22,13 +22,13 @@ config = (function() {
                     pub.configE.emit(diff.path.join('/'), diff, true);
                 });
                 lastConfig = newConfig;
-                
+
                 if (newConfig.aurora && newConfig.aurora.title !== undefined) {
                     process.title = config.aurora.title;
                 }
             }
             catch (e) {
-                console.error("error reading config file", e);
+                console.error('error reading config file', e);
             }
         });
     });

@@ -49,7 +49,7 @@ aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, 
                 }
                 return me.handleUpload_(state, fileDestination, opts.restrictedExtension || '', !!opts.allowOverwrite, opts.overrideFilename || '',
                     function(err, data) {
-                        cb({error: err, data: data, url: (state.request.url || ""), token: state.token});
+                        cb({error: err, data: data, url: (state.request.url || ''), token: state.token});
                     });
             }
             return undefined;

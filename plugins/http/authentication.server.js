@@ -3,6 +3,7 @@ goog.provide('aurora.auth.instance');
 
 goog.require('aurora.http');
 goog.require('aurora.log');
+goog.require('aurora.sync.Channel');
 goog.require('config');
 goog.require('recoil.util.Sequence');
 goog.require('recoil.util.object');
@@ -36,7 +37,7 @@ aurora.auth.SessionTable = function(auth) {
      * @param {!aurora.auth.SessionTable.Entry} s2
      * @return {number}
      */
-    this.compareLockExpiry_ = function (s1, s2) {
+    this.compareLockExpiry_ = function(s1, s2) {
         if (s1.locked == s2.locked) {
             return compareSession(s1, s2);
         }
@@ -53,10 +54,10 @@ aurora.auth.SessionTable = function(auth) {
         if (!s1.lockTime || !s2.lockTime) {
             return !s1.lockTime ? -1 : 1;
         }
-        
+
         return s1.lockTime - s2.lockTime;
     };
-    
+
     this.compareExpiry_ = function(x, y) {
         if (x.expiry === null && y.expiry === null) {
             return compareSession(x, y);
@@ -67,9 +68,9 @@ aurora.auth.SessionTable = function(auth) {
         if (y.expiry === null) {
             return -1;
         }
-        
-        var xClients = x.expireWithClients ? false: hasClient(x);
-        var yClients = y.expireWithClients ? false: hasClient(y);
+
+        var xClients = x.expireWithClients ? false : hasClient(x);
+        var yClients = y.expireWithClients ? false : hasClient(y);
 
         if (xClients != yClients) {
             if (xClients) {
@@ -102,16 +103,61 @@ aurora.auth.SessionTable = function(auth) {
      * @type {!Object<string,string>}
      */
     this.internalTokens_ = {};
+    this.isMaster_ = true;
+    this.remoteSessions_ = {};
+
+    this.sync_ = aurora.sync.instance.createChannel('sync', 'http', 0, this, function(mode) {
+        let wasMaster = me.isMaster_;
+        me.isMaster_ = mode !== aurora.sync.Mode.SLAVE;
+        if (!wasMaster && me.isMaster_) {
+            // change to master
+            // this is not right things will may not fire correctly if we jsut
+            me.removeAll();
+            for (let token in me.remoteSessions_) {
+                let s = me.remoteSessions_[token];
+                me.createSession(s['token'], s['seriesId'], s['constToken'], s['timeout'], s['data'], s['locked']);
+            }
+            me.remoteSessions_ = {};
+
+        }
+
+
+    }, function(cid) {
+        let toSend = {};
+        for (let token in me.table_) {
+            toSend[token] = me.serializeSession_(me.table_[token]);
+        }
+        me.sync_.write({'action': 'register', 'sessions': toSend}, cid);
+    }, function(m) {
+        if (m) {
+            let action = m['action'];
+            if (action === 'register') {
+                me.removeAll();
+                me.remoteSessions_ = m['sessions'] || {};
+            }
+            else if (action === 'update') {
+                let s = m['session'];
+                let token = m['token'];
+                if (s) {
+                    me.remoteSessions_[token] = m['session'];
+                }
+                else {
+                    delete me.remoteSessions_[token];
+                }
+            }
+        }
+    });
 
 };
+
 
 /**
  * prints the session table to console
  */
-aurora.auth.SessionTable.prototype.print = function () {
-    console.log("Session table");
+aurora.auth.SessionTable.prototype.print = function() {
+    console.log('Session table');
     for (var k in this.table_) {
-        console.log(k + " -> ", this.table_[k]);
+        console.log(k + ' -> ', this.table_[k]);
     }
 };
 /**
@@ -143,7 +189,7 @@ aurora.auth.SessionTable.prototype.findSessions_ = function(token, opt_seriesId)
  * the function will be called with token and true if locked
  * @param {function(string,boolean)} callback
  */
-aurora.auth.SessionTable.prototype.addLockHandler = function (callback) {
+aurora.auth.SessionTable.prototype.addLockHandler = function(callback) {
     this.lockHandlers_.push(callback);
 };
 
@@ -246,7 +292,7 @@ aurora.auth.SessionTable.prototype.updateSession_ = function(session, cb) {
     }
 
     this.lockExpiry_.remove(session);
-    
+
     cb();
 
     if (!session.locked) {
@@ -258,12 +304,13 @@ aurora.auth.SessionTable.prototype.updateSession_ = function(session, cb) {
         }
     }
     this.lockExpiry_.add(session);
-    
+
     if (session.expiry !== null) {
         session.expiry = process.hrtime()[0] * 1000 + session.timeout;
         this.expiry_.add(session);
     }
     this.updateExpire_();
+    this.syncSession_(session.token);
 };
 
 /**
@@ -291,23 +338,53 @@ aurora.auth.SessionTable.prototype.removeSeriesId = function(seriesId) {
  * @param {string} constToken
  * @param {?number} timeout
  * @param {Object} data
+ * @param {boolean=} opt_locked default false
  */
-aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data) {
+aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data, opt_locked) {
     var exp = timeout === null ? null : (process.hrtime()[0] * 1000 + timeout);
     let lockTime = this.defaultLockTimeout_ ? process.hrtime()[0] * 1000 + this.defaultLockTimeout_ : 0;
     var session = {
-        locked: false, lockTimeout: this.defaultLockTimeout_ , lockTime: lockTime,
+        locked: !!opt_locked, lockTimeout: this.defaultLockTimeout_, lockTime: lockTime,
         expiry: exp, token: token, constToken: constToken, seriesId: seriesId,
         data: data, timeout: timeout, expireWithClients: this.expireSessionsWithClients_, clients: {}
     };
-
     this.expiry_.add(session);
     this.lockExpiry_.add(session);
     this.table_[token] = session;
     this.internalTokens_[constToken] = token;
     this.updateExpire_();
+    this.syncSession_(token);
+
 };
 
+/**
+ * @private
+ * @param {aurora.auth.SessionTable.Entry} session
+ * @return {Object}
+ */
+aurora.auth.SessionTable.prototype.serializeSession_ = function(session) {
+    return {
+        'token': session.token,
+        'seriesId': session.seriesId,
+        'constToken': session.constToken,
+        'timeout': session.timeout,
+        'data': session.data,
+        'locked': session.locked
+    };
+};
+
+/**
+ * @private
+ * @param {string} token
+ */
+aurora.auth.SessionTable.prototype.syncSession_ = function(token) {
+    let session = this.table_[token];
+    let ssession = null;
+    if (session) {
+        ssession = this.serializeSession_(session);
+    }
+    this.sync_.write({'action': 'update', 'token': token, 'session': ssession});
+};
 
 /**
  * @param {string|undefined} clientId
@@ -338,7 +415,33 @@ aurora.auth.SessionTable.prototype.remove = function(token) {
             delete me.clients_[cid];
         }
         this.updateExpire_();
+        this.syncSession_(token);
     }
+};
+
+/**
+ * removes all the sessions
+ */
+aurora.auth.SessionTable.prototype.removeAll = function() {
+    let me = this;
+    for (let token in this.table_) {
+        var session = this.table_[token];
+        if (session) {
+            this.auth_.logout_(token);
+            delete this.table_[token];
+            delete this.internalTokens_[session.constToken];
+            this.expiry_.remove(session);
+            this.lockExpiry_.remove(session);
+            this.lockHandlers_.forEach(function(h) {
+                h(session.constToken, false);
+            });
+        }
+    }
+    me.expiry_.clear();
+    me.lockExpiry_.clear();
+    me.clients_ = {};
+    this.updateExpire_();
+
 };
 
 /**
@@ -502,7 +605,7 @@ aurora.auth.SessionTable.prototype.lock_ = function() {
         me.lockExpiry_.add(s);
     });
     toLock.forEach(function(s) {
-        
+
         me.lockHandlers_.forEach(function(h) {
             h(s.constToken, true);
         });
@@ -555,7 +658,7 @@ aurora.auth.SessionTable.prototype.updateLockExpire_ = function() {
             // this is locked, or doesn't timeout so everything after is irrelevant
             return true;
         }
-        
+
         me.nextLockExpire_ = setTimeout(function() {
             me.nextLockExpire_ = null;
             me.lock_();
@@ -672,6 +775,7 @@ aurora.auth.Auth = function() {
         var token = sesh.length == 2 ? sesh[0] : undefined;
         var seriesId = sesh.length == 2 ? sesh[1] : undefined;
         var session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
+
         if (session) {
             state.token = session.constToken;
             state.locked = session.locked;
@@ -690,7 +794,10 @@ aurora.auth.Auth = function() {
             me.sessions_.remove(token);
         }
         var doLogin = function(credentials) {
-
+            if (!me.sessions_.isMaster_) {
+                credentials.response({message: 'cannot log into slave server'}, state);
+                return;
+            }
             // if credentials already have a token that means we just want to login from a different ip
             var tokenInfo = credentials.token ? credentials.token : me.generateToken();
             // update  cookies so that the have the new token
@@ -709,9 +816,9 @@ aurora.auth.Auth = function() {
                     if (me.blockAutoLogin_) {
                         clearTimeout(me.blockAutoLogin_);
                     }
-                    me.blockAutoLogin_ = setTimeout(function () {
+                    me.blockAutoLogin_ = setTimeout(function() {
                         me.blockAutoLogin_ = null;
-                    }, 5*60000);
+                    }, 5 * 60000);
                 }
             }
             else {
@@ -740,9 +847,9 @@ aurora.auth.Auth.getSessionFromCookies = function(cookies) {
     if (!cookies) {
         return null;
     }
-    
-    var parts = cookies.split(";");
-    for (var i =0 ; i < parts.length; i++) {
+
+    var parts = cookies.split(';');
+    for (var i = 0; i < parts.length; i++) {
         var cookie = parts[i].trim();
         if (cookie.startsWith('sesh=')) {
             var sessParts = cookie.split('=');
@@ -762,7 +869,7 @@ aurora.auth.Auth.parseSessionToken = function(token) {
     if (token) {
         var parts = token.split('-');
         if (parts.length === 2) {
-            return {token: parts[0], seriesId : parts[1]};
+            return {token: parts[0], seriesId: parts[1]};
         }
     }
     return null;
@@ -772,7 +879,7 @@ aurora.auth.Auth.parseSessionToken = function(token) {
  * @param {number} timeout
  */
 aurora.auth.Auth.prototype.setSessionExpiryMs = function(timeout) {
-    this.activeSessionExpiry_ = timeout ;
+    this.activeSessionExpiry_ = timeout;
 };
 
 /**
@@ -885,6 +992,18 @@ aurora.auth.Auth.prototype.getSessionData = function(token) {
         return session.data;
     }
     return null;
+};
+
+/**
+ * @param {string} token
+ * @param {Object} data
+ */
+aurora.auth.Auth.prototype.setSessionData = function(token, data) {
+    var session = this.sessions_.findSessions_(this.sessions_.getInternalToken(token));
+    if (session) {
+        session.data = data;
+        this.sessions_.syncSession_(token);
+    }
 };
 /**
  * @private
@@ -1006,7 +1125,7 @@ aurora.auth.Auth.prototype.setAllowLock = function(token, val) {
  * the function will be called with token and true if locked
  * @param {function(string,boolean)} callback
  */
-aurora.auth.Auth.prototype.addLockHandler = function (callback) {
+aurora.auth.Auth.prototype.addLockHandler = function(callback) {
     this.sessions_.addLockHandler(callback);
 };
 

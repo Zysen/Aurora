@@ -19,7 +19,7 @@ aurora.websocket.ChannelControlMessage;
 aurora.websocket.MessageType;
 
 /**
- * @typedef {{lock:(undefined|function(string)), unlock:(undefined|function (string)), 
+ * @typedef {{lock:(undefined|function(string)), unlock:(undefined|function (string)),
  *           receive:(undefined|function(?):boolean), send:(undefined|function(?):boolean)}}
  */
 aurora.websocket.LockHandler;
@@ -41,7 +41,7 @@ aurora.websocket.Server = function() {
     let log = aurora.log.createModule('WEBSOCKET');
     this.locked_ = {};
     let me = this;
-    aurora.auth.instance.addLockHandler(function (token, locked) {
+    aurora.auth.instance.addLockHandler(function(token, locked) {
         if (locked) {
             me.locked_[token] = true;
         }
@@ -57,13 +57,13 @@ aurora.websocket.Server = function() {
         }
 
     });
-    
+
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
         for (var portStr in serverInstance.lastSockets_) {
-            console.log("closing socket", serverInstance.lastSockets_[portStr]);
+            console.log('closing socket', serverInstance.lastSockets_[portStr]);
             serverInstance.lastSockets_[portStr]['shutDown']();
-            console.log("closing socket done");
+            console.log('closing socket done');
         }
         for (var portStr in servers) {
             var server = servers[portStr];
@@ -314,7 +314,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     var clientRegistration = {};
     var callbacks = [messageCb];
     var registerCallbacks = [];
-    var locked =         aurora.websocket.Server.instance.locked_;
+    var locked = aurora.websocket.Server.instance.locked_;
     /**
      * @type {Array<!aurora.websocket.LockHandler>}
      */
@@ -331,8 +331,8 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
         });
     };
 
-    this.lock = function (token, locked) {
-        lockHandlers.forEach(function (h) {
+    this.lock = function(token, locked) {
+        lockHandlers.forEach(function(h) {
             if (locked) {
                 if (h.lock) {
                     h.lock(token);
@@ -345,32 +345,32 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
             }
         });
     };
-    this.addLockHandler = function (handler) {
+    this.addLockHandler = function(handler) {
         if (handler.send) {
             if (!(handler.send instanceof Function)) {
-                console.error("adding invalid handler");
+                console.error('adding invalid handler');
             }
         }
         lockHandlers.push(handler);
     };
 
-    let isLocked = function (message, cb) {
+    let isLocked = function(message, cb) {
         if (message && locked[message.token]) {
             let allow = false;
             for (let i = 0; i < lockHandlers.length; i++) {
-                allow = allow || cb(lockHandlers[i],message);
+                allow = allow || cb(lockHandlers[i], message);
             }
             return !allow;
         }
         return false;
     };
 
-    let isSendLocked = function (connection, message, cb) {
+    let isSendLocked = function(connection, message, cb) {
         let token = aurora.auth.instance.getClientToken(connection.id);
         if (message && locked[token]) {
             let allow = false;
             for (let i = 0; i < lockHandlers.length; i++) {
-                allow = allow || cb(lockHandlers[i],message);
+                allow = allow || cb(lockHandlers[i], message);
             }
             return !allow;
         }
@@ -393,7 +393,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
         callbacks.push(messageCb2);
     };
 
-    
+
     this.receive = function(message) {
         if (isLocked(message, function(h, m) {return (!!h.receive && h.receive(m));})) {
             return;

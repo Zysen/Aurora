@@ -61,7 +61,7 @@ aurora.http.escapeRegExp = function(str) {
     /**
      * @param {!aurora.http.RequestState} state
      **/
-    aurora.http.notFound = function (state) {
+    aurora.http.notFound = function(state) {
         state.response.writeHead(404, state.responseHeaders.toClient());
         state.response.end(theme.error404HTML);
     };
@@ -319,7 +319,7 @@ aurora.http.escapeRegExp = function(str) {
             var exit = false;
             var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
             //            allRequests.push(state);
-            
+
             callbacks.inOrderTraverse(function(cb) {
                 for (var i = 0; i < cb.callbacks.length; i++) {
                     var cur = cb.callbacks[i];
@@ -447,7 +447,7 @@ aurora.http.escapeRegExp = function(str) {
             config['http']['servers'].forEach(function(serverConfig) {
                 if (serverConfig.port !== undefined) {
                     if (serverConfig.protocol === 'https') {
-                        serverConfig['key'] = fs.readFileSync( (serverConfig.key || 'resources/defaultKey.pem'));
+                        serverConfig['key'] = fs.readFileSync((serverConfig.key || 'resources/defaultKey.pem'));
                         serverConfig['cert'] = fs.readFileSync((serverConfig.cert || 'resources/defaultCert.pem'));
                         httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
