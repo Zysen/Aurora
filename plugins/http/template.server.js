@@ -27,7 +27,7 @@ aurora.template.provide = function(location, parameters, cache, opt_responseCode
             else {
                 var headers = state.responseHeaders;
                 for (var param in parameters) {
-                    data = data.replace(new RegExp('\\{' + param + '\\}', 'g'), parameters[param]);
+                    data = data.replace(new RegExp('\\{' + param + '\\}', 'g'), function () {return parameters[param];});
                 }
                 var reqDate = request.headers['if-modified-since'];
                 if (reqDate !== undefined && new Date(reqDate).getUTCSeconds() === new Date(stats.mtime).getUTCSeconds()) {
