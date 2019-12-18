@@ -13,6 +13,7 @@ goog.require('recoil.util.object');
  */
 aurora.auth.SessionTable = function(auth) {
     this.log_ = aurora.log.createModule('AUTH');
+    this.nextToken_ = new recoil.util.Sequence();
     this.auth_ = auth;
     this.expireSessionsWithClients_ = false;
     this.defaultLockTimeout_ = 0;
@@ -113,9 +114,13 @@ aurora.auth.SessionTable = function(auth) {
             // change to master
             // this is not right things will may not fire correctly if we jsut
             me.removeAll();
+            me.nextToken_.reset();
+
             for (let token in me.remoteSessions_) {
                 let s = me.remoteSessions_[token];
                 me.createSession(s['token'], s['seriesId'], s['constToken'], s['timeout'], s['data'], s['locked']);
+                me.nextToken_.seen(s['constToken']);
+                
             }
             me.remoteSessions_ = {};
 
@@ -713,7 +718,6 @@ aurora.auth.Authenticator;
 aurora.auth.Auth = function() {
     this.sessions_ = new aurora.auth.SessionTable(this);
     this.crypto_ = require('crypto');
-    this.nextToken_ = new recoil.util.Sequence();
     this.blockAutoLogin_ = null;
     /**
      * @private
@@ -955,7 +959,7 @@ aurora.auth.Auth.prototype.login = function(token, seriesId, rememberMe, credent
     var data = {};
     var todo = {};
     var me = this;
-    var constToken = this.nextToken_.next();
+    var constToken = this.sessions_.nextToken_.next();
     var doAuth = function(i) {
         if (i >= me.authenticators_.length) {
             me.sessions_.createSession(token, seriesId, constToken, rememberMe ? null : me.activeSessionExpiry_, data);
