@@ -87,7 +87,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
         fnameParts[0] = fnameParts[0] + '_' + utcTimeStamp;
         return path.join(dir, fnameParts.join('.'));
     };
-
+   
     var verifyFilePath = function(fname, extension) {
         if (extension && !fname.endsWith(extension)) {
             console.log('invalid extension', extension, fname);
@@ -100,6 +100,16 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
         console.log('path verified');
         return true;
     };
+
+    var cbCalled = false;
+    var singleCb = function (x, y){
+        
+        if(!cbCalled) {
+            cb(x, y);
+        }
+        cbCalled = true;
+    };
+    
     if (request.method === 'POST') {
         log.info('Uploading File');
         var form = new multiparty.Form();
@@ -118,8 +128,8 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
                 } catch (e) {
                     response.writeHead(400, {'content-type': 'text/plain'});
                     response.end(e.message);
-                    log.warn('File upload aborted');
-                    cb(e, 'File upload aborted');
+                    log.warn('File upload part aborted');
+                    singleCb(e, 'File upload aborted');
                     // don't really seem to have a nice way to abort the upload? so pipe to /dev/null
                     // e.g. https://github.com/andrewrk/node-multiparty/issues/27
                     return part.pipe(fs.createWriteStream('/dev/null'));
@@ -152,10 +162,10 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
 
             // handle a "part" error
             part.on('error', function(err) {
-                log.debug('File upload error,', err);
+                log.debug('File upload part error,', err);
                 response.writeHead(422, {'content-type': 'text/plain'});
                 response.end('{}');
-                cb(err, null);
+                singleCb(err || 'Upload Error', null);
             });
             return undefined;
         });
@@ -165,7 +175,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.error('File upload error,', err);
             response.writeHead(422, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(err, null);
+            singleCb(err || 'Upload Error', null);
         });
 
         // NOTE: actually, in practice, we don't need to handle this (according to doc?)
@@ -173,7 +183,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.warn('File upload aborted,', err);
             response.writeHead(422, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(err, 'File upload aborted,');
+            singleCb(err || 'aborted', 'File upload aborted,');
         });
 
         // Send success code if file was successfully uploaded.
@@ -181,7 +191,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.info('File upload complete');
             response.writeHead(200, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(null, {filename: filename});
+            singleCb(null, {filename: filename});
         });
 
         form.parse(request);
