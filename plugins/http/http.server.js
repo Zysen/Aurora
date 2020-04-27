@@ -453,7 +453,7 @@ aurora.http.escapeRegExp = function(str) {
             callbacks.inOrderTraverse(function(cb) {
                 for (var i = 0; i < cb.callbacks.length; i++) {
                     var cur = cb.callbacks[i];
-                    if (state.locked && !cb.allowLocked) {
+                    if (state.locked && !cur.allowLocked) {
                         continue;
                     }
                     if (cur.pattern.test(parsedUrl.pathname)) {
