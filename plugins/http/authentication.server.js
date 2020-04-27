@@ -767,12 +767,7 @@ aurora.auth.Auth = function() {
             // logout
         }
 
-        if (me.allowedUrls_[state.url.pathname]) {return undefined;}
-        for (var index = 0; index < me.allowedPrefixes_.length; index++) {
-            if (me.allowedPrefixes_[index].test(state.url.pathname)) {
-                return undefined;
-            }
-        }
+        
         //first extract the token and series id
         var sesh = decodeURIComponent(state.cookies['sesh'] || '').split('-');
 
@@ -787,6 +782,15 @@ aurora.auth.Auth = function() {
             return undefined;
         }
 
+        // do this after we get the session because the callback may use it
+        if (me.allowedUrls_[state.url.pathname]) {return undefined;}
+        for (var index = 0; index < me.allowedPrefixes_.length; index++) {
+            if (me.allowedPrefixes_[index].test(state.url.pathname)) {
+                return undefined;
+            }
+        }
+
+        
         session = seriesId ? me.sessions_.findSessions_(token, seriesId) : undefined;
         if (session) {
             // possible attack
@@ -843,6 +847,12 @@ aurora.auth.Auth = function() {
     });
 };
 
+/**
+ * @param {aurora.http.RequestState} state
+ */
+aurora.auth.Auth.prototype.loginPageCb = function(state) {
+    this.loginPageCb_(state);
+};
 /**
  * @param {string} cookies
  * @return {?{token:string,seriesId:string}}

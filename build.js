@@ -382,13 +382,24 @@ processQueue(orderedScripts, function(){
 	    buildTargets[target.filename].sources = [];
         }
     });
-
+    function doInclude(target, name) {
+        var include = true;
+        (target.exclude || []).forEach(function (ex) {
+            if (parseGlob(ex).pat(name)) {
+                console.log("sss", ex, name);
+                include = false;
+            }
+        });
+        return include;
+    }
     var pluginConfigs = {};
     config.build_targets.forEach(function (target) {
         if (shouldBuild(target) && target.preSearch) {
             target.preSearch.forEach(function (search) {
                 scanGlob(search, function (fname) {
-                    target.preSearch, buildTargets[target.filename].sources.push(fname);
+                    if (doInclude(target, fname)) {
+                        target.preSearch, buildTargets[target.filename].sources.push(fname);
+                    }
                 });
             });
             
@@ -422,7 +433,7 @@ processQueue(orderedScripts, function(){
                         forEachSearchExp(pluginName, target.searchExp,function(searchExpStr){
 			    fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
 				var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
-                                if (shouldBuild(target)) {
+                                if (shouldBuild(target)) {                                    
 				    copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
                                 }
 				if(stat.isFile()){
@@ -439,7 +450,10 @@ processQueue(orderedScripts, function(){
                                         let fileName = path.resolve(path.join(pluginDir,pluginName, pluginFileName));
                                         if (!seenFiles[fileName]) {
                                             seenFiles[fileName] = true;
-					    buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
+                                            let fname = pluginDir+'/'+pluginName+'/'+pluginFileName;
+                                            if (doInclude(target, fname)) {
+					        buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
+                                            }
                                         }
 				    }	
 				}

@@ -15,7 +15,7 @@ aurora.http.ResponseHeaders;
 aurora.http.ConfigServerType;
 /**
  * @typedef {{responseHeaders:aurora.http.ResponseHeaders,request:http.IncomingMessage, response:http.ServerResponse,
- *          data:?, outUrl:string, cookies:Object<string,string>,url:url.URL, token:?}}
+ *          data:?, outUrl:string, cookies:Object<string,string>,url:(url.URL|undefined), token:?}}
  */
 aurora.http.RequestState;
 
@@ -51,19 +51,107 @@ aurora.http.escapeRegExp = function(str) {
     const urlLib = require('url');
     const qs = require('querystring');
     const EventEmitter = require('events').EventEmitter;
-
+    let themeGetter = function (req) {
+        return config['http']['theme'];
+    };
+    
     aurora.http.serversUpdatedE = new EventEmitter();
 
-    var theme = {};
-    aurora.http.theme = theme;
-    var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
+    let makeThemePath = function (theme, fname) {
+        return [__dirname, 'resources', 'htdocs', 'themes', theme, fname].join(path.sep);
+    };
 
+    /**
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
+     **/
+    aurora.http.loadTemplate = function (state, cb) {
+        aurora.http.loadThemedFile('template.html', state, cb);
+    };
+
+    /**
+     * @param {number} error
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
+     **/
+    aurora.http.loadError = function (error, state, cb) {
+        aurora.http.loadTemplate(state, function (template) {
+            aurora.http.loadThemedFile(
+                'http' + error + '.html', state,
+                function (errorTxt) {
+                    cb(template.replace('{BODY}', errorTxt.toString()));
+                });
+        });
+    };
+    /**
+     * @param {number} error
+     * @param {!aurora.http.RequestState} state
+     */
+    aurora.http.writeError = function (error, state) {
+        if (state.token === undefined) {
+            aurora.auth.instance.loginPageCb(state);
+            return;
+        }
+        state.response.writeHead(error, state.responseHeaders.toClient());
+        aurora.http.loadError(error, state, function (txt) {
+            state.response.end(txt);
+        });
+    };
+
+    let loadFile = function (fname, cb) {
+        fs.readFile(fname, function (error, data) {
+            cb(error ? '' : data.toString());
+        });
+    };
+
+    /**
+     * @param {string} file
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string, ?, ?)} cb
+     **/
+    aurora.http.statTheme = function (file, state, cb) {
+        let theme = themeGetter(state);
+        let fname = makeThemePath(theme, file);
+        
+        fs.stat(fname, function (err, stats) {
+            let defTheme = config['http']['theme'];
+            if (!err || defTheme === theme) {
+                cb(fname, err, stats);
+            }
+            else {
+                fname = makeThemePath(defTheme, file);
+                fs.stat(fname, function (err, stats) {
+                    cb(fname, err, stats);
+                });
+            }
+        });
+    };
+    /**
+     * @param {string} file
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
+     **/
+    aurora.http.loadThemedFile = function (file, state, cb) {
+        let theme = themeGetter(state);
+        let fname = makeThemePath(theme, file);
+        // first check the current theme if it exists serve that
+        fs.exists(fname, function (exists) {
+            let defTheme = config['http']['theme'];
+            if (exists || theme === defTheme) {
+                loadFile(fname, cb);
+            }
+            else {
+                loadFile(makeThemePath(defTheme, file), cb);
+            }
+        });
+    };
+
+    var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
     /**
      * @param {!aurora.http.RequestState} state
      **/
     aurora.http.notFound = function(state) {
-        state.response.writeHead(404, state.responseHeaders.toClient());
-        state.response.end(theme.error404HTML);
+        aurora.http.writeError(404, state);
     };
     aurora.http.getPost = function(request, callback) {
         if (request.method == 'POST') {
@@ -79,6 +167,17 @@ aurora.http.escapeRegExp = function(str) {
         return false;
     };
 
+    /**
+     * @param {function(aurora.http.RequestState):string} getter
+     * 
+     */
+    aurora.http.setThemeGetter = function (getter) {
+        themeGetter = getter;
+    };
+
+    /**
+     *@return {string}
+     */
     /**
      * @param {number} priority lower priority go first also if callback returns a non-false value
      * all other requests of the same priority are skipped
@@ -170,20 +269,57 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
     });
-
+    let themeAccess = function (state, dir, url, perm, cb) {
+        let fname = path.resolve(path.join(dir, url));
+        
+        let parts = url ? url.split('/') : [];
+        while(parts.length > 0 && (parts[0] === '' || parts[0] === '.')) {
+            parts.shift();
+        }
+        let top = parts[0];
+        if (top === 'themes') {
+            // do not themes directly
+            cb(fname, {code: 'ENOENT'});
+        }
+        else if (top === 'theme') {
+            parts.shift();
+            let theme = themeGetter(state);
+            fname = path.resolve(path.join(dir, 'themes', theme, path.join.apply(null, parts)));
+            fs.access(fname, perm, function (err) {
+                if (err) {
+                    let fname = path.resolve(path.join(dir, 'themes', config['http']['theme'], path.join.apply(null, parts)));
+                    fs.access(fname, perm, function (err) {
+                        cb(fname, err);
+                    });
+                    
+                }
+                else {
+                    cb(fname, err);
+                }
+            });
+            }
+        else {
+            
+            
+            fs.access(fname, perm, function (err) {
+                cb(fname, err);
+            });
+        }
+    };
+    
     /**
      * sends a file to the client
      * this checks timestamps and sends not modified if already exits, it will also send the .gz
      * version if it exists if the opt_sendGz is set to true
      *
      * @param {string} path
-     * @param {http.IncomingMessage} request
-     * @param {http.ServerResponse} response
-     * @param {?} headers
+     * @param {aurora.http.RequestState} state
      * @param {boolean=} opt_sendGz
      */
-    function sendFile(path, request, response, headers, opt_sendGz) {
-
+    function sendFile(path, state, opt_sendGz) {
+        let response = state.response;
+        let request = state.request;
+        let headers = state.responseHeaders;
         var doSend = function(stats, path, decompress) {
             var reqDate = request.headers['if-modified-since'];
             if (reqDate !== undefined && new Date(reqDate).getUTCSeconds() === new Date(stats.mtime).getUTCSeconds()) {
@@ -208,8 +344,7 @@ aurora.http.escapeRegExp = function(str) {
                 readStream.pipe(/** @type {?} */(response));
                 readStream.on('error', function(err) {
                     if (response !== null) {
-                        response.writeHead(500, headers.toClient());
-                        response.end(theme.error500HTML);
+                        aurora.http.writeError(500, state);
                     }
                 });
                 readStream.on('end', function(err) {
@@ -239,8 +374,7 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
         request.on('error', function(err) {
-            response.writeHead(500, headers.toClient());
-            response.end(theme.error500HTML);
+            aurora.http.writeError(500, state);
         });
         var checkAndSend = function(path, sendGz, decompress) {
             fs.stat(path, function(err, stats) {
@@ -251,18 +385,15 @@ aurora.http.escapeRegExp = function(str) {
                             return;
                         }
                         else {
-                            response.writeHead(404, headers.toClient());
-                            response.end(theme.error404HTML);
+                            aurora.http.writeError(404, state);
                         }
                     }
                     else {
-                        response.writeHead(500);
-                        response.end(theme.error500HTML);
+                        aurora.http.writeError(500, state);
                     }
                 }
                 else if (stats.isDirectory()) {
-                    response.writeHead(404);
-                    response.end(theme.error404HTML);
+                    aurora.http.writeError(404, state);
                 }
                 else {
                     doSend(stats, path, decompress);
@@ -280,7 +411,6 @@ aurora.http.escapeRegExp = function(str) {
     var publicBasePath = [__dirname, 'resources', 'htdocs'].join(path.sep) + path.sep;
     aurora.http.BASE = publicBasePath;
 
-    var themeDir = [__dirname, 'resources', 'htdocs', 'themes', config['http']['theme']].join(path.sep) + path.sep;
     var sourceDir = path.resolve(__dirname + path.sep + config['http'].sourceDirectory);
     //Strict-Transport-Security: max-age=31536000
     //config.strictTransportSecurity
@@ -294,6 +424,8 @@ aurora.http.escapeRegExp = function(str) {
     };
 
     function httpRequestHandler(request, response) {
+        let cookies = {};
+        let responseHeaders = responseHeadersDef();
         try {
             var newRequests = [];
             allRequests.forEach(function(s) {
@@ -306,18 +438,16 @@ aurora.http.escapeRegExp = function(str) {
                 console.log('pending requests', newRequests.length);
             }
             allRequests = newRequests;
-            var responseHeaders = responseHeadersDef();
-            var cookies = {};
             request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
                 var parts = cookie.split('=');
                 cookies[parts[0].trim()] = (parts[1] || '').trim();
             });
 
 
-            var url = path.normalize(decodeURIComponent(request.url));
-            var parsedUrl = urlLib.parse(url);
+            let url = path.normalize(decodeURIComponent(request.url));
+            let parsedUrl = urlLib.parse(url);
             var exit = false;
-            var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
+            let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
             //            allRequests.push(state);
 
             callbacks.inOrderTraverse(function(cb) {
@@ -345,59 +475,69 @@ aurora.http.escapeRegExp = function(str) {
                 if (config['http']['sourceDirectory'] !== undefined) {
                     responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
                 }
-                return sendFile(__dirname + path.sep + url, request, response, responseHeaders, true);
+                return sendFile(__dirname + path.sep + url, state, true);
+            case '/favicon.ico':
+                
+                themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
+                    if (err) {
+                        aurora.http.writeError(404, state);
+                    }
+                    else {
+                        sendFile(fsPath, state, true);
+                    }
+                });
+                return;
             case path.sep + 'LICENSE':
                 url = url + '.txt';
             case path.sep + 'LICENSE.txt':
             case path.sep + 'client.js':
-            case path.sep + 'client.libs.js':
+            case path.sep + 'client.libs.js':                
             case path.sep + 'client.min.js.map':
             case path.sep + 'server.min.js.map':
-                return sendFile(__dirname + path.sep + url, request, response, responseHeaders, true);
+                return sendFile(__dirname + path.sep + url, state, true);
             case path.sep:
             case '/':
                 url += (config['http']['defaultPage'] || 'home');
             default:
-                fs.access(publicBasePath + url + '.html', fs.constants.R_OK, function(err) {
+                // check ith the url is in the theme directory if so then we need to them it
+                themeAccess(state, publicBasePath, url + '.html', fs.constants.R_OK, function(fsPath, err) {
                     if (err === null) {
-                        fs.readFile(publicBasePath + url + '.html', function(err, pageData) {
+                        fs.readFile(fsPath, function(err, pageData) {
                             if (err) {
-                                console.error(err);
-                                response.writeHead(500, responseHeaders.toClient());
-                                response.end(theme.error500HTML);
+                                aurora.http.writeError(500, state);
                                 return;
                             }
+                            
                             response.writeHead(200, responseHeaders.toClient());
-                            response.end(theme.template.replace('{BODY}', pageData.toString()));
+                            aurora.http.loadTemplate(state, function (template) {
+                                response.end(template.replace('{BODY}', pageData.toString()));
+                            });
                         });
                         return;
                     }
-                    fs.access(publicBasePath + url, fs.constants.R_OK, function(err) {
+                    themeAccess(state, publicBasePath, url, fs.constants.R_OK, function(fsname, err) {
                         if (err && err['code'] === 'ENOENT') {
 
                             if (config['http']['sourceDirectory'] !== undefined) {
-                                fs.access(path.resolve(sourceDir + url), fs.constants.R_OK, function(err) {
+                                themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
                                     if (err && err.code === 'ENOENT') {
-                                        response.writeHead(404);
-                                        response.end(theme.error404HTML);
+                                        aurora.http.writeError(404, state);
                                     }
                                     else {
-                                        sendFile(config['http']['sourceDirectory'] + path.sep + url, request, response, responseHeaders);
+                                        sendFile(fsname, state);
                                     }
                                 });
                                 return;
                             }
 
-                            response.writeHead(404);
-                            response.end(theme.error404HTML);
+                            aurora.http.writeError(404, state);
                         }
                         else if (err) {
-                            response.writeHead(500);
-                            response.end(theme.error500HTML);
+                            aurora.http.writeError(404, state);
                             console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
                         }
                         else {
-                            sendFile(publicBasePath + url, request, response, responseHeaders);
+                            sendFile(fsname, state);
                         }
                     });
                 });
@@ -405,9 +545,8 @@ aurora.http.escapeRegExp = function(str) {
             }
         }
         catch (e) {
-            response.writeHead(500);
-            response.end(theme.error500HTML);
-            console.log('REQUEST Error ' + request.method + ' ' + url + ' ' + request.connection.remoteAddress);
+            aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
             console.log(e);
         }
     }
@@ -423,22 +562,6 @@ aurora.http.escapeRegExp = function(str) {
         }
     }
 
-    function loadTheme(doneCb) {
-
-        fs.readFile(themeDir + 'template.html', function(err, template) {
-            theme.template = template.toString();
-            fs.readFile(themeDir + 'http403.html', function(err, template403) {
-                theme.error403HTML = theme.template.replace('{BODY}', template403.toString());
-                fs.readFile(themeDir + 'http404.html', function(err, template404) {
-                    theme.error404HTML = theme.template.replace('{BODY}', template404.toString());
-                    fs.readFile(themeDir + 'http500.html', function(err, template500) {
-                        theme.error500HTML = theme.template.replace('{BODY}', template500.toString());
-                        doneCb();
-                    });
-                });
-            });
-        });
-    }
 
     var httpServers = {};
     function loadServers() {
@@ -470,16 +593,14 @@ aurora.http.escapeRegExp = function(str) {
 
     /**
      * @param {string} filePath the location of the physical file
-     * @param {http.IncomingMessage} request
-     * @param {http.ServerResponse} response
-     * @param {?} headers
+     * @param {aurora.http.RequestState} state
      * @param {string=} opt_filename
      */
-    aurora.http.sendFileDownload = function(filePath, request, response, headers, opt_filename) {
+    aurora.http.sendFileDownload = function(filePath, state, opt_filename) {
         if (opt_filename) {
-            headers.set('Content-Disposition', 'attachment;filename=' + path.basename(opt_filename));
+            state.responseHeaders.set('Content-Disposition', 'attachment;filename=' + path.basename(opt_filename));
         }
-        sendFile(filePath, request, response, headers);
+        sendFile(filePath, state);
     };
     /**
      * @param {RegExp} url
@@ -497,17 +618,26 @@ aurora.http.escapeRegExp = function(str) {
         aurora.http.addMidRequestCallback(url, function(state) {
             nameCallback(function(name, filePath) {
                 filePath = filePath || file;
-                aurora.http.sendFileDownload(filePath, state.request, state.response, state.responseHeaders, name);
+                aurora.http.sendFileDownload(filePath, state, name);
             }, state);
             return false;
         }, opt_allowLocked);
     };
 
-    aurora.http.sendDataAsyncDownload = function(request, response, headers, filename) {
+    /**
+     * @param {aurora.http.RequestState} state
+     * @param {string} filename
+     * @return {{dataCB:function(?),endCB:function(?)}}
+     *
+     */
+    aurora.http.sendDataAsyncDownload = function(state, filename) {
+        let headers = state.responseHeaders;
+        let request = state.request;
+        let response = state.response;
         headers.set('Content-Disposition', 'attachment;filename=' + filename);
         request.on('error', function(err) {
             done = true;
-            aurora.http.writeError(500, response, headers);
+            aurora.http.writeError(500, state);
         });
 
         headers.set('Content-Type', mime.getType(filename));
@@ -541,23 +671,8 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
     };
-
-    aurora.http.writeError = function(code, response, headers) {
-        response.writeHead(code, headers);
-        if (code === 404) {
-            response.writeHead(404);
-            response.end(theme.error404HTML);
-        }
-        else {
-            console.error('An unknown error has occured with code ' + code);
-            response.end('An unknown error has occured ' + code, 'utf8');
-        }
-    };
-
     process.chdir(__dirname);
-    config.configE.on('http/theme', loadTheme);
     config.configE.on('http/servers', loadServers);
-    loadTheme(function() {
-        loadServers();
-    });
+    setTimeout(loadServers, 1);
+
 }());

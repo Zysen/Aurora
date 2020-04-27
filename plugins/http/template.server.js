@@ -9,20 +9,25 @@ goog.require('config');
  * @param {boolean} cache
  * @param {number=} opt_responseCode http response
  * @param {function(!aurora.http.RequestState):Object<string,string>=} opt_headers extra http headers
+ * @param {boolean=} opt_useTheme
  * @return {function(!aurora.http.RequestState)}
  */
-aurora.template.provide = function(location, parameters, cache, opt_responseCode, opt_headers) {
+aurora.template.provide = function(location, parameters, cache, opt_responseCode, opt_headers, opt_useTheme) {
     var fs = require('fs');
     var mime = require('mime');
     return function(state) {
-        var theme = aurora.http.theme;
         var process = function(err, data, stats) {
             var response = state.response;
             var request = state.request;
             // todo maybe use a stream this could block
             if (err) {
-                response.writeHead(404);
-                response.end(theme.error404HTML);
+                if (opt_responseCode === 401) {
+                    response.writeHead(500);
+                    response.end('unable to write template');
+                }
+                else {
+                    aurora.http.writeError(404, state);
+                }
             }
             else {
                 var headers = state.responseHeaders;
@@ -56,14 +61,27 @@ aurora.template.provide = function(location, parameters, cache, opt_responseCode
 
             }
         };
-        fs.stat(location, function(err, stats) {
-            if (err) {
-                process(err, null, null);
-            }
-            else {
-                fs.readFile(location, 'utf8', function(err, data) {process(err, data, stats);});
-            }
-        });
+        if (opt_useTheme) {
+            aurora.http.statTheme(location, state, function (fname, err, stats) {
+                if (err) {
+                    process(err, null, null);
+                }
+                else {
+                    fs.readFile(fname, 'utf8', function(err, data) {process(err, data, stats);});
+                }
+            });
+        }
+        else {
+            fs.stat(location, function(err, stats) {
+                if (err) {
+                    process(err, null, null);
+                }
+                else {
+                    fs.readFile(location, 'utf8', function(err, data) {process(err, data, stats);});
+                }
+            
+            });
+        }
         return true;
     };
 };
