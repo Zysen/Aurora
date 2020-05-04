@@ -75,17 +75,17 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
     var fs = require('fs');
     var path = require('path');
 
-    var addTimeStampSuffix = function(fname) {
+    var getFileNameParts = function(fname) {
         // remove milliseconds and 'Z' for UTC timezone
-        var utcTimeStamp = new Date().toISOString().split('.')[0];
+        var utcTimeStamp = new Date().toISOString().split('.')[0].replaceAll(':', '_');
         var dir = path.dirname(fname);
         var name = path.basename(fname);
         var fnameParts = name.split('.');
-
-        // stick the timestamp at the end of the first part
-        // possibly it would make sense before the last part?
-        fnameParts[0] = fnameParts[0] + '_' + utcTimeStamp;
-        return path.join(dir, fnameParts.join('.'));
+        return {
+            timestamp: '_' + utcTimeStamp,
+            prefix: path.join(dir, fnameParts.slice(0,-1).join('.')),
+            suffix: fnameParts.length > 1 ? '.' + fnameParts[fnameParts.length - 1] : ''
+        };
     };
    
     var verifyFilePath = function(fname, extension) {
@@ -139,25 +139,46 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
                 // file path and extension)
                 if (overrideFilename) filename = overrideFilename;
 
-                // check for duplicate file and adjust accordingly
-                fs.exists(fullPath, function(exists) {
-                    // add a timestamp suffix to avoid an overwrite
-                    if (!allowOverwrite && exists) fullPath = addTimeStampSuffix(fullPath);
-                    var stream = fs.createWriteStream(fullPath);
+                let fnameParts = getFileNameParts(fullPath);
 
-                    part.on('end', function(err) {
-                        log.debug('Part upload complete');
-                    });
-                    var throttle = config['uploadThrottle'];
-                    // Pipe the part parsing stream to the file writing stream.
-                    if (throttle) {
-                        part.pipe(new SlowStream({maxWriteInterval: config['uploadThrottle']})).pipe(stream);
+                let makePath = function (prefix, count, suffix) {
+                    if (count === -1) {
+                        return prefix  + suffix;
                     }
                     else {
-                        part.pipe(stream);
+                        if (count === 0) {
+                            return prefix + fnameParts.timestamp + suffix;
+                        }
+                        return prefix + fnameParts.timestamp + '('+ count + ')' + suffix;
+
                     }
-                    // part.pipe(stream);  // <- no throttle
-                });
+                };
+                let writeFile = function (prefix, count, suffix) {
+                  
+                    return function (exists) {
+                        let fullPath = makePath(prefix, count, suffix);
+                        if (!allowOverwrite && exists) {
+                            fs.exists(makePath(prefix, count + 1, suffix), writeFile(prefix, count + 1, suffix));
+                            return;
+                        }
+                        var stream = fs.createWriteStream(fullPath);
+
+                        part.on('end', function(err) {
+                            log.debug('Part upload complete');
+                        });
+                        var throttle = config['uploadThrottle'];
+                        // Pipe the part parsing stream to the file writing stream.
+                        if (throttle) {
+                            part.pipe(new SlowStream({maxWriteInterval: config['uploadThrottle']})).pipe(stream);
+                        }
+                        else {
+                            part.pipe(stream);
+                        }
+                    };
+                };
+                // check for duplicate file and adjust accordingly
+                fs.exists(fullPath, writeFile(fnameParts.prefix,-1, fnameParts.suffix));
+
             }
 
             // handle a "part" error
