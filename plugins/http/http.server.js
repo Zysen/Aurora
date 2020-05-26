@@ -446,6 +446,7 @@ aurora.http.escapeRegExp = function(str) {
 
             let url = path.normalize(decodeURIComponent(request.url));
             let parsedUrl = urlLib.parse(url);
+
             var exit = false;
             let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
             //            allRequests.push(state);
