@@ -19,6 +19,7 @@ aurora.Upload = function() {
  *          allowOverwrite:(boolean|undefined),
  *          overrideFilename:(string|undefined),
  *          clearUploaded:(boolean|undefined),
+ *          permission: ((function (?):boolean)|undefined),
  *          startEvent:(boolean|undefined)}=} opt_options
  */
 aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, cb, opt_options) {
@@ -31,6 +32,11 @@ aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, 
     aurora.http.addMidRequestCallback(
         new RegExp('^' + aurora.http.escapeRegExp(urlPathPrefix)) ,
         function(state) {
+            if (opt_options && opt_options.permission) {
+                if (!opt_options.permission(state)) {
+                    return undefined;
+                }
+            }
             if (state.url.pathname.startsWith(urlPathPrefix) && state.request.method === 'POST') {
                 if (opts.startEvent) {
                     cb({start: true});

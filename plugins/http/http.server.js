@@ -608,15 +608,20 @@ aurora.http.escapeRegExp = function(str) {
      * @param {string} file
      * @param {function(function(string,string=),?=)|string} sendFileNameCB a callback or a string to get the filename, this may be nessary because you may want to
      * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
+     * @param {function(?)=} opt_permCheck check permissions function
      * send the modified date or the current date as part of the filename
      */
-    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB, opt_allowLocked) {
+    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB, opt_allowLocked, opt_permCheck) {
         var nameCallback = typeof(sendFileNameCB) === 'string' ?
                 function(cb1) {
                     cb1(sendFileNameCB, undefined);
                 } : sendFileNameCB;
 
         aurora.http.addMidRequestCallback(url, function(state) {
+            if (opt_permCheck && !opt_permCheck(state)) {
+                aurora.http.writeError(403, state);
+                return false;
+            }
             nameCallback(function(name, filePath) {
                 filePath = filePath || file;
                 aurora.http.sendFileDownload(filePath, state, name);
