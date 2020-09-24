@@ -8,10 +8,9 @@ config = (function() {
     var configFilePath = __dirname + '/config.json';
     var pub = JSON.parse(fs.readFileSync(configFilePath).toString());
     pub.configE = new EventEmitter();
-
     var lastConfig = JSON.parse(fs.readFileSync(configFilePath).toString());
 
-    fs.watchFile(configFilePath, {interval: 500, persistent: true}, function(curr, prev) {
+    let listener = function(curr, prev) {
         fs.readFile(configFilePath, function(err, configFile) {
             try {
                 var newConfig = JSON.parse(configFile.toString());
@@ -31,6 +30,12 @@ config = (function() {
                 console.error('error reading config file', e);
             }
         });
-    });
+    };
+    fs.watchFile(configFilePath, {interval: 500, persistent: true}, listener);
+    pub.stop = function () {
+        fs.unwatchFile(configFilePath, listener);
+    };
+
+    
     return pub;
 }());

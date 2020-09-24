@@ -60,12 +60,12 @@ aurora.websocket.Server = function() {
 
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
-        for (var portStr in serverInstance.lastSockets_) {
+        for (let portStr in serverInstance.lastSockets_) {
             console.log('closing socket', serverInstance.lastSockets_[portStr]);
             serverInstance.lastSockets_[portStr]['shutDown']();
             console.log('closing socket done');
         }
-        for (var portStr in servers) {
+        for (let portStr in servers) {
             var server = servers[portStr];
             if (server.config['websocket'] === true) {
                 log.info('Starting Websocket Server attached to ' + server.config.protocol + ' port ' + server.config.port);
@@ -78,22 +78,25 @@ aurora.websocket.Server = function() {
                     serverInstance.getUniqueClientId_(wsServer.clients, function(socketId) {
                         connection.id = socketId;
                         wsServer.clients[socketId] = connection;
-                        if (aurora.auth.instance.registerClientToken(request, socketId, connection)) {
-                            connection.on('message', function(data) {
-                                serverInstance.onMessage(connection, data);
-                            });
-                            connection.on('close', function(closeReason, description) {
-                                serverInstance.onClose_(connection, closeReason, description);
-                                aurora.auth.instance.unregisterClientToken(socketId);
-                                delete wsServer.clients[socketId];
-                            });
-                        }
-                        else {
-                            this.sendError_(connection, aurora.websocket.error.NO_SESSION);
+                        aurora.auth.instance.registerClientToken(request, socketId, connection, function (registered) {
+                            if (registered) {
+                                connection.on('message', function(data) {
+                                    serverInstance.onMessage(connection, data);
+                                });
+                                connection.on('close', function(closeReason, description) {
+                                    serverInstance.onClose_(connection, closeReason, description);
+                                    aurora.auth.instance.unregisterClientToken(socketId);
+                                    delete wsServer.clients[socketId];
+                                });
+                            }
+                            else {
+                                this.sendError_(connection, aurora.websocket.error.NO_SESSION);
 
-                            serverInstance.onClose_(connection, 'INVALIDTOKEN', 'invalid token');
-                            delete wsServer.clients[socketId];
-                        }
+                                serverInstance.onClose_(connection, 'INVALIDTOKEN', 'invalid token');
+                                delete wsServer.clients[socketId];
+                                
+                            }
+                        }.bind(this));
                     });
                 });
                 serverInstance.lastSockets_[portStr] = wsServer;
@@ -196,14 +199,16 @@ aurora.websocket.Server.prototype.onMessage = function(connection, message) {
                 return;
             }
             //console.log("WS ", pluginId, channelId, type, payload);
-            var token = aurora.auth.instance.getClientToken(connection.id);
-            let c = this.channels_[pluginId + '_' + channelId];
-            if (c) {
-                c.receive({token: token, clientId: connection.id, connection: connection, data: payload});
-            }
-            else {
-                log.error('unable to find plugin channel', aurora.websocket.constants.plugins[pluginId], 'pluginid', pluginId, 'channelid', channelId);
-            }
+            aurora.auth.instance.getClientToken(connection.id, function (token) {
+                let c = this.channels_[pluginId + '_' + channelId];
+                if (c) {
+                    c.receive({token: token, clientId: connection.id, connection: connection, data: payload});
+                }
+                else {
+                    log.error('unable to find plugin channel', aurora.websocket.constants.plugins[pluginId], 'pluginid', pluginId, 'channelid', channelId);
+                }
+            }.bind(this));
+
         }
         catch (e) {
             console.log(e);
@@ -272,14 +277,12 @@ aurora.websocket.Server.prototype.convertData_ = function(data) {
  * @param {number} channelId The id of the channel. This is managed by the plugin.
  * @param {function(!aurora.websocket.ChannelMessage)} messageCallback
  * @param {function(string,string)=} opt_clientCloseCallback passes the token and client id closed
- * @return {aurora.websocket.Channel|undefined}
+ * @return {!aurora.websocket.Channel}
  */
 aurora.websocket.Server.prototype.getChannel = function(pluginName, channelId, messageCallback, opt_clientCloseCallback) {
     var pluginId = aurora.websocket.constants.plugins.indexOf(pluginName);
     if (pluginId < 0) {
-        console.error('websocket.getChannel no plugin called ' + pluginName);
-        //TODO throw new exceptionm here instead
-        return null;
+        throw 'websocket.getChannel no plugin called ' + pluginName;
     }
     var channelIdStr = pluginId + '_' + channelId;
     if (this.channels_[channelIdStr] === undefined) {
@@ -326,8 +329,9 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     this.register = function(clientId, connection) {
         clientRegistration[clientId] = connection;
         registerCallbacks.forEach(function(cb) {
-            var token = aurora.auth.instance.getClientToken(connection.id);
-            cb(connection, token);
+            aurora.auth.instance.getClientToken(connection.id, function (token) {
+                cb(connection, token);
+            });
         });
     };
 
@@ -365,16 +369,21 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
         return false;
     };
 
-    let isSendLocked = function(connection, message, cb) {
-        let token = aurora.auth.instance.getClientToken(connection.id);
-        if (message && locked[token]) {
-            let allow = false;
-            for (let i = 0; i < lockHandlers.length; i++) {
-                allow = allow || cb(lockHandlers[i], message);
+    let sendIfNotLocked = function(connection, message, sendMessage, test) {
+        
+        aurora.auth.instance.getClientToken(connection.id, function (token) {
+            if (message && locked[token]) {
+                let allow = false;
+                for (let i = 0; i < lockHandlers.length; i++) {
+                    allow = allow || test(lockHandlers[i], message);
+                }
+                if (allow) {
+                    connection.send(sendMessage);
+                }
             }
-            return !allow;
-        }
-        return false;
+            connection.send(sendMessage);
+        });
+
     };
     /**
      * @param {function(?)|function(?,?)} callback
@@ -383,11 +392,13 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
         registerCallbacks.push(callback);
     };
     this.unregister = function(clientId) {
-        var token = aurora.auth.instance.getClientToken(clientId);
         delete clientRegistration[clientId];
-        if (opt_clientCloseCallback) {
-            opt_clientCloseCallback(token, clientId);
-        }
+        aurora.auth.instance.getClientToken(clientId, function (token) {
+            if (opt_clientCloseCallback) {
+                opt_clientCloseCallback(token, clientId);
+            }
+        });
+
     };
     this.addCallback = function(messageCb2) {
         callbacks.push(messageCb2);
@@ -404,20 +415,6 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     };
     this.getRegistration = function() {
         return clientRegistration;
-    };
-    this.getRegisteredTokens = function() {
-        var map = {};
-        for (var cid in clientRegistration) {
-            let token = aurora.auth.instance.getClientToken(cid);
-            if (token) {
-                map[token] = true;
-            }
-        }
-        var res = [];
-        for (let token in map) {
-            res.push(token);
-        }
-        return res;
     };
     this.getId = function() {
         return pluginId + '_' + channelId;
@@ -454,19 +451,28 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
             }
             if (connection) {
                 // client my have been deregistered don't send to it if it has
-                if (!isSendLocked(connection, origMessage, function(h, m) {return (!!h.send && h.send(m));})) {
-                    connection.send(message);
-                }
+                sendIfNotLocked(connection, origMessage, message, function(h, m) {return (!!h.send && h.send(m));});
+               
             }
         }
         else {
-            for (var clientId2 in clientRegistration) {
+            for (let clientId2 in clientRegistration) {
                 let connection = clientRegistration[clientId2];
-                if (!filter || filter(connection, aurora.auth.instance.getClientToken(clientId2))) {
-                    if (!isSendLocked(connection, origMessage, function(h, m) {
-                        return !!h.send && h.send(m);})) {
-                        connection.send(message);
-                    }
+
+                let doit = function () {
+                    sendIfNotLocked(connection, origMessage, message, function(h, m) {
+                        return !!h.send && h.send(m);
+                    });
+                };
+                if (!filter) {
+                    doit();
+                }
+                else {
+                    aurora.auth.instance.getClientToken(clientId2, function (token) {
+                        if (filter(connection, token)) {
+                            doit();
+                        }
+                    });
                 }
             }
         }
@@ -501,7 +507,7 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
  * @param {number} channelId The id of the channel. This is managed by the plugin.
  * @param {function(!aurora.websocket.ChannelMessage)} messageCallback
  * @param {function(string, string)=} opt_clientCloseCallback passes the token and client id closed
- * @return {aurora.websocket.Channel|undefined}
+ * @return {!aurora.websocket.Channel}
  */
 aurora.websocket.getChannel = function(pluginName, channelId, messageCallback, opt_clientCloseCallback) {
     return aurora.websocket.Server.instance.getChannel(pluginName, channelId, messageCallback, opt_clientCloseCallback);

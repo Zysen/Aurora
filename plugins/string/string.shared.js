@@ -1,5 +1,6 @@
 goog.provide('aurora.string');
 
+
 /**
  * @export
  */
@@ -197,6 +198,14 @@ String.prototype.toByteArray = function() {
         bytes.push(char & 0xFF);
     }
     return bytes;
+};
+
+
+/**
+ * @return {string}
+ */
+BigInt.prototype.toJSON = function() {
+    return this.toString();
 };
 
 /**

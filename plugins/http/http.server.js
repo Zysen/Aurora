@@ -37,6 +37,10 @@ aurora.http.escapeRegExp = function(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 };
 
+/**
+ * @const
+ */
+aurora.http.REQUEST_ASYNC = {};
 (function() {
 
     var types = aurora.websocket.enums.types;
@@ -182,7 +186,7 @@ aurora.http.escapeRegExp = function(str) {
      * @param {number} priority lower priority go first also if callback returns a non-false value
      * all other requests of the same priority are skipped
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
      * @param {boolean} allowLocked (default false)
      */
     aurora.http.addRequestCallback = function(priority, pattern, callback, allowLocked) {
@@ -198,7 +202,7 @@ aurora.http.escapeRegExp = function(str) {
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
      * @param {boolean=} opt_allowLocked default true, if true no lock check will be performed
      */
     aurora.http.addPreRequestCallback = function(pattern, callback, opt_allowLocked) {
@@ -206,7 +210,7 @@ aurora.http.escapeRegExp = function(str) {
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
      * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
      */
     aurora.http.addMidRequestCallback = function(pattern, callback, opt_allowLocked) {
@@ -423,135 +427,191 @@ aurora.http.escapeRegExp = function(str) {
         });
     };
 
-    function httpRequestHandler(request, response) {
-        let cookies = {};
-        let responseHeaders = responseHeadersDef();
-        try {
-            var newRequests = [];
-            allRequests.forEach(function(s) {
-                if (!s.response['finished']) {
-                    newRequests.push(s);
-                }
-
-            });
-            if (newRequests.length > 0) {
-                console.log('pending requests', newRequests.length);
-            }
-            allRequests = newRequests;
-            request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
-                var parts = cookie.split('=');
-                cookies[parts[0].trim()] = (parts[1] || '').trim();
-            });
-
-
-            let url = path.normalize(decodeURIComponent(request.url));
-            let parsedUrl = urlLib.parse(url);
-
-            var exit = false;
-            let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
-            //            allRequests.push(state);
-
-            callbacks.inOrderTraverse(function(cb) {
-                for (var i = 0; i < cb.callbacks.length; i++) {
-                    var cur = cb.callbacks[i];
-                    if (state.locked && !cur.allowLocked) {
-                        continue;
-                    }
-                    if (cur.pattern.test(parsedUrl.pathname)) {
-                        var res = cur.callback(state);
-                        if (res === false) {
-                            exit = true;
-                            return true;
+    function redirect (response, url) {
+	response.writeHead(302, {'Location': url});
+        response.end();
+    }
+    function makeRequestHandler(sConfig) {
+        return function (request, response) {
+            let cookies = {};
+            let responseHeaders = responseHeadersDef();
+            try {
+                if (request['client'] && !request['client']['encrypted']) {
+                    let httpsRedirect = sConfig['httpsRedirect'];
+                    if (httpsRedirect != undefined) {
+                        let message = sConfig['httpsRedirectMessage'];
+                        let httpPort = sConfig['port'];
+                        var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
+                        let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
+                        if (message) {
+	                    response.writeHead(403, {'Location': url});
+                            response.end(message.replaceAll('{REDIRECT}', url));
                         }
-                    }
-                }
-                return false;
-            });
-            url = state.outUrl;
-            if (exit) {
-                return undefined;
-            }
-            switch (url) {
-            case path.sep + 'client.min.js':
-                if (config['http']['sourceDirectory'] !== undefined) {
-                    responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
-                }
-                return sendFile(__dirname + path.sep + url, state, true);
-            case '/favicon.ico':
-                
-                themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
-                    if (err) {
-                        aurora.http.writeError(404, state);
-                    }
-                    else {
-                        sendFile(fsPath, state, true);
-                    }
-                });
-                return;
-            case path.sep + 'LICENSE':
-                url = url + '.txt';
-            case path.sep + 'LICENSE.txt':
-            case path.sep + 'client.js':
-            case path.sep + 'client.libs.js':                
-            case path.sep + 'client.min.js.map':
-            case path.sep + 'server.min.js.map':
-                return sendFile(__dirname + path.sep + url, state, true);
-            case path.sep:
-            case '/':
-                url += (config['http']['defaultPage'] || 'home');
-            default:
-                // check ith the url is in the theme directory if so then we need to them it
-                themeAccess(state, publicBasePath, url + '.html', fs.constants.R_OK, function(fsPath, err) {
-                    if (err === null) {
-                        fs.readFile(fsPath, function(err, pageData) {
-                            if (err) {
-                                aurora.http.writeError(500, state);
-                                return;
-                            }
-                            
-                            response.writeHead(200, responseHeaders.toClient());
-                            aurora.http.loadTemplate(state, function (template) {
-                                response.end(template.replace('{BODY}', pageData.toString()));
-                            });
-                        });
+                        else {
+                            redirect(response, url);
+                        }
                         return;
                     }
-                    themeAccess(state, publicBasePath, url, fs.constants.R_OK, function(fsname, err) {
-                        if (err && err['code'] === 'ENOENT') {
+                }
+                var newRequests = [];
+                allRequests.forEach(function(s) {
+                    if (!s.response['finished']) {
+                        newRequests.push(s);
+                    }
+                    
+                });
+                if (newRequests.length > 0) {
+                    console.log('pending requests', newRequests.length);
+                }
+                allRequests = newRequests;
+                request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
+                    var parts = cookie.split('=');
+                    cookies[parts[0].trim()] = (parts[1] || '').trim();
+                });
 
+                
+                let url = path.normalize(decodeURIComponent(request.url));
+                let parsedUrl = urlLib.parse(url);
+                
+
+                let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
+                //            allRequests.push(state);
+
+                let processAsyncCallbacks = function (start, doneCb) {
+                    let exit = false;
+                    let async = false;
+                    let traverseFunc = function (startIdx) {
+                        return function(cb) {
+                            for (let i = startIdx; i < cb.callbacks.length; i++) {
+                                let cur = cb.callbacks[i];
+                                if (state.locked && !cur.allowLocked) {
+                                    continue;
+                                }
+                                if (cur.pattern.test(parsedUrl.pathname)) {
+                                    let res = cur.callback(state, function (asyncRes) {
+                                        if (asyncRes !== false) {
+                                            processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
+                                        }
+                                    });
+                                    
+                                    if (res === false || aurora.http.REQUEST_ASYNC === res) {
+                                        exit = true;
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        };
+                            
+                    };
+                    if (start) {
+                        callbacks.inOrderTraverse(traverseFunc(start.idx), start.cb);
+                    }
+                    else {
+                        callbacks.inOrderTraverse(traverseFunc(0));
+                    }
+                    url = state.outUrl;
+                    if (!exit) {
+                        doneCb();
+                    }
+                    
+                };
+                
+
+                
+                let processAfterCallbacks = function () {
+                    try {
+                        switch (url) {
+                        case path.sep + 'client.min.js':
                             if (config['http']['sourceDirectory'] !== undefined) {
-                                themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
-                                    if (err && err.code === 'ENOENT') {
+                                responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
+                            }
+                            sendFile(__dirname + path.sep + url, state, true);
+                            return;
+                        case '/favicon.ico':
+                            
+                            themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
+                                if (err) {
+                                    aurora.http.writeError(404, state);
+                                }
+                                else {
+                                    sendFile(fsPath, state, true);
+                                }
+                            });
+                            return;
+                        case path.sep + 'LICENSE':
+                            url = url + '.txt';
+                        case path.sep + 'LICENSE.txt':
+                        case path.sep + 'client.js':
+                        case path.sep + 'client.libs.js':                
+                        case path.sep + 'client.min.js.map':
+                        case path.sep + 'server.min.js.map':
+                            sendFile(__dirname + path.sep + url, state, true);
+                            return;
+                        case path.sep:
+                        case '/':
+                            url += (config['http']['defaultPage'] || 'home');
+                        default:
+                            // check ith the url is in the theme directory if so then we need to them it
+                            themeAccess(state, publicBasePath, url + '.html', fs.constants.R_OK, function(fsPath, err) {
+                                if (err === null) {
+                                    fs.readFile(fsPath, function(err, pageData) {
+                                        if (err) {
+                                            aurora.http.writeError(500, state);
+                                            return;
+                                        }
+                                        
+                                        response.writeHead(200, responseHeaders.toClient());
+                                        aurora.http.loadTemplate(state, function (template) {
+                                            response.end(template.replace('{BODY}', pageData.toString()));
+                                    });
+                                    });
+                                    return;
+                                }
+                                themeAccess(state, publicBasePath, url, fs.constants.R_OK, function(fsname, err) {
+                                    if (err && err['code'] === 'ENOENT') {
+                                        
+                                        if (config['http']['sourceDirectory'] !== undefined) {
+                                            themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
+                                                if (err && err.code === 'ENOENT') {
+                                                aurora.http.writeError(404, state);
+                                                }
+                                                else {
+                                                    sendFile(fsname, state);
+                                                }
+                                        });
+                                            return;
+                                        }
+                                        
                                         aurora.http.writeError(404, state);
+                                    }
+                                    else if (err) {
+                                        aurora.http.writeError(404, state);
+                                        console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
                                     }
                                     else {
                                         sendFile(fsname, state);
                                     }
                                 });
-                                return;
-                            }
-
-                            aurora.http.writeError(404, state);
+                            });
+                            break;
                         }
-                        else if (err) {
-                            aurora.http.writeError(404, state);
-                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
-                        }
-                        else {
-                            sendFile(fsname, state);
-                        }
-                    });
-                });
-                break;
+                    }
+                    catch (e) {
+                        console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                        aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                        console.log(e);
+                    }
+                };
+                processAsyncCallbacks(null, processAfterCallbacks);
             }
-        }
-        catch (e) {
-            aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
-            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
-            console.log(e);
-        }
+            catch (e) {
+                aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                console.log(e);
+            }
+        };
     }
-
     function shutdownAllServers(servers, done) {
         if (servers.length > 0) {
             servers.pop().server.shutdown(function() {
@@ -573,11 +633,11 @@ aurora.http.escapeRegExp = function(str) {
                     if (serverConfig.protocol === 'https') {
                         serverConfig['key'] = fs.readFileSync((serverConfig.key || 'resources/defaultKey.pem'));
                         serverConfig['cert'] = fs.readFileSync((serverConfig.cert || 'resources/defaultCert.pem'));
-                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
+                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, makeRequestHandler(serverConfig), serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else if (serverConfig.protocol === 'http') {
-                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */({server: startServer(node_http, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
+                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */({server: startServer(node_http, serverConfig.port, makeRequestHandler(serverConfig), serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else {

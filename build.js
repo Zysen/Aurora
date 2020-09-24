@@ -26,19 +26,30 @@ else {
 
 var buildConfigStr = path.resolve((process.argv.length>=3)?process.argv[2]:__dirname+path.sep+"build_config.json");
 var debug = false;
+var test = false;
 var build = null;
 if (process.argv.length >= 4) {
     let type = process.argv[3];
     debug = type.startsWith('debug-') || type == 'debug';
-    if (type !== 'debug' && debug) {
-        build = type.substring(6);
-    }
-    else if (type !== 'debug'){
-        build = type;
+    test = type.startsWith('test-') || type == 'test';
+
+    if (type !== 'debug') {
+        if (debug) {
+            build = type.substring(6);
+        }
+        else if (type !== 'debug'){
+            if (test) {
+                build = type.substring(5);
+            }
+            else {
+                build = type;
+            }
+        }
     }
     console.log("BUILD Type", build);
 };
 process.title = "aurora_build";
+
 
 var regEscape = function (c) {
     if (['.','(',')','*','?','[', ']', '\\'].indexOf(c) !== -1) {
@@ -203,6 +214,7 @@ String.prototype.replaceAll = function (find, replace) {
     return str.replace(new RegExp(find.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replace);
 };
 
+
 function scanExports(str, startPos){
 	var pos = str.indexOf("@export", startPos);
 	if(pos>=0){
@@ -257,55 +269,136 @@ var startTime = new Date().getTime();
 console.log("Starting Aurora Builder");
 
 config.output = config.output || "output";
+config.generated = config.generated || "generated";
 createDir(config.output);
-createDir(config.output+path.sep+"resources");
+createDir(path.join(config.output,"resources"));
+createDir(config.generated);
 
 var dependencyTree = {};
 var buildScriptCalls = {};
+let allPlugins = [];
+
 config.plugins.forEach(function(pluginDir){
-	fs.readdirSync(pluginDir).forEach(function(pluginName){
-		if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
-			return;
-		}
-		if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
-			return;
-		}
-			
-		if(pluginName.endsWith("disabled")){return;}
-		try{var pluginConfigStr = fs.readFileSync(pluginDir+path.sep+pluginName+"/build_config.json").toString();}catch(e){var pluginConfigStr = "{}";}
-		try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
-		dependencyTree[pluginName] = [];
-		if(pluginConfig.dependencies){
-			pluginConfig.dependencies.forEach(function(dependency){
-				dependencyTree[pluginName].push(dependency);
-			});
-		}
-		if(buildScriptCalls[pluginName]===undefined){buildScriptCalls[pluginName] = {name: pluginName,scripts:[]};}
-		fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
-		    if(pluginFileName.endsWith("build.js")){
-			buildScriptCalls[pluginName].scripts.push(function(doneCb){
-			    console.log("Building "+pluginName);
-			    var child = child_process.fork(pluginDir+path.sep+pluginName+path.sep+pluginFileName, [pluginConfigStr, __dirname, path.resolve(process.cwd()+path.sep+config.output), buildConfigStr], {silent:true}).on('exit', function (code) {
-				doneCb();
-			    });
-			    child.stdout.on('data', function(d){
-				console.log(d.toString());
-			    });
-			    var errored = false;
-			    child.stderr.on('data', function(d){
-				errored = true;
-				console.log(d.toString());
-			    });
-                            child.on('exit', function (code) {
-                                if (code) {
-				    console.log("Error while compiling "+pluginName+" plugin");
-                                    process.exit(code);
-                                }
-                            });
-			});		
-		    }
-		});
+    fs.readdirSync(pluginDir).forEach(function(pluginName){
+	if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
+	    return;
+	}
+	if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
+	    return;
+	}
+	if(pluginName.endsWith("disabled")){return;}
+        allPlugins.push({path: path.join(pluginDir, pluginName), name: pluginName});
+    });
+    
+});
+
+let allTests = [];
+if (test) {
+    let scanForTests = function (root) {
+        fs.readdirSync(root).forEach(function(fname){
+            let fullName = path.join(root, fname);
+            try {
+                var stat = fs.statSync(fullName);
+                if (stat.isFile()) {
+                    if (/\.test\.js$/.test(fname)) {
+                        allTests.push(fullName);
+                    }
+                }
+                else if (stat.isDirectory()) {
+                    scanForTests(fullName);
+                }
+            }
+            catch (e) {
+            }
+        });
+
+
+    };
+    
+    allPlugins.forEach(function (p) {
+        if ((config['ignore-tests'] || []).indexOf(p.path) === -1) {
+            scanForTests(p.path);
+        }
+    });
+}
+
+let testImports = {};
+function addTestImports(file) {
+    let lines = fs.readFileSync(file).toString().split('\n');
+    lines.forEach(function (line) {
+        let reg1 = /=\s*require\s*\(\s*'(..\/)*output\/testable\.js'\s*\)\s*\.([^;]*)\s*;/;
+        let reg2 = /=\s*require\s*\(\s*"(..\/)*output\/testable\.js"\s*\)\s*\.([^;]*)\s*;/;
+        let match = line.match(reg1) || line.match(reg2);
+        if (match) {
+            testImports[match[2].trim()] = true;
+        }
+    });
+}
+
+allTests.forEach(function (testFile) {
+    addTestImports(testFile);
+    
+});
+
+function testBases () {
+    let bases = {};
+    for (let im in testImports) {
+        bases[im.split('.')[0]] = true;
+    }
+    return bases;
+};
+
+console.log(testImports);
+
+
+allPlugins.forEach(function(pluginInfo){
+    let pluginName = pluginInfo.name;
+    try{var pluginConfigStr = fs.readFileSync(path.join(pluginInfo.path,"build_config.json")).toString();}catch(e){var pluginConfigStr = "{}";}
+    try{var pluginConfig = JSON.parse(pluginConfigStr);}catch(e){var pluginConfig = {};}
+    dependencyTree[pluginName] = [];
+    if(pluginConfig.dependencies){
+	pluginConfig.dependencies.forEach(function(dependency){
+	    dependencyTree[pluginName].push(dependency);
 	});
+    }
+    if(buildScriptCalls[pluginName]===undefined){buildScriptCalls[pluginName] = {name: pluginName,scripts:[]};}
+    let curPluginDir = pluginInfo.path;
+
+    fs.readdirSync(curPluginDir).forEach(function(pluginFileName){
+	if(pluginFileName.endsWith("build.js")){
+	    buildScriptCalls[pluginName].scripts.push(function(doneCb){
+		console.log("Building "+pluginName);
+		var child = child_process.fork(
+                    path.join(curPluginDir, pluginFileName),
+                    [
+                        pluginConfigStr,
+                        __dirname,
+                        path.resolve(path.join(process.cwd(), config.output)),
+                        buildConfigStr,
+                        process.cwd(),
+                        path.resolve(path.join(process.cwd(), config.generated)),
+                        JSON.stringify(allPlugins.map(function (v) {return v.path;}))
+                                                      
+                    ], {silent:true}).on('exit', function (code) {
+			doneCb();
+		    });
+		child.stdout.on('data', function(d){
+		    console.log(d.toString());
+		});
+		var errored = false;
+		child.stderr.on('data', function(d){
+		    errored = true;
+		    console.log(d.toString());
+		});
+                child.on('exit', function (code) {
+                    if (code) {
+			console.log("Error while compiling "+pluginName+" plugin");
+                        process.exit(code);
+                    }
+                });
+	    });		
+	}
+    });
 });
 
 /*
@@ -335,9 +428,9 @@ function findDepth(name, visitedNodes, depth){		//TODO: Add loop detection
 }
 
 var pluginDepth = {};
-for(var pluginName in dependencyTree){
-	if(pluginName.endsWith(".disabled")){continue;}
-	pluginDepth[pluginName] = findDepth(pluginName);
+for(let pluginName in dependencyTree){
+    if(pluginName.endsWith(".disabled")){continue;}
+    pluginDepth[pluginName] = findDepth(pluginName);
 }
 
 Object.values(buildScriptCalls).sort(function(p1, p2){
@@ -370,6 +463,8 @@ function getExportedString(name, globalStr){
 	
 }
 
+console.log("build =================== ", build);
+
 processQueue(orderedScripts, function(){
 	//Match build targets and output to output dir.
     var buildTargets = {};
@@ -386,7 +481,6 @@ processQueue(orderedScripts, function(){
         var include = true;
         (target.exclude || []).forEach(function (ex) {
             if (parseGlob(ex).pat(name)) {
-                console.log("sss", ex, name);
                 include = false;
             }
         });
@@ -394,11 +488,16 @@ processQueue(orderedScripts, function(){
     }
     var pluginConfigs = {};
     config.build_targets.forEach(function (target) {
+        target.seenFiles = target.seenFiles || {};
+        let seen = target.seenFiles;
         if (shouldBuild(target) && target.preSearch) {
             target.preSearch.forEach(function (search) {
+
                 scanGlob(search, function (fname) {
-                    if (doInclude(target, fname)) {
+                    let rfname = path.resolve(fname);
+                    if (doInclude(target, fname) && !seen[rfname]) {
                         target.preSearch, buildTargets[target.filename].sources.push(fname);
+                        seen[rfname] = true;
                     }
                 });
             });
@@ -407,75 +506,87 @@ processQueue(orderedScripts, function(){
     });
 
 
-	config.plugins.forEach(function(pluginDir){
-		fs.readdirSync(pluginDir).sort(function(a,b){
-			return pluginDepth[a]-pluginDepth[b];
-		}).filter(function(pluginName){
-			return !pluginName.endsWith(".disabled");
-		}).forEach(function(pluginName){
-			if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
-				return;
-			}
-			if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
-				return;
-			}
-			
-		    config.build_targets.forEach(function(target){
-			if((target.searchExp instanceof Array)===false){
-			    target.searchExp = [target.searchExp];
-			}
-                        
-                        if (target.ignorePlugins && target.ignorePlugins.indexOf(pluginName) !== -1) {
-                            return;
-                        }
+    config.plugins.forEach(function(pluginDir){
+	fs.readdirSync(pluginDir).sort(function(a,b){
+	    return pluginDepth[a]-pluginDepth[b];
+	}).filter(function(pluginName){
+	    return !pluginName.endsWith(".disabled");
+	}).forEach(function(pluginName){
+	    if(config.ignorePlugins && config.ignorePlugins instanceof Array && config.ignorePlugins.indexOf(pluginName)>=0){
+		return;
+	    }
+	    if(config.allowedPlugins && config.allowedPlugins instanceof Array && config.allowedPlugins.indexOf(pluginName)<0){
+		return;
+	    }
+	    
+	    config.build_targets.forEach(function(target){
+		if((target.searchExp instanceof Array)===false){
+		    target.searchExp = [target.searchExp];
+		}
+                
+                if (target.ignorePlugins && target.ignorePlugins.indexOf(pluginName) !== -1) {
+                    return;
+                }
+                target.seenFiles = target.seenFiles || {};
+                let scanPlugin = function (pluginDir, pluginName, seenFiles) {
+                    return function(searchExpStr) {
+		        fs.readdirSync(path.join(pluginDir,pluginName)).forEach(function(pluginFileName){
+			    var stat = fs.statSync(path.join(pluginDir,pluginName,pluginFileName));
+                            if (shouldBuild(target)) {
+			        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
+                            }
+			    if(stat.isFile()){
+			        if(pluginFileName==="config.json"){
+				    pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
+			        }
+			        if (!shouldBuild(target)) { 
+				    return;
+			        }
+                                
+                                
+			        var match = pluginFileName.match(searchExpStr);
 
-                        var seenFiles = {};
-                        forEachSearchExp(pluginName, target.searchExp,function(searchExpStr){
-			    fs.readdirSync(pluginDir+path.sep+pluginName).forEach(function(pluginFileName){
-				var stat = fs.statSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName);
-                                if (shouldBuild(target)) {                                    
-				    copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
+                                if (pluginName === '.') {
+                                    console.log("scanning source", pluginFileName, searchExpStr, match);
                                 }
-				if(stat.isFile()){
-				    if(pluginFileName==="config.json"){
-					pluginConfigs[pluginName] = JSON.parse(fs.readFileSync(pluginDir+path.sep+pluginName+path.sep+pluginFileName).toString());
-				    }
-				    if (!shouldBuild(target)) { 
-					return;
-				    }
-                                    
-                                    
-				    var match = pluginFileName.match(searchExpStr);
-				    if(match!==null){
-                                        let fileName = path.resolve(path.join(pluginDir,pluginName, pluginFileName));
-                                        if (!seenFiles[fileName]) {
-                                            seenFiles[fileName] = true;
-                                            let fname = pluginDir+'/'+pluginName+'/'+pluginFileName;
-                                            if (doInclude(target, fname)) {
-					        buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
-                                            }
+			        if(match!==null){
+                                    let fileName = path.resolve(path.join(pluginDir,pluginName, pluginFileName));
+                                    if (!seenFiles[fileName]) {
+                                        seenFiles[fileName] = true;
+                                        let fname = pluginDir+'/'+pluginName+'/'+pluginFileName;
+                                        if (doInclude(target, fname)) {
+					    buildTargets[target.filename].sources.push(path.resolve(pluginDir+path.sep+pluginName+path.sep+pluginFileName));
                                         }
-				    }	
-				}
-			    });
-			});
-		    });
-		});
+                                    }
+			        }	
+			    }
+		        });
+                    };
+                };
+                forEachSearchExp(pluginName, target.searchExp, scanPlugin(pluginDir, pluginName, target.seenFiles));
+                if (fs.existsSync(path.join(config.generated, pluginDir, pluginName))) {
+                    forEachSearchExp(pluginName, target.searchExp, scanPlugin(path.join(config.generated, pluginDir), pluginName, target.seenFiles));
+                }
+	    });
 	});
-	try{
-		var configStat = fs.statSync("config.json");		//This will throw an exception if the config doesnt exist.
-		var customConfig = JSON.parse(fs.readFileSync("config.json"));
-		for(var pluginName in customConfig){
-			for(var key in customConfig[pluginName]){
-				pluginConfigs[pluginName][key] = customConfig[pluginName][key];
-			}
-		}	
-	}
-	catch(e){}	//Do nothing intentionally.
-	
-	if(Object.keys(pluginConfigs).length>0){
-		fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
-	}
+    });
+    let  configStat = null;
+    try{
+	configStat = fs.statSync("config.json");		//This will throw an exception if the config doesnt exist.
+    }
+    catch(e){}	//Do nothing intentionally.
+    if (configStat) {
+	var customConfig = JSON.parse(fs.readFileSync("config.json"));
+	for(let pluginName in customConfig){
+	    for(var key in customConfig[pluginName]){
+                pluginConfigs[pluginName] = pluginConfigs[pluginName] || {};
+		pluginConfigs[pluginName][key] = customConfig[pluginName][key];
+	    }
+	}	
+    }
+    if(Object.keys(pluginConfigs).length>0){
+	fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
+    }
     var testGlob = function (p, expected) {
         var res = isGlob(p);
         
@@ -505,7 +616,6 @@ processQueue(orderedScripts, function(){
             });
         };
     };
-    
     processQueue(Object.values(buildTargets).map(function(target){
         var argsFile = config.output+"/compile." + target.filename + ".args";
 	return function(doneCb){
@@ -524,12 +634,47 @@ processQueue(orderedScripts, function(){
 		var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
 		    return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global") + ';';
 		}).join("\n");
+                console.log("*********************** do test", test);
+                if (test)
+                {
+                    let imports = [];
+                    for (let im in testImports)
+                    {
+                        imports.push(im);
+                    }
+
+                    imports.sort();
+                    
+                    fs.writeFileSync(entryFilePath,'/**\n * @fileoverview automatically generated file for exports so unit test can work\n');
+                    fs.appendFileSync(entryFilePath, ' * @suppress {lintChecks}\n */\n\n');
+                    fs.appendFileSync(entryFilePath, 'goog.provide(\'entrypoints\');\n\n');
+                    imports.forEach(function(imp) {
+                        fs.appendFileSync(entryFilePath, 'goog.require(\'' + imp + '\');\n');
+                    });
+                    fs.appendFileSync(entryFilePath, '\n\n');
+
+                    imports.forEach(function(imp) {
+                        fs.appendFileSync(entryFilePath, 'goog.exportSymbol(\'' + imp + '\', + ' + imp + ');\n');
+                    }); 
+                    fs.appendFileSync(entryFilePath, 'module.exports = {\n');
+                    let first = true;
+                    for (let base in testBases()) {
+                        if (!first) {
+                            fs.appendFileSync(entryFilePath, ',\n');
+                        }
+                        fs.appendFileSync(entryFilePath, '    ' + base + ': ' + base);
+                        first = false;
+                    }
+                    fs.appendFileSync(entryFilePath, '\n};\n');
+   
+                }
+                else {
+		    //console.log("Entry Points:\r\n", entryStr);
+		    fs.writeFileSync(entryFilePath,'/**\n * @fileoverview automatically generated file for exports\n');
+                    fs.appendFileSync(entryFilePath, ' * @suppress {lintChecks}\n */');
+                    fs.appendFileSync(entryFilePath, entryStr);
+		}
                 
-		//console.log("Entry Points:\r\n", entryStr);
-		fs.writeFileSync(entryFilePath,'/**\n * @fileoverview automatically generated file for exports\n');
-                fs.appendFileSync(entryFilePath, ' * @suppress {lintChecks}\n */');
-                fs.appendFileSync(entryFilePath, entryStr);
-		
 		if(target.sourcesFile){
 		    config.plugins.forEach(function(pluginDir){
 			fs.readdirSync(pluginDir).filter(function(pluginName){
@@ -573,12 +718,12 @@ processQueue(orderedScripts, function(){
                     argsFileFlag = ['--flagfile', argsFile];
                 }
                 console.log("level", level);
-		var buildCommandArray = 
-                    [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
+                let compileOut = test ? path.join(config.output,  'testable.js') : path.join(config.output,  target.filename);
+		var buildCommandArray =  [JAVA+" -jar "+__dirname+"/closure-compiler-v20180716.jar",//closure-compiler-v20180204.jar",
                      "--env="+target.env+""].concat(
                              argsFileFlag, target.args || [],
                              ["--hide_warnings_for=closure/goog/base.js",
-			      "--js='"+entryFilePath+"'",
+			      "--js='"+ entryFilePath +"'",
                               "--jscomp_error=lintChecks",
 			      "--js='"+target.sources.join("' --js='")+"'",
 			      "--dependency_mode=STRICT",
@@ -586,8 +731,8 @@ processQueue(orderedScripts, function(){
 			      "--compilation_level="+level,
 			      "--warning_level=VERBOSE",
 			      "--jscomp_error=checkTypes",
-			      "--js_output_file='"+config.output + path.sep + target.filename+"'",
-			      "--create_source_map='"+config.output + path.sep + target.filename+".map'",
+			      "--js_output_file='"+compileOut+"'",
+			      "--create_source_map='"+compileOut +".map'",
 			      "--source_map_format=V3",
 			      "--source_map_include_content=true", ]);
 			    //"--export_local_property_definitions"
@@ -613,7 +758,7 @@ processQueue(orderedScripts, function(){
 				    else if(target.nodejs){
 						fs.writeFileSync(customOutputWrapperPath, "//# sourceMappingURL="+target.sourceMapLocation+"/"+target.filename+".map\n(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith(\"server.min.js\")){return {url: \"server.min.js.map\",map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);");
 						buildCommandArray.push("--output_wrapper_file=\""+customOutputWrapperPath+"\"");
-					}
+				    }
 		}
                 else if (target.nodejs && debug) {
                     buildCommandArray.push("--assume_function_wrapper");
