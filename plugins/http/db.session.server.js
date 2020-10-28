@@ -106,7 +106,7 @@ aurora.auth.DbSessionTable.prototype.updateSession_ = function(session, cb) {
         session.expiry = new Date().getTime() + session.timeout;
     }
 
-    this.reader_.updateOneLevel({}, sessionT,toUpdate, query.eq(sessionT.cols.id, session.constToken), function () {
+    this.reader_.updateOneLevel({}, sessionT,toUpdate, query.eq(sessionT.cols.id, query.val(session.constToken)), function () {
         this.updateExpire_(cb);
     });
 
@@ -123,7 +123,7 @@ aurora.auth.DbSessionTable.prototype.removeSeriesId = function(seriesId, opt_cb)
     this.memory_.removeSeriesId(seriesId, function (res) {
         let sessionT = aurora.db.schema.tables.base.session;
         let query = new recoil.db.Query();
-        me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.seriesId, seriesId), null, function (error, count) {
+        me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.seriesId, query.val(seriesId)), null, function (error, count) {
             if (opt_cb) {
                 opt_cb(count > 0 || res);
             }
@@ -438,14 +438,14 @@ aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId
             if (object.seriesId !== seriesId) {
                 // remove the series id this is invalid also remove all tokens that match this is a security violatin
                 console.log('series id did not match', token, seriesId);
-                me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.token, token), null, function () {});
+                me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.token, query.val(token)), null, function () {});
                 cb(undefined);
                 return;
             }
             object.seriesId = me.auth_.generateSeriesId();
             me.reader_.updateOneLevel(
                 {}, sessionT, {seriesId: object.seriesId, expiry: new Date().getTime()},
-                query.eq(sessionT.cols.id, object.id), function () {
+                query.eq(sessionT.cols.id, query.val(object.id)), function () {
                 let entry = /** @type {!aurora.auth.SessionTable.Entry} */ (me.makeEntry(object));
                 me.memory_.loadEntry(entry, function (err) {
                     cb(err ? undefined: entry);

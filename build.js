@@ -768,39 +768,39 @@ processQueue(orderedScripts, function(){
 
                     
 
-				var buildCommand = buildCommandArray.join(" ");
-				
-				console.log("\n"+buildCommand+"\n");
-				var ex = child_process.exec(buildCommand, function(err, stdout, stderr){
-					if(err){
-						console.log(stderr);
-						process.exit(1);
-						return;
-					}
-					console.log(stdout);
-					console.log(stderr);
-					fs.unlink(entryFilePath, function(err){
-						if(err){console.error(err);}
-						fs.unlink(customOutputWrapperPath, function(err){
-							if(err){}
-							fs.unlink(argsFile, function(err){
-								if(err){}
-								postProcess(target, doneCb);
-							});
-						});
-					});
-				});
-			}
-			else{
-			    console.log("Concatenating "+target.filename);
-			    fs.writeFileSync(config.output+path.sep+target.filename, "");
-
-			    target.sources.forEach(function(sourceFile){
-				fs.appendFileSync(config.output+path.sep+target.filename, fs.readFileSync(sourceFile));
-				fs.appendFileSync(config.output+path.sep+target.filename, "\n");
+		var buildCommand = buildCommandArray.join(" ");
+		
+		console.log("\n"+buildCommand+"\n");
+		var ex = child_process.exec(buildCommand, function(err, stdout, stderr){
+		    if(err){
+			console.log(stderr);
+			process.exit(1);
+			return;
+		    }
+		    console.log(stdout);
+		    console.log(stderr);
+		    fs.unlink(entryFilePath, function(err){
+			if(err){console.error(err);}
+			fs.unlink(customOutputWrapperPath, function(err){
+			    if(err){}
+			    fs.unlink(argsFile, function(err){
+				if(err){}
+				postProcess(target, doneCb);
 			    });
-			    doneCb();
-			}
+			});
+		    });
+		});
+	    }
+	    else{
+		console.log("Concatenating "+target.filename);
+		fs.writeFileSync(config.output+path.sep+target.filename, "");
+                
+		target.sources.forEach(function(sourceFile){
+		    fs.appendFileSync(path.join(config.output,target.filename), fs.readFileSync(sourceFile));
+		    fs.appendFileSync(path.join(config.output,target.filename), "\n");
+		});
+		doneCb();
+	    }
 	};
     }), function(){
 		postProcess(config, function(){

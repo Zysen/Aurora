@@ -552,8 +552,10 @@ aurora.http.REQUEST_ASYNC = {};
                         case '/':
                             url += (config['http']['defaultPage'] || 'home');
                         default:
+                            let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
+                            console.log("getting parsed", pathname, "old", url);
                             // check ith the url is in the theme directory if so then we need to them it
-                            themeAccess(state, publicBasePath, url + '.html', fs.constants.R_OK, function(fsPath, err) {
+                            themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
                                 if (err === null) {
                                     fs.readFile(fsPath, function(err, pageData) {
                                         if (err) {
@@ -568,7 +570,7 @@ aurora.http.REQUEST_ASYNC = {};
                                     });
                                     return;
                                 }
-                                themeAccess(state, publicBasePath, url, fs.constants.R_OK, function(fsname, err) {
+                                themeAccess(state, publicBasePath, pathname, fs.constants.R_OK, function(fsname, err) {
                                     if (err && err['code'] === 'ENOENT') {
                                         
                                         if (config['http']['sourceDirectory'] !== undefined) {
