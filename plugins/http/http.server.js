@@ -469,7 +469,6 @@ aurora.http.REQUEST_ASYNC = {};
                     cookies[parts[0].trim()] = (parts[1] || '').trim();
                 });
 
-                
                 let url = path.normalize(decodeURIComponent(request.url));
                 let parsedUrl = urlLib.parse(url);
                 
@@ -553,7 +552,6 @@ aurora.http.REQUEST_ASYNC = {};
                             url += (config['http']['defaultPage'] || 'home');
                         default:
                             let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
-                            console.log("getting parsed", pathname, "old", url);
                             // check ith the url is in the theme directory if so then we need to them it
                             themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
                                 if (err === null) {
