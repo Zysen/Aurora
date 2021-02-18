@@ -79,8 +79,11 @@ aurora.auth.Auth = function() {
                 me.sessions_.findSession(token, seriesId, function (session) {
                     if (session) {
                         me.sessions_.remove(session.constToken, function () {
+                            let logoutPage  = (config['authentication'] || {})['logoutURL'];
+
+                            
+                            var referer = logoutPage || state.request.headers['referer'];
                             me.log_.info("session removed");
-                            var referer = state.request.headers['referer'];
                             if (referer) {
                                 try {
                                     state.response.writeHead(302, {'Location': referer});
