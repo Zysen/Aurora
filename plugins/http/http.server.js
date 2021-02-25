@@ -479,8 +479,9 @@ aurora.http.REQUEST_ASYNC = {};
                 let processAsyncCallbacks = function (start, doneCb) {
                     let exit = false;
                     let async = false;
-                    let traverseFunc = function (startIdx) {
+                    let traverseFunc = function (startKey, startIdxIn) {
                         return function(cb) {
+                            let startIdx = startKey === null ? 0 : (startKey < cb.key ? 0 : startIdxIn);
                             for (let i = startIdx; i < cb.callbacks.length; i++) {
                                 let cur = cb.callbacks[i];
                                 if (state.locked && !cur.allowLocked) {
@@ -491,8 +492,8 @@ aurora.http.REQUEST_ASYNC = {};
                                         if (asyncRes !== false) {
                                             processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
                                         }
+                                        
                                     });
-                                    
                                     if (res === false || aurora.http.REQUEST_ASYNC === res) {
                                         exit = true;
                                         return true;
@@ -504,10 +505,10 @@ aurora.http.REQUEST_ASYNC = {};
                             
                     };
                     if (start) {
-                        callbacks.inOrderTraverse(traverseFunc(start.idx), start.cb);
+                        callbacks.inOrderTraverse(traverseFunc(start.cb.key, start.idx), start.cb);
                     }
                     else {
-                        callbacks.inOrderTraverse(traverseFunc(0));
+                        callbacks.inOrderTraverse(traverseFunc(null, 0));
                     }
                     url = state.outUrl;
                     if (!exit) {
