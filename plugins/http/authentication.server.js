@@ -130,12 +130,24 @@ aurora.auth.Auth = function() {
                             'sesh=' + encodeURIComponent(session.token + '-' + session.seriesId) + me.makeCookieSuffix() ]);
                         
                     }
+                   
+                    if (session.data && session.data.userid !== null && !state.cookies['userid']) {
+                        let setCookies = state.responseHeaders.get('Set-Cookie');
+                        if (!setCookies) {
+                            state.responseHeaders.set('Set-Cookie', [
+                                'username=' + encodeURIComponent(session.data.user) + '; Path=/; SameSite=Strict;',
+                                'userid=' + encodeURIComponent(session.data.userid) + '; Path=/; SameSite=Strict;',
+                                'permissions=' + encodeURIComponent(JSON.stringify(session.data.permissions || {})) + '; Path=/; SameSite=Strict;']);
+                        }
+                    }
+
                     state.token = session.constToken;
                     state.locked = session.locked;
                     me.sessions_.touch(session.constToken);
                     doneCallback(undefined);
                     return;
                 }
+
             }
             
             // do this after we get the session because the callback may use it
