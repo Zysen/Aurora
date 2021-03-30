@@ -445,7 +445,7 @@ aurora.http.REQUEST_ASYNC = {};
                         let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
                         if (message) {
 	                    response.writeHead(403, {'Location': url});
-                            response.end(message.replaceAll('{REDIRECT}', url));
+                            response.end(message.replaceAll('{REDIRECT}', encodeURI(url)));
                         }
                         else {
                             redirect(response, url);
