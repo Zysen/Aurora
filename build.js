@@ -127,12 +127,13 @@ var isGlob = function (part) {
 
 
 var forEachSearchExp = function (pluginName, exp, cb) {
+    let debug =  (pluginName == 'aurora_sql');
     if (exp instanceof Array) {
         for (let i = 0; i < exp.length; i++) {
             let item = exp[i];
             if (typeof(item) === 'string') {
                 cb(item);
-                                    }
+            }
             else if (item.plugin && parseGlob(item.plugin).pat(pluginName)) {
                 forEachSearchExp(pluginName, item.search, cb);
                 break;
@@ -293,6 +294,7 @@ config.plugins.forEach(function(pluginDir){
 });
 
 let allTests = [];
+let testStubs = [];
 if (test) {
     let scanForTests = function (root) {
         fs.readdirSync(root).forEach(function(fname){
@@ -302,6 +304,9 @@ if (test) {
                 if (stat.isFile()) {
                     if (/\.test\.js$/.test(fname)) {
                         allTests.push(fullName);
+                    }
+                    if (/\.test\.stub\.js$/.test(fname)) {
+                        testStubs.push(fullName);
                     }
                 }
                 else if (stat.isDirectory()) {
@@ -339,6 +344,7 @@ allTests.forEach(function (testFile) {
     addTestImports(testFile);
     
 });
+
 
 function testBases () {
     let bases = {};
@@ -545,7 +551,6 @@ processQueue(orderedScripts, function(){
                                 
                                 
 			        var match = pluginFileName.match(searchExpStr);
-
                                 if (pluginName === '.') {
                                     console.log("scanning source", pluginFileName, searchExpStr, match);
                                 }
@@ -628,13 +633,12 @@ processQueue(orderedScripts, function(){
 		    }
 		    return p;
 		});
-		var entryFilePath = config.output+path.sep+target.filename+"-aurora.entry.js";		//os.tmpdir()
+		var entryFilePath = path.join(config.output,target.filename+"-aurora.entry.js");		//os.tmpdir()
 		var entryPoints = findExports(target.sources);
 		//console.log("Entry Points", entryPoints.join(" "));
 		var entryStr = "goog.provide(\"entrypoints\");\r\n"+entryPoints.map(function(v){
-		    return "goog.require(\""+v+"\");"+getExportedString(v, target.env==="BROWSER"?"window":"global") + ';';
+		    return "goog.require(\""+v+"\");\n"+getExportedString(v, target.env==="BROWSER"?"window":"global") + ';';
 		}).join("\n");
-                console.log("*********************** do test", test);
                 if (test)
                 {
                     let imports = [];
@@ -769,7 +773,6 @@ processQueue(orderedScripts, function(){
                     
 
 		var buildCommand = buildCommandArray.join(" ");
-		
 		console.log("\n"+buildCommand+"\n");
 		var ex = child_process.exec(buildCommand, function(err, stdout, stderr){
 		    if(err){
@@ -779,6 +782,7 @@ processQueue(orderedScripts, function(){
 		    }
 		    console.log(stdout);
 		    console.log(stderr);
+                    /*
 		    fs.unlink(entryFilePath, function(err){
 			if(err){console.error(err);}
 			fs.unlink(customOutputWrapperPath, function(err){
@@ -788,7 +792,7 @@ processQueue(orderedScripts, function(){
 				postProcess(target, doneCb);
 			    });
 			});
-		    });
+		    });todo*/
 		});
 	    }
 	    else{
