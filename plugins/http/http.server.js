@@ -433,184 +433,186 @@ aurora.http.REQUEST_ASYNC = {};
     }
     function makeRequestHandler(sConfig) {
         return function (request, response) {
-            let cookies = {};
-            let responseHeaders = responseHeadersDef();
-            try {
-                if (request['client'] && !request['client']['encrypted']) {
-                    let httpsRedirect = sConfig['httpsRedirect'];
-                    if (httpsRedirect != undefined) {
-                        let message = sConfig['httpsRedirectMessage'];
-                        let httpPort = sConfig['port'];
-                        var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
-                        let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
-                        if (message) {
-	                    response.writeHead(403, {'Location': url});
-                            response.end(message.replaceAll('{REDIRECT}', goog.string.htmlEscape(url)));
+             aurora.startup.doWhenStarted(function () {
+                let cookies = {};
+                let responseHeaders = responseHeadersDef();
+                try {
+                    if (request['client'] && !request['client']['encrypted']) {
+                        let httpsRedirect = sConfig['httpsRedirect'];
+                        if (httpsRedirect != undefined) {
+                            let message = sConfig['httpsRedirectMessage'];
+                            let httpPort = sConfig['port'];
+                            var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
+                            let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
+                            if (message) {
+	                        response.writeHead(403, {'Location': url});
+                                response.end(message.replaceAll('{REDIRECT}', goog.string.htmlEscape(url)));
+                            }
+                            else {
+                                redirect(response, url);
+                            }
+                            return;
+                        }
+                    }
+                    var newRequests = [];
+                    allRequests.forEach(function(s) {
+                        if (!s.response['finished']) {
+                            newRequests.push(s);
+                        }
+                        
+                    });
+                    if (newRequests.length > 0) {
+                        console.log('pending requests', newRequests.length);
+                    }
+                    allRequests = newRequests;
+                    request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
+                        var parts = cookie.split('=');
+                        cookies[parts[0].trim()] = (parts[1] || '').trim();
+                    });
+
+                    let url = path.normalize(decodeURIComponent(request.url));
+                    let parsedUrl = urlLib.parse(url);
+                    
+
+                    let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
+                    //            allRequests.push(state);
+
+                    let processAsyncCallbacks = function (start, doneCb) {
+                        let exit = false;
+                        let async = false;
+                        let traverseFunc = function (startKey, startIdxIn) {
+                            return function(cb) {
+                                let startIdx = startKey === null ? 0 : (startKey < cb.key ? 0 : startIdxIn);
+                                for (let i = startIdx; i < cb.callbacks.length; i++) {
+                                    let cur = cb.callbacks[i];
+                                    if (state.locked && !cur.allowLocked) {
+                                        continue;
+                                    }
+                                    if (cur.pattern.test(parsedUrl.pathname)) {
+                                        let res = cur.callback(state, function (asyncRes) {
+                                            if (asyncRes !== false) {
+                                                processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
+                                            }
+                                            
+                                        });
+                                        if (res === false || aurora.http.REQUEST_ASYNC === res) {
+                                            exit = true;
+                                            return true;
+                                        }
+                                    }
+                                }
+                                return false;
+                            };
+                            
+                        };
+                        if (start) {
+                            callbacks.inOrderTraverse(traverseFunc(start.cb.key, start.idx), start.cb);
                         }
                         else {
-                            redirect(response, url);
+                            callbacks.inOrderTraverse(traverseFunc(null, 0));
                         }
-                        return;
-                    }
-                }
-                var newRequests = [];
-                allRequests.forEach(function(s) {
-                    if (!s.response['finished']) {
-                        newRequests.push(s);
-                    }
-                    
-                });
-                if (newRequests.length > 0) {
-                    console.log('pending requests', newRequests.length);
-                }
-                allRequests = newRequests;
-                request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
-                    var parts = cookie.split('=');
-                    cookies[parts[0].trim()] = (parts[1] || '').trim();
-                });
-
-                let url = path.normalize(decodeURIComponent(request.url));
-                let parsedUrl = urlLib.parse(url);
-                
-
-                let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
-                //            allRequests.push(state);
-
-                let processAsyncCallbacks = function (start, doneCb) {
-                    let exit = false;
-                    let async = false;
-                    let traverseFunc = function (startKey, startIdxIn) {
-                        return function(cb) {
-                            let startIdx = startKey === null ? 0 : (startKey < cb.key ? 0 : startIdxIn);
-                            for (let i = startIdx; i < cb.callbacks.length; i++) {
-                                let cur = cb.callbacks[i];
-                                if (state.locked && !cur.allowLocked) {
-                                    continue;
-                                }
-                                if (cur.pattern.test(parsedUrl.pathname)) {
-                                    let res = cur.callback(state, function (asyncRes) {
-                                        if (asyncRes !== false) {
-                                            processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
-                                        }
-                                        
-                                    });
-                                    if (res === false || aurora.http.REQUEST_ASYNC === res) {
-                                        exit = true;
-                                        return true;
-                                    }
-                                }
-                            }
-                            return false;
-                        };
-                            
+                        url = state.outUrl;
+                        if (!exit) {
+                            doneCb();
+                        }
+                        
                     };
-                    if (start) {
-                        callbacks.inOrderTraverse(traverseFunc(start.cb.key, start.idx), start.cb);
-                    }
-                    else {
-                        callbacks.inOrderTraverse(traverseFunc(null, 0));
-                    }
-                    url = state.outUrl;
-                    if (!exit) {
-                        doneCb();
-                    }
                     
-                };
-                
 
-                
-                let processAfterCallbacks = function () {
-                    try {
-                        switch (url) {
-                        case path.sep + 'client.min.js':
-                            if (config['http']['sourceDirectory'] !== undefined) {
-                                responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
-                            }
-                            sendFile(__dirname + path.sep + url, state, true);
-                            return;
-                        case '/favicon.ico':
-                            
-                            themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
-                                if (err) {
-                                    aurora.http.writeError(404, state);
+                    
+                    let processAfterCallbacks = function () {
+                        try {
+                            switch (url) {
+                            case path.sep + 'client.min.js':
+                                if (config['http']['sourceDirectory'] !== undefined) {
+                                    responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
                                 }
-                                else {
-                                    sendFile(fsPath, state, true);
-                                }
-                            });
-                            return;
-                        case path.sep + 'LICENSE':
-                            url = url + '.txt';
-                        case path.sep + 'LICENSE.txt':
-                        case path.sep + 'client.js':
-                        case path.sep + 'client.libs.js':                
-                        case path.sep + 'client.min.js.map':
-                        case path.sep + 'server.min.js.map':
-                            sendFile(__dirname + path.sep + url, state, true);
-                            return;
-                        case path.sep:
-                        case '/':
-                            url += (config['http']['defaultPage'] || 'home');
-                        default:
-                            let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
-                            // check ith the url is in the theme directory if so then we need to them it
-                            themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
-                                if (err === null) {
-                                    fs.readFile(fsPath, function(err, pageData) {
-                                        if (err) {
-                                            aurora.http.writeError(500, state);
-                                            return;
-                                        }
-                                        
-                                        response.writeHead(200, responseHeaders.toClient());
-                                        aurora.http.loadTemplate(state, function (template) {
-                                            response.end(template.replace('{BODY}', pageData.toString()));
-                                    });
-                                    });
-                                    return;
-                                }
-                                themeAccess(state, publicBasePath, pathname, fs.constants.R_OK, function(fsname, err) {
-                                    if (err && err['code'] === 'ENOENT') {
-                                        
-                                        if (config['http']['sourceDirectory'] !== undefined) {
-                                            themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
-                                                if (err && err.code === 'ENOENT') {
-                                                aurora.http.writeError(404, state);
-                                                }
-                                                else {
-                                                    sendFile(fsname, state);
-                                                }
-                                        });
-                                            return;
-                                        }
-                                        
+                                sendFile(__dirname + path.sep + url, state, true);
+                                return;
+                            case '/favicon.ico':
+                                
+                                themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
+                                    if (err) {
                                         aurora.http.writeError(404, state);
-                                    }
-                                    else if (err) {
-                                        aurora.http.writeError(404, state);
-                                        console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
                                     }
                                     else {
-                                        sendFile(fsname, state);
+                                        sendFile(fsPath, state, true);
                                     }
                                 });
-                            });
-                            break;
+                                return;
+                            case path.sep + 'LICENSE':
+                                url = url + '.txt';
+                            case path.sep + 'LICENSE.txt':
+                            case path.sep + 'client.js':
+                            case path.sep + 'client.libs.js':                
+                            case path.sep + 'client.min.js.map':
+                            case path.sep + 'server.min.js.map':
+                                sendFile(__dirname + path.sep + url, state, true);
+                                return;
+                            case path.sep:
+                            case '/':
+                                url += (config['http']['defaultPage'] || 'home');
+                            default:
+                                let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
+                                // check ith the url is in the theme directory if so then we need to them it
+                                themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
+                                    if (err === null) {
+                                        fs.readFile(fsPath, function(err, pageData) {
+                                            if (err) {
+                                                aurora.http.writeError(500, state);
+                                                return;
+                                            }
+                                            
+                                            response.writeHead(200, responseHeaders.toClient());
+                                            aurora.http.loadTemplate(state, function (template) {
+                                                response.end(template.replace('{BODY}', pageData.toString()));
+                                            });
+                                        });
+                                        return;
+                                    }
+                                    themeAccess(state, publicBasePath, pathname, fs.constants.R_OK, function(fsname, err) {
+                                        if (err && err['code'] === 'ENOENT') {
+                                            
+                                            if (config['http']['sourceDirectory'] !== undefined) {
+                                                themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
+                                                    if (err && err.code === 'ENOENT') {
+                                                        aurora.http.writeError(404, state);
+                                                    }
+                                                    else {
+                                                        sendFile(fsname, state);
+                                                    }
+                                                });
+                                                return;
+                                            }
+                                            
+                                            aurora.http.writeError(404, state);
+                                        }
+                                        else if (err) {
+                                            aurora.http.writeError(404, state);
+                                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                                        }
+                                        else {
+                                            sendFile(fsname, state);
+                                        }
+                                    });
+                                });
+                                break;
+                            }
                         }
-                    }
-                    catch (e) {
-                        console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
-                        aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
-                        console.log(e);
-                    }
-                };
-                processAsyncCallbacks(null, processAfterCallbacks);
-            }
-            catch (e) {
-                aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
-                console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
-                console.log(e);
-            }
+                        catch (e) {
+                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                            aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                            console.log(e);
+                        }
+                    };
+                    processAsyncCallbacks(null, processAfterCallbacks);
+                }
+                catch (e) {
+                    aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                    console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                    console.log(e);
+                }
+            });
         };
     }
     function shutdownAllServers(servers, done) {

@@ -677,7 +677,24 @@ processQueue(orderedScripts, function(){
 		    fs.writeFileSync(entryFilePath,'/**\n * @fileoverview automatically generated file for exports\n');
                     fs.appendFileSync(entryFilePath, ' * @suppress {lintChecks}\n */');
                     fs.appendFileSync(entryFilePath, entryStr);
-		}
+                    (target.imports||[]).forEach(function(imp) {
+                        fs.appendFileSync(entryFilePath, 'goog.require(\'' + imp + '\');\n');
+                    });
+                    if (target.exports) {
+                        fs.appendFileSync(entryFilePath, 'module.exports = {\n');
+                        let first = true;
+                        for (let name in target.exports) {
+                            if (!first) {
+                                fs.appendFileSync(entryFilePath, ',\n');
+                            }
+                            fs.appendFileSync(entryFilePath, '    ' + name + ': ' + target.exports[name]);
+                            first = false;
+                        }
+                        fs.appendFileSync(entryFilePath, '\n};\n');
+                    }
+
+
+                }
                 
 		if(target.sourcesFile){
 		    config.plugins.forEach(function(pluginDir){

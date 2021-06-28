@@ -1,20 +1,23 @@
 function createCertificate(attributes, extensions) {
-	var keys = forge.pki.rsa.generateKeyPair(1024);
-	var cert = forge.pki.createCertificate();
-	cert.publicKey = keys.publicKey;
-	cert.serialNumber = '01';
-	cert.validity.notBefore = new Date();
-	cert.validity.notAfter = new Date();
-	cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-	cert.setSubject(attributes);
-	cert.setIssuer(attributes);
-	cert.setExtensions(extensions);
-	cert.sign(keys.privateKey, forge.md.sha256.create());
-	return {
-	  privateKey: forge.pki.privateKeyToPem(keys.privateKey),
-	  publicKey: forge.pki.publicKeyToPem(keys.publicKey),
-	  certificate: forge.pki.certificateToPem(cert)
-	};
+    var keys = forge.pki.rsa.generateKeyPair(1024);
+    var cert = forge.pki.createCertificate();
+    // serial must be unique so use the time in seconds to generate it
+    var serial = '0' + Math.round(new Date().getTime()/1000).toString(16); //zero in front of it so the first bit is not set i.e not negative it still should fit in 20 octets
+    cert.publicKey = keys.publicKey;
+    
+    cert.serialNumber = serial.padStart(Math.ceil(serial.length/2)*2, '0'); // ensure even lenth
+    cert.validity.notBefore = new Date();
+    cert.validity.notAfter = new Date();
+    cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+    cert.setSubject(attributes);
+    cert.setIssuer(attributes);
+    cert.setExtensions(extensions);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    return {
+	privateKey: forge.pki.privateKeyToPem(keys.privateKey),
+	publicKey: forge.pki.publicKeyToPem(keys.publicKey),
+	certificate: forge.pki.certificateToPem(cert)
+    };
 }
 
 var fs = require('fs');

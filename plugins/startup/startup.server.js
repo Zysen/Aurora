@@ -12,6 +12,7 @@ aurora.startup.Context_ = function() {
     this.neededTask_ = {};
     this.readyCallbacks_ = [];
     this.canStart_ = false;
+    this.started_ = false;
     let me = this;
     // do this once all the base tasks have a chance to register
     setTimeout(function () {
@@ -34,6 +35,7 @@ aurora.startup.Context_.prototype.startIfNeeded_ = function() {
     if (!hasTasks) {
         this.readyCallbacks_.forEach(function(cb) {cb();});
         this.readyCallbacks_ = [];
+        this.started_ = true;
     }
     
 };
@@ -47,6 +49,7 @@ aurora.startup.instance = new aurora.startup.Context_();
  */
 aurora.startup.taskStarted = function (name) {
     aurora.startup.instance.neededTask_[name] = true;
+
 };
 
 /**
@@ -65,4 +68,17 @@ aurora.startup.doOnceStarted = function (cb) {
     aurora.startup.instance.readyCallbacks_.push(cb);
     aurora.startup.instance.startIfNeeded_();
     
+};
+
+/**
+ * add a callback to be called once all the tasks are don
+ * @param {function()} cb
+ */
+aurora.startup.doWhenStarted = function (cb) {
+    if (aurora.startup.instance.started_) {
+        cb();
+    }
+    else {
+        aurora.startup.instance.readyCallbacks_.push(cb);
+    }
 };
