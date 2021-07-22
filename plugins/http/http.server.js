@@ -434,10 +434,29 @@ aurora.http.REQUEST_ASYNC = {};
     function makeRequestHandler(sConfig) {
         return function (request, response) {
              aurora.startup.doWhenStarted(function () {
-                let cookies = {};
-                let responseHeaders = responseHeadersDef();
-                try {
-                    if (request['client'] && !request['client']['encrypted']) {
+                 let cookies = {};
+                 let responseHeaders = responseHeadersDef();
+                 try {
+                     // support for lets encrypt built in serve up well know directory even not in https
+                     let wellknown = '/.well-known/acme-challenge/';
+                     if (request.url.indexOf(wellknown) === 0) {
+                         
+                         // check it has no / in the path that would be bad
+                         let f = request.url.substring(wellknown.length);
+                         // some security checks
+                         if (f.length > 0 && f.indexOf('..') === -1) {
+                             
+                             let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: request.url, outUrl: request.url};
+                             let fname = path.join(publicBasePath, request.url);
+                             if (fs.existsSync(fname)) {
+                                 sendFile(fname, state, false);
+                                 return;
+                             }
+                         }
+                         
+                     }
+                     
+                     if (request['client'] && !request['client']['encrypted']) {
                         let httpsRedirect = sConfig['httpsRedirect'];
                         if (httpsRedirect != undefined) {
                             let message = sConfig['httpsRedirectMessage'];

@@ -123,7 +123,6 @@ aurora.auth.Auth = function() {
                 if (!(session.data && session.data.userid === null && state.url.pathname === me.loginPath_)) {
                     
                     if (session.seriesId !== seriesId || token !== session.token) {
-                        console.log("autologin should set cookies", session.seriesId, seriesId , token, session.token);
                         // the session table updated the token, this can happen for persistant logins
                         // as security feature, each time you login it gets updated
                         state.responseHeaders.set('Set-Cookie', [
