@@ -1,4 +1,5 @@
 goog.provide('aurora.http');
+goog.require('aurora.websocket.enums');
 goog.require('config');
 goog.require('goog.structs.AvlTree');
 goog.require('recoil.util.object');
@@ -14,7 +15,7 @@ aurora.http.ResponseHeaders;
 aurora.http.ConfigServerType;
 /**
  * @typedef {{responseHeaders:aurora.http.ResponseHeaders,request:http.IncomingMessage, response:http.ServerResponse,
- *          data:?, outUrl:string, cookies:Object<string,string>,url:url.URL, token:?}}
+ *          data:?, outUrl:string, cookies:Object<string,string>,url:(url.URL|undefined), token:?}}
  */
 aurora.http.RequestState;
 
@@ -36,6 +37,10 @@ aurora.http.escapeRegExp = function(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 };
 
+/**
+ * @const
+ */
+aurora.http.REQUEST_ASYNC = {};
 (function() {
 
     var types = aurora.websocket.enums.types;
@@ -50,19 +55,107 @@ aurora.http.escapeRegExp = function(str) {
     const urlLib = require('url');
     const qs = require('querystring');
     const EventEmitter = require('events').EventEmitter;
-
+    let themeGetter = function (req) {
+        return config['http']['theme'];
+    };
+    
     aurora.http.serversUpdatedE = new EventEmitter();
 
-    var theme = {};
-    aurora.http.theme = theme;
-    var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
+    let makeThemePath = function (theme, fname) {
+        return [__dirname, 'resources', 'htdocs', 'themes', theme, fname].join(path.sep);
+    };
 
     /**
      * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
      **/
-    aurora.http.notFound = function (state) {
-        state.response.writeHead(404, state.responseHeaders.toClient());
-        state.response.end(theme.error404HTML);
+    aurora.http.loadTemplate = function (state, cb) {
+        aurora.http.loadThemedFile('template.html', state, cb);
+    };
+
+    /**
+     * @param {number} error
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
+     **/
+    aurora.http.loadError = function (error, state, cb) {
+        aurora.http.loadTemplate(state, function (template) {
+            aurora.http.loadThemedFile(
+                'http' + error + '.html', state,
+                function (errorTxt) {
+                    cb(template.replace('{BODY}', errorTxt.toString()));
+                });
+        });
+    };
+    /**
+     * @param {number} error
+     * @param {!aurora.http.RequestState} state
+     */
+    aurora.http.writeError = function (error, state) {
+        if (state.token === undefined) {
+            aurora.auth.instance.loginPageCb(state);
+            return;
+        }
+        state.response.writeHead(error, state.responseHeaders.toClient());
+        aurora.http.loadError(error, state, function (txt) {
+            state.response.end(txt);
+        });
+    };
+
+    let loadFile = function (fname, cb) {
+        fs.readFile(fname, function (error, data) {
+            cb(error ? '' : data.toString());
+        });
+    };
+
+    /**
+     * @param {string} file
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string, ?, ?)} cb
+     **/
+    aurora.http.statTheme = function (file, state, cb) {
+        let theme = themeGetter(state);
+        let fname = makeThemePath(theme, file);
+        
+        fs.stat(fname, function (err, stats) {
+            let defTheme = config['http']['theme'];
+            if (!err || defTheme === theme) {
+                cb(fname, err, stats);
+            }
+            else {
+                fname = makeThemePath(defTheme, file);
+                fs.stat(fname, function (err, stats) {
+                    cb(fname, err, stats);
+                });
+            }
+        });
+    };
+    /**
+     * @param {string} file
+     * @param {!aurora.http.RequestState} state
+     * @param {function(string)} cb
+     **/
+    aurora.http.loadThemedFile = function (file, state, cb) {
+        let theme = themeGetter(state);
+        let fname = makeThemePath(theme, file);
+        // first check the current theme if it exists serve that
+        fs.exists(fname, function (exists) {
+            let defTheme = config['http']['theme'];
+            if (exists || theme === defTheme) {
+                loadFile(fname, cb);
+            }
+            else {
+                loadFile(makeThemePath(defTheme, file), cb);
+            }
+        });
+    };
+
+    var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
+    /**
+     * @param {!aurora.http.RequestState} state
+     **/
+    aurora.http.notFound = function(state) {
+        aurora.http.writeError(404, state);
     };
     aurora.http.getPost = function(request, callback) {
         if (request.method == 'POST') {
@@ -79,15 +172,27 @@ aurora.http.escapeRegExp = function(str) {
     };
 
     /**
+     * @param {function(aurora.http.RequestState):string} getter
+     * 
+     */
+    aurora.http.setThemeGetter = function (getter) {
+        themeGetter = getter;
+    };
+
+    /**
+     *@return {string}
+     */
+    /**
      * @param {number} priority lower priority go first also if callback returns a non-false value
      * all other requests of the same priority are skipped
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean} allowLocked (default false)
      */
-    aurora.http.addRequestCallback = function(priority, pattern, callback) {
+    aurora.http.addRequestCallback = function(priority, pattern, callback, allowLocked) {
         var existing = callbacks.findFirst({key: priority});
         var pat = typeof (pattern) === 'string' ? new RegExp('^' + pattern) : pattern;
-        var data = {pattern: pattern, callback: callback};
+        var data = {pattern: pattern, callback: callback, allowLocked: allowLocked};
         if (existing) {
             existing.callbacks.push(data);
         }
@@ -97,17 +202,19 @@ aurora.http.escapeRegExp = function(str) {
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean=} opt_allowLocked default true, if true no lock check will be performed
      */
-    aurora.http.addPreRequestCallback = function(pattern, callback) {
-        aurora.http.addRequestCallback(0, pattern, callback);
+    aurora.http.addPreRequestCallback = function(pattern, callback, opt_allowLocked) {
+        aurora.http.addRequestCallback(0, pattern, callback, opt_allowLocked == undefined ? true : false);
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
      */
-    aurora.http.addMidRequestCallback = function(pattern, callback) {
-        aurora.http.addRequestCallback(5, pattern, callback);
+    aurora.http.addMidRequestCallback = function(pattern, callback, opt_allowLocked) {
+        aurora.http.addRequestCallback(5, pattern, callback, !!opt_allowLocked);
     };
 
     function startServer(type, port, callback, opt_options) {
@@ -131,7 +238,7 @@ aurora.http.escapeRegExp = function(str) {
         };
         httpServer.listen(port);
         return httpServer;
-    };
+    }
 
     var responseHeadersDef = (function() {
         var headers = {'Server': [config['http']['serverDescription'] || 'AuroraHTTP'], 'Date': [(new Date()).toGMTString()]};
@@ -166,20 +273,57 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
     });
-
+    let themeAccess = function (state, dir, url, perm, cb) {
+        let fname = path.resolve(path.join(dir, url));
+        
+        let parts = url ? url.split('/') : [];
+        while(parts.length > 0 && (parts[0] === '' || parts[0] === '.')) {
+            parts.shift();
+        }
+        let top = parts[0];
+        if (top === 'themes') {
+            // do not themes directly
+            cb(fname, {code: 'ENOENT'});
+        }
+        else if (top === 'theme') {
+            parts.shift();
+            let theme = themeGetter(state);
+            fname = path.resolve(path.join(dir, 'themes', theme, path.join.apply(null, parts)));
+            fs.access(fname, perm, function (err) {
+                if (err) {
+                    let fname = path.resolve(path.join(dir, 'themes', config['http']['theme'], path.join.apply(null, parts)));
+                    fs.access(fname, perm, function (err) {
+                        cb(fname, err);
+                    });
+                    
+                }
+                else {
+                    cb(fname, err);
+                }
+            });
+            }
+        else {
+            
+            
+            fs.access(fname, perm, function (err) {
+                cb(fname, err);
+            });
+        }
+    };
+    
     /**
      * sends a file to the client
      * this checks timestamps and sends not modified if already exits, it will also send the .gz
      * version if it exists if the opt_sendGz is set to true
      *
      * @param {string} path
-     * @param {http.IncomingMessage} request
-     * @param {http.ServerResponse} response
-     * @param {?} headers
+     * @param {aurora.http.RequestState} state
      * @param {boolean=} opt_sendGz
      */
-    function sendFile(path, request, response, headers, opt_sendGz) {
-
+    function sendFile(path, state, opt_sendGz) {
+        let response = state.response;
+        let request = state.request;
+        let headers = state.responseHeaders;
         var doSend = function(stats, path, decompress) {
             var reqDate = request.headers['if-modified-since'];
             if (reqDate !== undefined && new Date(reqDate).getUTCSeconds() === new Date(stats.mtime).getUTCSeconds()) {
@@ -204,8 +348,7 @@ aurora.http.escapeRegExp = function(str) {
                 readStream.pipe(/** @type {?} */(response));
                 readStream.on('error', function(err) {
                     if (response !== null) {
-                        response.writeHead(500, headers.toClient());
-                        response.end(theme.error500HTML);
+                        aurora.http.writeError(500, state);
                     }
                 });
                 readStream.on('end', function(err) {
@@ -235,8 +378,7 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
         request.on('error', function(err) {
-            response.writeHead(500, headers.toClient());
-            response.end(theme.error500HTML);
+            aurora.http.writeError(500, state);
         });
         var checkAndSend = function(path, sendGz, decompress) {
             fs.stat(path, function(err, stats) {
@@ -247,18 +389,15 @@ aurora.http.escapeRegExp = function(str) {
                             return;
                         }
                         else {
-                            response.writeHead(404, headers.toClient());
-                            response.end(theme.error404HTML);
+                            aurora.http.writeError(404, state);
                         }
                     }
                     else {
-                        response.writeHead(500);
-                        response.end(theme.error500HTML);
+                        aurora.http.writeError(500, state);
                     }
                 }
                 else if (stats.isDirectory()) {
-                    response.writeHead(404);
-                    response.end(theme.error404HTML);
+                    aurora.http.writeError(404, state);
                 }
                 else {
                     doSend(stats, path, decompress);
@@ -269,14 +408,13 @@ aurora.http.escapeRegExp = function(str) {
             });
         };
         checkAndSend(path, !path.endsWith('.gz') && opt_sendGz, null);
-    };
+    }
 
 
     var resourcesBasePath = [__dirname, 'resources'].join(path.sep) + path.sep;
     var publicBasePath = [__dirname, 'resources', 'htdocs'].join(path.sep) + path.sep;
     aurora.http.BASE = publicBasePath;
 
-    var themeDir = [__dirname, 'resources', 'htdocs', 'themes', config['http']['theme']].join(path.sep) + path.sep;
     var sourceDir = path.resolve(__dirname + path.sep + config['http'].sourceDirectory);
     //Strict-Transport-Security: max-age=31536000
     //config.strictTransportSecurity
@@ -289,121 +427,213 @@ aurora.http.escapeRegExp = function(str) {
         });
     };
 
-    function httpRequestHandler(request, response) {
-        try {
-            var newRequests = [];
-            allRequests.forEach(function(s) {
-                if (!s.response['finished']) {
-                    newRequests.push(s);
-                }
-
-            });
-            if (newRequests.length > 0) {
-                console.log('pending requests', newRequests.length);
-            }
-            allRequests = newRequests;
-            var responseHeaders = responseHeadersDef();
-            var cookies = {};
-            request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
-                var parts = cookie.split('=');
-                cookies[parts[0].trim()] = (parts[1] || '').trim();
-            });
-
-
-            var url = path.normalize(decodeURIComponent(request.url));
-            var parsedUrl = urlLib.parse(url);
-            var exit = false;
-            var state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
-            //            allRequests.push(state);
-            callbacks.inOrderTraverse(function(cb) {
-                for (var i = 0; i < cb.callbacks.length; i++) {
-                    var cur = cb.callbacks[i];
-                    if (cur.pattern.test(parsedUrl.pathname)) {
-                        var res = cur.callback(state);
-                        if (res === false) {
-                            exit = true;
-                            return true;
+    function redirect (response, url) {
+	response.writeHead(302, {'Location': url});
+        response.end();
+    }
+    function makeRequestHandler(sConfig) {
+        return function (request, response) {
+             aurora.startup.doWhenStarted(function () {
+                 let cookies = {};
+                 let responseHeaders = responseHeadersDef();
+                 try {
+                     // support for lets encrypt built in serve up well know directory even not in https
+                     let wellknown = '/.well-known/acme-challenge/';
+                     if (request.url.indexOf(wellknown) === 0) {
+                         
+                         // check it has no / in the path that would be bad
+                         let f = request.url.substring(wellknown.length);
+                         // some security checks
+                         if (f.length > 0 && f.indexOf('..') === -1) {
+                             
+                             let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: request.url, outUrl: request.url};
+                             let fname = path.join(publicBasePath, request.url);
+                             if (fs.existsSync(fname)) {
+                                 sendFile(fname, state, false);
+                                 return;
+                             }
+                         }
+                         
+                     }
+                     
+                     if (request['client'] && !request['client']['encrypted']) {
+                        let httpsRedirect = sConfig['httpsRedirect'];
+                        if (httpsRedirect != undefined) {
+                            let message = sConfig['httpsRedirectMessage'];
+                            let httpPort = sConfig['port'];
+                            var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
+                            let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
+                            if (message) {
+	                        response.writeHead(403, {'Location': url});
+                                response.end(message.replaceAll('{REDIRECT}', goog.string.htmlEscape(url)));
+                            }
+                            else {
+                                redirect(response, url);
+                            }
+                            return;
                         }
                     }
-                }
-                return false;
-            });
-            url = state.outUrl;
-            if (exit) {
-                return undefined;
-            }
-            switch (url) {
-            case path.sep + 'client.min.js':
-                if (config['http']['sourceDirectory'] !== undefined) {
-                    responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
-                }
-                return sendFile(__dirname + path.sep + url, request, response, responseHeaders, true);
-            case path.sep + 'LICENSE':
-                url = url + '.txt';
-            case path.sep + 'LICENSE.txt':
-            case path.sep + 'client.js':
-            case path.sep + 'client.libs.js':
-            case path.sep + 'client.min.js.map':
-            case path.sep + 'server.min.js.map':
-                return sendFile(__dirname + path.sep + url, request, response, responseHeaders, true);
-            case path.sep:
-            case '/':
-                url += (config['http']['defaultPage'] || 'home');
-            default:
-                fs.access(publicBasePath + url + '.html', fs.constants.R_OK, function(err) {
-                    if (err === null) {
-                        fs.readFile(publicBasePath + url + '.html', function(err, pageData) {
-                            if (err) {
-                                console.error(err);
-                                response.writeHead(500, responseHeaders.toClient());
-                                response.end(theme.error500HTML);
-                                return;
-                            }
-                            response.writeHead(200, responseHeaders.toClient());
-                            response.end(theme.template.replace('{BODY}', pageData.toString()));
-                        });
-                        return;
+                    var newRequests = [];
+                    allRequests.forEach(function(s) {
+                        if (!s.response['finished']) {
+                            newRequests.push(s);
+                        }
+                        
+                    });
+                    if (newRequests.length > 0) {
+                        console.log('pending requests', newRequests.length);
                     }
-                    fs.access(publicBasePath + url, fs.constants.R_OK, function(err) {
-                        if (err && err['code'] === 'ENOENT') {
+                    allRequests = newRequests;
+                    request.headers['cookie'] && request.headers['cookie'].split(';').forEach(function(cookie) {
+                        var parts = cookie.split('=');
+                        cookies[parts[0].trim()] = (parts[1] || '').trim();
+                    });
 
-                            if (config['http']['sourceDirectory'] !== undefined) {
-                                fs.access(path.resolve(sourceDir + url), fs.constants.R_OK, function(err) {
-                                    if (err && err.code === 'ENOENT') {
-                                        response.writeHead(404);
-                                        response.end(theme.error404HTML);
+                    let url = path.normalize(decodeURIComponent(request.url));
+                    let parsedUrl = urlLib.parse(url);
+                    
+
+                    let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
+                    //            allRequests.push(state);
+
+                    let processAsyncCallbacks = function (start, doneCb) {
+                        let exit = false;
+                        let async = false;
+                        let traverseFunc = function (startKey, startIdxIn) {
+                            return function(cb) {
+                                let startIdx = startKey === null ? 0 : (startKey < cb.key ? 0 : startIdxIn);
+                                for (let i = startIdx; i < cb.callbacks.length; i++) {
+                                    let cur = cb.callbacks[i];
+                                    if (state.locked && !cur.allowLocked) {
+                                        continue;
+                                    }
+                                    if (cur.pattern.test(parsedUrl.pathname)) {
+                                        let res = cur.callback(state, function (asyncRes) {
+                                            if (asyncRes !== false) {
+                                                processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
+                                            }
+                                            
+                                        });
+                                        if (res === false || aurora.http.REQUEST_ASYNC === res) {
+                                            exit = true;
+                                            return true;
+                                        }
+                                    }
+                                }
+                                return false;
+                            };
+                            
+                        };
+                        if (start) {
+                            callbacks.inOrderTraverse(traverseFunc(start.cb.key, start.idx), start.cb);
+                        }
+                        else {
+                            callbacks.inOrderTraverse(traverseFunc(null, 0));
+                        }
+                        url = state.outUrl;
+                        if (!exit) {
+                            doneCb();
+                        }
+                        
+                    };
+                    
+
+                    
+                    let processAfterCallbacks = function () {
+                        try {
+                            switch (url) {
+                            case path.sep + 'client.min.js':
+                                if (config['http']['sourceDirectory'] !== undefined) {
+                                    responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
+                                }
+                                sendFile(__dirname + path.sep + url, state, true);
+                                return;
+                            case '/favicon.ico':
+                                
+                                themeAccess(state, publicBasePath, '/theme/favicon.ico', fs.constants.R_OK, function(fsPath, err) {
+                                    if (err) {
+                                        aurora.http.writeError(404, state);
                                     }
                                     else {
-                                        sendFile(config['http']['sourceDirectory'] + path.sep + url, request, response, responseHeaders);
+                                        sendFile(fsPath, state, true);
                                     }
                                 });
                                 return;
+                            case path.sep + 'LICENSE':
+                                url = url + '.txt';
+                            case path.sep + 'LICENSE.txt':
+                            case path.sep + 'client.js':
+                            case path.sep + 'client.libs.js':                
+                            case path.sep + 'client.min.js.map':
+                            case path.sep + 'server.min.js.map':
+                                sendFile(__dirname + path.sep + url, state, true);
+                                return;
+                            case path.sep:
+                            case '/':
+                                url += (config['http']['defaultPage'] || 'home');
+                            default:
+                                let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
+                                // check ith the url is in the theme directory if so then we need to them it
+                                themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
+                                    if (err === null) {
+                                        fs.readFile(fsPath, function(err, pageData) {
+                                            if (err) {
+                                                aurora.http.writeError(500, state);
+                                                return;
+                                            }
+                                            
+                                            response.writeHead(200, responseHeaders.toClient());
+                                            aurora.http.loadTemplate(state, function (template) {
+                                                response.end(template.replace('{BODY}', pageData.toString()));
+                                            });
+                                        });
+                                        return;
+                                    }
+                                    themeAccess(state, publicBasePath, pathname, fs.constants.R_OK, function(fsname, err) {
+                                        if (err && err['code'] === 'ENOENT') {
+                                            
+                                            if (config['http']['sourceDirectory'] !== undefined) {
+                                                themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
+                                                    if (err && err.code === 'ENOENT') {
+                                                        aurora.http.writeError(404, state);
+                                                    }
+                                                    else {
+                                                        sendFile(fsname, state);
+                                                    }
+                                                });
+                                                return;
+                                            }
+                                            
+                                            aurora.http.writeError(404, state);
+                                        }
+                                        else if (err) {
+                                            aurora.http.writeError(404, state);
+                                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                                        }
+                                        else {
+                                            sendFile(fsname, state);
+                                        }
+                                    });
+                                });
+                                break;
                             }
-
-                            response.writeHead(404);
-                            response.end(theme.error404HTML);
                         }
-                        else if (err) {
-                            response.writeHead(500);
-                            response.end(theme.error500HTML);
+                        catch (e) {
                             console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                            aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                            console.log(e);
                         }
-                        else {
-                            sendFile(publicBasePath + url, request, response, responseHeaders);
-                        }
-                    });
-                });
-                break;
-            }
-        }
-        catch (e) {
-            response.writeHead(500);
-            response.end(theme.error500HTML);
-            console.log('REQUEST Error ' + request.method + ' ' + url + ' ' + request.connection.remoteAddress);
-            console.log(e);
-        }
+                    };
+                    processAsyncCallbacks(null, processAfterCallbacks);
+                }
+                catch (e) {
+                    aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
+                    console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                    console.log(e);
+                }
+            });
+        };
     }
-
     function shutdownAllServers(servers, done) {
         if (servers.length > 0) {
             servers.pop().server.shutdown(function() {
@@ -415,22 +645,6 @@ aurora.http.escapeRegExp = function(str) {
         }
     }
 
-    function loadTheme(doneCb) {
-
-        fs.readFile(themeDir + 'template.html', function(err, template) {
-            theme.template = template.toString();
-            fs.readFile(themeDir + 'http403.html', function(err, template403) {
-                theme.error403HTML = theme.template.replace('{BODY}', template403.toString());
-                fs.readFile(themeDir + 'http404.html', function(err, template404) {
-                    theme.error404HTML = theme.template.replace('{BODY}', template404.toString());
-                    fs.readFile(themeDir + 'http500.html', function(err, template500) {
-                        theme.error500HTML = theme.template.replace('{BODY}', template500.toString());
-                        doneCb();
-                    });
-                });
-            });
-        });
-    }
 
     var httpServers = {};
     function loadServers() {
@@ -439,13 +653,13 @@ aurora.http.escapeRegExp = function(str) {
             config['http']['servers'].forEach(function(serverConfig) {
                 if (serverConfig.port !== undefined) {
                     if (serverConfig.protocol === 'https') {
-                        serverConfig['key'] = fs.readFileSync( (serverConfig.key || 'resources/defaultKey.pem'));
+                        serverConfig['key'] = fs.readFileSync((serverConfig.key || 'resources/defaultKey.pem'));
                         serverConfig['cert'] = fs.readFileSync((serverConfig.cert || 'resources/defaultCert.pem'));
-                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
+                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, makeRequestHandler(serverConfig), serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else if (serverConfig.protocol === 'http') {
-                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */({server: startServer(node_http, serverConfig.port, httpRequestHandler, serverConfig), config: serverConfig});
+                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */({server: startServer(node_http, serverConfig.port, makeRequestHandler(serverConfig), serverConfig), config: serverConfig});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else {
@@ -462,43 +676,56 @@ aurora.http.escapeRegExp = function(str) {
 
     /**
      * @param {string} filePath the location of the physical file
-     * @param {http.IncomingMessage} request
-     * @param {http.ServerResponse} response
-     * @param {?} headers
+     * @param {aurora.http.RequestState} state
      * @param {string=} opt_filename
      */
-    aurora.http.sendFileDownload = function(filePath, request, response, headers, opt_filename) {
+    aurora.http.sendFileDownload = function(filePath, state, opt_filename) {
         if (opt_filename) {
-            headers.set('Content-Disposition', 'attachment;filename=' + path.basename(opt_filename));
+            state.responseHeaders.set('Content-Disposition', 'attachment;filename=' + path.basename(opt_filename));
         }
-        sendFile(filePath, request, response, headers);
+        sendFile(filePath, state);
     };
     /**
      * @param {RegExp} url
      * @param {string} file
      * @param {function(function(string,string=),?=)|string} sendFileNameCB a callback or a string to get the filename, this may be nessary because you may want to
+     * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
+     * @param {function(?)=} opt_permCheck check permissions function
      * send the modified date or the current date as part of the filename
      */
-    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB) {
+    aurora.http.sendFileDownloadToURL = function(url, file, sendFileNameCB, opt_allowLocked, opt_permCheck) {
         var nameCallback = typeof(sendFileNameCB) === 'string' ?
                 function(cb1) {
                     cb1(sendFileNameCB, undefined);
                 } : sendFileNameCB;
 
         aurora.http.addMidRequestCallback(url, function(state) {
+            if (opt_permCheck && !opt_permCheck(state)) {
+                aurora.http.writeError(403, state);
+                return false;
+            }
             nameCallback(function(name, filePath) {
                 filePath = filePath || file;
-                aurora.http.sendFileDownload(filePath, state.request, state.response, state.responseHeaders, name);
+                aurora.http.sendFileDownload(filePath, state, name);
             }, state);
             return false;
-        });
+        }, opt_allowLocked);
     };
 
-    aurora.http.sendDataAsyncDownload = function(request, response, headers, filename) {
+    /**
+     * @param {aurora.http.RequestState} state
+     * @param {string} filename
+     * @return {{dataCB:function(?),endCB:function(?)}}
+     *
+     */
+    aurora.http.sendDataAsyncDownload = function(state, filename) {
+        let headers = state.responseHeaders;
+        let request = state.request;
+        let response = state.response;
         headers.set('Content-Disposition', 'attachment;filename=' + filename);
         request.on('error', function(err) {
             done = true;
-            aurora.http.writeError(500, response, headers);
+            aurora.http.writeError(500, state);
         });
 
         headers.set('Content-Type', mime.getType(filename));
@@ -532,23 +759,8 @@ aurora.http.escapeRegExp = function(str) {
             }
         };
     };
-
-    aurora.http.writeError = function(code, response, headers) {
-        response.writeHead(code, headers);
-        if (code === 404) {
-            response.writeHead(404);
-            response.end(theme.error404HTML);
-        }
-        else {
-            console.error('An unknown error has occured with code ' + code);
-            response.end('An unknown error has occured ' + code, 'utf8');
-        }
-    };
-
     process.chdir(__dirname);
-    config.configE.on('http/theme', loadTheme);
     config.configE.on('http/servers', loadServers);
-    loadTheme(function() {
-        loadServers();
-    });
+    setTimeout(loadServers, 1);
+
 }());

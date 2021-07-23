@@ -10,6 +10,10 @@ aurora.websocket.CON_STATUS = {
     DISCONNECTED: 0, CONNECTED: 1, ERRORED: 2
 };
 
+/**
+ * @param {?} data
+ * @return {?}
+ */
 function convertData(data) {
     if (typeof(data) === 'string') {
         return {type: aurora.websocket.enums.types.STRING, data: data};
@@ -24,11 +28,61 @@ function convertData(data) {
         console.error('convertData Unknown type ' + typeof(data));
     }
 }
+/**
+ * @param {!Uint8Array} array
+ * @return {string}
+ */
+function Utf8ArrayToStr(array) {
+    var out, i, len, c;
+    var char2, char3;
 
-function arrayBufferToString(ab) {
-    return new TextDecoder("utf-8").decode(new Uint8Array(ab));
+    out = '';
+    len = array.length;
+    i = 0;
+    while (i < len) {
+        c = array[i++];
+        switch (c >> 4)
+        {
+        case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+            // 0xxxxxxx
+            out += String.fromCharCode(c);
+            break;
+        case 12: case 13:
+                    // 110x xxxx   10xx xxxx
+            char2 = array[i++];
+            out += String.fromCharCode(((c & 0x1F) << 6) | (char2 & 0x3F));
+            break;
+        case 14:
+            // 1110 xxxx  10xx xxxx  10xx xxxx
+            char2 = array[i++];
+            char3 = array[i++];
+            out += String.fromCharCode(((c & 0x0F) << 12) |
+                                       ((char2 & 0x3F) << 6) |
+                                       ((char3 & 0x3F) << 0));
+            break;
+        }
+    }
+
+    return out;
 }
 
+/**
+ * @param {?} ab
+ * @return {string}
+ */
+function arrayBufferToString(ab) {
+    if (window.TextDecoder) {
+        return new TextDecoder('utf-8').decode(new Uint8Array(ab));
+    }
+    else {
+        return Utf8ArrayToStr(new Uint8Array(ab));
+    }
+}
+/**
+ * @param {Array} data
+ * @param {boolean} littleEndian
+ * @return {!ArrayBuffer}
+ */
 function toUInt16ArrayBuffer(data, littleEndian) {
     littleEndian = littleEndian || true;
     if (typeof(data) === 'number') {
@@ -36,7 +90,7 @@ function toUInt16ArrayBuffer(data, littleEndian) {
     }
     var ab = new ArrayBuffer(data.length * 2);
     var dv = new DataView(ab);
-    for (var index in data) {
+    for (var index = 0; index < data.length; index++) {
         dv.setUint16(index * 2, data[index], littleEndian);
     }
     return ab;
@@ -97,12 +151,17 @@ aurora.websocket.onReady = function(cb) {
 };
 
 /**
+ * connect to server websocket
  */
-aurora.websocket.connect = function () {
+aurora.websocket.connect = function() {
     if (connection) {
         return;
     }
-    connection = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.hostname + ':' + window.location.port + '/websocket');
+    // Edge gets all confused if port is blank
+    var port = window.location.port === '' ? '' : ':' + window.location.port;
+
+    var conurl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + window.location.hostname + port + '/websocket';
+    connection = new WebSocket(conurl);
     connection.ready = false;
     connection.onopen = function() {
         console.log('WS connection established');
@@ -112,7 +171,7 @@ aurora.websocket.connect = function () {
             cb();
         });
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.CONNECTED;
-        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+        aurora.websocket.statusCallbacks_.slice(0).forEach(function(cb) {
             cb(aurora.websocket.status_);
         });
         var pending = aurora.websocket.pending_;
@@ -122,8 +181,8 @@ aurora.websocket.connect = function () {
     };
     connection.onerror = function(error) {
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.ERRORED;
-        console.log("errored ws", error);
-        aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+        console.log('errored ws', error);
+        aurora.websocket.statusCallbacks_.slice(0).forEach(function(cb) {
             cb(aurora.websocket.status_);
         });
     };
@@ -135,65 +194,103 @@ aurora.websocket.connect = function () {
             // in firefox don't send events because it behaves differently on
             // firefox than chrome don't send message websocket should never close
             // under normal circumstances
-            
-            aurora.websocket.statusCallbacks_.slice(0).forEach(function (cb) {
+
+            aurora.websocket.statusCallbacks_.slice(0).forEach(function(cb) {
                 cb(aurora.websocket.status_);
             });
         }
 
-	setTimeout(function(){
+	setTimeout(function() {
 	    aurora.websocket.connect();
 	}, 4000);
     };
+
     var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');
-    
+    // reader may load out of order we need to make sure that doesn't
+    var pendingReader = [];
+    var count = 0;
+    var prev = -1;
+
+    var schedule = function(doit) {
+        var cb = function() {
+            pendingReader.shift();
+            if (pendingReader.length > 0) {
+                pendingReader[0](cb);
+            }
+        };
+        var safe = function() {
+            try {
+                doit(cb);
+            }
+            catch (e) {
+                cb();
+            }
+        };
+        pendingReader.push(safe);
+        if (pendingReader.length === 1) {
+            pendingReader[0](cb);
+        }
+
+    };
     connection.onmessage = function(packet) {
         if (packet.data instanceof Blob) {
-            var reader = new FileReader();
-            reader.onload = function() {
-                var data = reader.result;
-                var header = new Uint16Array(reader.result.slice(0, 6));
-                var pluginId = header[0];
-                var channelId = header[1];
-                var type = header[2];
-                var channel = channels[pluginId + '_' + channelId];
-                var decodedData = null;
-                if (type === aurora.websocket.enums.types.STRING) {
-                    decodedData = arrayBufferToString(reader.result.slice(6));
-                }
-                else if (type === aurora.websocket.enums.types.OBJECT) {
-                    decodedData = JSON.parse(arrayBufferToString(reader.result.slice(6)));
-                }
-                else if (type === aurora.websocket.enums.types.BINARY) {
-                    decodedData = reader.result.slice(6);
-                }
-                else {
-                    console.error('Websocket Receive: Unknown Type', type);
-                    return;
-                }
+            var myCount = count++;
 
-                if (channel) {
-                    channel.receive({data: decodedData});
-                }
-                else if (pluginId === websocketPluginId) {
-                    console.log("recived webSocket error");
-                    aurora.websocket.errorCallbacks_.slice(0).forEach(function (cb) {
-                        cb(decodedData);
-                    });
-                }
-            };
-            reader.readAsArrayBuffer(packet.data);
+            schedule(function(done) {
+                var reader = new FileReader();
+                reader.onload = function() {
+                    var data = reader.result;
+                    var header = new Uint16Array(reader.result.slice(0, 6));
+                    var pluginId = header[0];
+                    var channelId = header[1];
+                    var type = header[2];
+                    var channel = channels[pluginId + '_' + channelId];
+                    var decodedData = null;
+                    if (myCount < prev) {
+                        console.log('out of order recieved', pluginId, prev, myCount);
+                    }
+                    prev = myCount;
+                    if (type === aurora.websocket.enums.types.STRING) {
+                        decodedData = arrayBufferToString(reader.result.slice(6));
+                    }
+                    else if (type === aurora.websocket.enums.types.OBJECT) {
+                        decodedData = JSON.parse(arrayBufferToString(reader.result.slice(6)));
+                    }
+                    else if (type === aurora.websocket.enums.types.BINARY) {
+                        decodedData = reader.result.slice(6);
+                    }
+                    else {
+                        console.error('Websocket Receive: Unknown Type', type);
+                        done();
+                        return;
+                    }
+                    if (channel) {
+                        channel.receive({data: decodedData});
+                    }
+                    else if (pluginId === websocketPluginId) {
+                        console.log('recived webSocket error');
+                        aurora.websocket.errorCallbacks_.slice(0).forEach(function(cb) {
+                            cb(decodedData);
+                        });
+                    }
+                    done();
+
+                };
+                reader.readAsArrayBuffer(packet.data);
+            });
+
         }
         else {
-            try {
-                var m = JSON.parse(packet.data);
-                console.log('Internal Channel Message', m);
-            } catch (e) {
-                console.log("This doesn't look like valid JSON: ", packet.data, e);
-                return;
-            }
+            schedule(function(done) {
+                try {
+                    var m = JSON.parse(packet.data);
+                    console.log('Internal Channel Message', m);
+                } catch (e) {
+                    console.log("This doesn't look like valid JSON: ", packet.data, e);
+                }
+                done();
+            });
         }
-
     };
 };
 
@@ -210,18 +307,39 @@ window.addEventListener('load', function() {
  */
 function Channel(pluginId, channelId, messageCb) {
     var callbacks = [messageCb];
+    var onConnectCallbacks = [];
+    var onConnectCallbacksCalled = false;
     aurora.websocket.onReady(function() {
         if (connection) {
             connection.send(JSON.stringify({'command': aurora.websocket.enums.COMMANDS.REGISTER, 'pluginId': pluginId, 'channelId': channelId}));
+            if (onConnectCallbacks.length > 0) {
+                setTimeout(function() {
+                    onConnectCallbacksCalled = true;
+                    onConnectCallbacks.forEach(function(cb) {
+                        try {
+                            cb();
+                        }
+                        catch (e) {
+                            console.error(e);
+                        }
+                    });
+                },1);
+            }
         }
     });
 
+    this.addOnConnectCallback = function(cb) {
+        onConnectCallbacks.push(cb);
+        if (onConnectCallbacksCalled) {
+            cb();
+        }
+    };
     this.send = function(sendBuffer) {
         var data = convertData(sendBuffer);
         var doIt = function() {
             if (connection) {
                 /**
-                 * according to the documentation and it works you can send a blob but the 
+                 * according to the documentation and it works you can send a blob but the
                  * compiler is complaining
                  */
                 connection.send(/** @type {?} */ (new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data])));
@@ -255,9 +373,10 @@ function Channel(pluginId, channelId, messageCb) {
  * @param {string} pluginName
  * @param {number} channelId
  * @param {function(?)} messageCallback
+ * @param {function()=} opt_onConnectCb
  * @return {?Channel}
  */
-aurora.websocket.getChannel = function(pluginName, channelId, messageCallback) {
+aurora.websocket.getChannel = function(pluginName, channelId, messageCallback, opt_onConnectCb) {
     var pluginId = aurora.websocket.constants.plugins.indexOf(pluginName);
     if (pluginId < 0) {
         console.error('websocket.getChannel no plugin called ' + pluginName);
@@ -273,6 +392,10 @@ aurora.websocket.getChannel = function(pluginName, channelId, messageCallback) {
     else {
         channel.addCallback(messageCallback);
     }
+    if (opt_onConnectCb) {
+        channel.addOnConnectCallback(opt_onConnectCb);
+    }
+
     return channel;
 };
 

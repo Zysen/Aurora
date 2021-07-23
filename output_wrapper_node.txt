@@ -1,2 +1,0 @@
-//# sourceMappingURL=http://localhost:8080/server.min.js.map
-(function(){require('source-map-support').install({environment:'node',retrieveSourceMap: function(source) {if(source.endsWith("server.min.js")){return {url: "server.min.js.map",map: require('fs').readFileSync(source+'.map', 'utf8')};}return null;}});%output%}).call(this);

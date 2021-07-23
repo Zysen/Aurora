@@ -4,7 +4,7 @@
 	"build_targets":[
 	{
 		"filename": "client.min.js",
-		"searchExp": [".*.shared.js$", ".*.client.js$"],
+		"searchExp": [".*\\.shared\\.js$", ".*\\.client\\.js$"],
 		"compiled": true,
 		"sourcesFile":"sources.client.json",
 		"env":"BROWSER",
@@ -13,7 +13,7 @@
 	},
 	{
 		"filename": "client.libs.js",
-		"searchExp": [".*.shared.min.js", ".*.client.min.js"]
+		"searchExp": [".*\\.shared\\.min\\.js$", ".*\\.client\\.min\\.js$"]
 	},
 	{
 	    "filename": "server.min.js",
@@ -29,7 +29,7 @@
 	{
 	    "types": ["client","resources"],
 		"filename": "style.css",
-		"searchExp": ".*.css"
+		"searchExp": ".*\\.css$"
 	},
 	{
 	    "types": ["resources"],

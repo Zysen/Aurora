@@ -14,11 +14,12 @@ aurora.Upload = function() {
 /**
  * @param {string} urlPathPrefix
  * @param {string} fileDestination
- * @param {function(({start:boolean}|{error:?, data:?}))} cb
+ * @param {function(({start:boolean}|{error:?, data:?, url:string, token:string}))} cb
  * @param {{restrictedExtension:(string|undefined),
  *          allowOverwrite:(boolean|undefined),
  *          overrideFilename:(string|undefined),
  *          clearUploaded:(boolean|undefined),
+ *          permission: ((function (?):boolean)|undefined),
  *          startEvent:(boolean|undefined)}=} opt_options
  */
 aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, cb, opt_options) {
@@ -31,6 +32,11 @@ aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, 
     aurora.http.addMidRequestCallback(
         new RegExp('^' + aurora.http.escapeRegExp(urlPathPrefix)) ,
         function(state) {
+            if (opt_options && opt_options.permission) {
+                if (!opt_options.permission(state)) {
+                    return undefined;
+                }
+            }
             if (state.url.pathname.startsWith(urlPathPrefix) && state.request.method === 'POST') {
                 if (opts.startEvent) {
                     cb({start: true});
@@ -47,10 +53,9 @@ aurora.Upload.prototype.handleUpload = function(urlPathPrefix, fileDestination, 
                 catch (e) {
                     log.error('error removing file', e);
                 }
-
                 return me.handleUpload_(state, fileDestination, opts.restrictedExtension || '', !!opts.allowOverwrite, opts.overrideFilename || '',
                     function(err, data) {
-                        cb({error: err, data: data});
+                        cb({error: err, data: data, url: (state.request.url || ''), token: state.token});
                     });
             }
             return undefined;
@@ -76,19 +81,19 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
     var fs = require('fs');
     var path = require('path');
 
-    var addTimeStampSuffix = function(fname) {
+    var getFileNameParts = function(fname) {
         // remove milliseconds and 'Z' for UTC timezone
-        var utcTimeStamp = new Date().toISOString().split('.')[0];
+        var utcTimeStamp = new Date().toISOString().split('.')[0].replaceAll(':', '_');
         var dir = path.dirname(fname);
         var name = path.basename(fname);
         var fnameParts = name.split('.');
-
-        // stick the timestamp at the end of the first part
-        // possibly it would make sense before the last part?
-        fnameParts[0] = fnameParts[0] + '_' + utcTimeStamp;
-        return path.join(dir, fnameParts.join('.'));
+        return {
+            timestamp: '_' + utcTimeStamp,
+            prefix: path.join(dir, fnameParts.slice(0,-1).join('.')),
+            suffix: fnameParts.length > 1 ? '.' + fnameParts[fnameParts.length - 1] : ''
+        };
     };
-
+   
     var verifyFilePath = function(fname, extension) {
         if (extension && !fname.endsWith(extension)) {
             console.log('invalid extension', extension, fname);
@@ -101,6 +106,16 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
         console.log('path verified');
         return true;
     };
+
+    var cbCalled = false;
+    var singleCb = function (x, y){
+        
+        if(!cbCalled) {
+            cb(x, y);
+        }
+        cbCalled = true;
+    };
+    
     if (request.method === 'POST') {
         log.info('Uploading File');
         var form = new multiparty.Form();
@@ -119,8 +134,8 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
                 } catch (e) {
                     response.writeHead(400, {'content-type': 'text/plain'});
                     response.end(e.message);
-                    log.warn('File upload aborted');
-                    cb(e, 'File upload aborted');
+                    log.warn('File upload part aborted');
+                    singleCb(e, 'File upload aborted');
                     // don't really seem to have a nice way to abort the upload? so pipe to /dev/null
                     // e.g. https://github.com/andrewrk/node-multiparty/issues/27
                     return part.pipe(fs.createWriteStream('/dev/null'));
@@ -130,33 +145,54 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
                 // file path and extension)
                 if (overrideFilename) filename = overrideFilename;
 
-                // check for duplicate file and adjust accordingly
-                fs.exists(fullPath, function(exists) {
-                    // add a timestamp suffix to avoid an overwrite
-                    if (!allowOverwrite && exists) fullPath = addTimeStampSuffix(fullPath);
-                    var stream = fs.createWriteStream(fullPath);
+                let fnameParts = getFileNameParts(fullPath);
 
-                    part.on('end', function(err) {
-                        log.debug('Part upload complete');
-                    });
-                    var throttle = config['uploadThrottle'];
-                    // Pipe the part parsing stream to the file writing stream.
-                    if (throttle) {
-                        part.pipe(new SlowStream({maxWriteInterval: config['uploadThrottle']})).pipe(stream);
+                let makePath = function (prefix, count, suffix) {
+                    if (count === -1) {
+                        return prefix  + suffix;
                     }
                     else {
-                        part.pipe(stream);
+                        if (count === 0) {
+                            return prefix + fnameParts.timestamp + suffix;
+                        }
+                        return prefix + fnameParts.timestamp + '('+ count + ')' + suffix;
+
                     }
-                    // part.pipe(stream);  // <- no throttle
-                });
+                };
+                let writeFile = function (prefix, count, suffix) {
+                  
+                    return function (exists) {
+                        let fullPath = makePath(prefix, count, suffix);
+                        if (!allowOverwrite && exists) {
+                            fs.exists(makePath(prefix, count + 1, suffix), writeFile(prefix, count + 1, suffix));
+                            return;
+                        }
+                        var stream = fs.createWriteStream(fullPath);
+
+                        part.on('end', function(err) {
+                            log.debug('Part upload complete');
+                        });
+                        var throttle = config['uploadThrottle'];
+                        // Pipe the part parsing stream to the file writing stream.
+                        if (throttle) {
+                            part.pipe(new SlowStream({maxWriteInterval: config['uploadThrottle']})).pipe(stream);
+                        }
+                        else {
+                            part.pipe(stream);
+                        }
+                    };
+                };
+                // check for duplicate file and adjust accordingly
+                fs.exists(fullPath, writeFile(fnameParts.prefix,-1, fnameParts.suffix));
+
             }
 
             // handle a "part" error
             part.on('error', function(err) {
-                log.debug('File upload error,', err);
+                log.debug('File upload part error,', err);
                 response.writeHead(422, {'content-type': 'text/plain'});
                 response.end('{}');
-                cb(err, null);
+                singleCb(err || 'Upload Error', null);
             });
             return undefined;
         });
@@ -166,7 +202,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.error('File upload error,', err);
             response.writeHead(422, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(err, null);
+            singleCb(err || 'Upload Error', null);
         });
 
         // NOTE: actually, in practice, we don't need to handle this (according to doc?)
@@ -174,7 +210,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.warn('File upload aborted,', err);
             response.writeHead(422, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(err, 'File upload aborted,');
+            singleCb(err || 'aborted', 'File upload aborted,');
         });
 
         // Send success code if file was successfully uploaded.
@@ -182,7 +218,7 @@ aurora.Upload.prototype.handleUpload_ = function(requestData, destDir, restricte
             log.info('File upload complete');
             response.writeHead(200, {'content-type': 'text/plain'});
             response.end('{}');
-            cb(null, {filename: filename});
+            singleCb(null, {filename: filename});
         });
 
         form.parse(request);

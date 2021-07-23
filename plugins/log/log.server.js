@@ -45,14 +45,14 @@ aurora.log.Log.prototype.processLogEntry_ = function(dst, level, args, opt_colou
     args = Array.prototype.slice.call(args);
     if (levelNum <= minLevel) {
     if (log.syslog !== undefined) {
-        var syslogEntry = this.module_.padRight(9, ' ');
+        var syslogEntry = this.module_.padEnd(9, ' ');
         for (var index = 0; index < args.length; index++) {
-        if (typeof(args[index]) === 'object') {
+            if (!(args[index] instanceof Error) && typeof(args[index]) === 'object') {
             try {
-            args[index] = JSON.stringify(args[index]);
+                args[index] = JSON.stringify(args[index]);
             }
             catch (e) {
-            console.log('LOGGING CLASS', e);
+                console.log('LOGGING CLASS', e);
             }
         }
         syslogEntry += ' ' + args[index];
@@ -70,7 +70,7 @@ aurora.log.Log.prototype.processLogEntry_ = function(dst, level, args, opt_colou
     var levelString = '\x1b[0m' + colour + '%s \x1b[0m' + colour;
 
     //Reset formatting codes
-    args.unshift(level.padRight(9, ' '));
+    args.unshift(level.padEnd(9, ' '));
     var colourString = '';
     colourString = '' + levelString;
     for (var index = 0; index < args.length; index++) {
@@ -79,7 +79,20 @@ aurora.log.Log.prototype.processLogEntry_ = function(dst, level, args, opt_colou
     colourString += '\x1b[0m';
         args.unshift(new Date().toLocaleString());
         args.unshift(colourString);        //"\x1b[0m %s \x1b[0m"+
-        functionTest.apply(console, args);
+        functionTest.apply(console, args.map(function (v) {
+            if (v instanceof Error) {
+                if (v.stack) {
+                    return v.stack.toString();
+                }
+                return v.toString();
+
+            }
+            if (v && v['error'] && v['error']['message']) {
+                return 'Error:' + v['error']['message'];
+
+            }
+            return v;
+        }));
 
     }
 };
@@ -241,8 +254,8 @@ aurora.log.refresh = function() {
  * @return {?string}
  */
 aurora.log.getLogPath = function() {
-    if (config && config.config) {
-        return config.config['logOverride'] === true ? 'log.config' : config.config['logOverride'];
+    if (config && config['config']) {
+        return config['config']['logOverride'] === true ? 'log.config' : config['config']['logOverride'];
     }
     return null;
 };

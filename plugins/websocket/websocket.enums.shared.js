@@ -22,7 +22,7 @@ aurora.websocket.PLUGIN_ID = 'websocket';
  * @enum {number}
  */
 aurora.websocket.error = {
-    NO_SESSION : -1
+    NO_SESSION: -1
 };
 
 /**

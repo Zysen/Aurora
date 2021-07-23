@@ -8,7 +8,7 @@ aurora.binary.hexChar = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 
 
 /**
  * @param {number} b
- * @return {!string}
+ * @return {string}
  */
 aurora.binary.byteToHex = function(b) {
     var hexChar = aurora.binary.hexChar;
@@ -17,7 +17,7 @@ aurora.binary.byteToHex = function(b) {
 
 /**
  * @param {!Array<number>} b
- * @return {!string}
+ * @return {string}
  */
 aurora.binary.byteArrayToHexString = function(b) {
     var str = '';
@@ -77,7 +77,7 @@ aurora.binary.toUInt32ArrayBuffer = function(data) {
 };
 
 /**
- * @param {!Array<number>|!number} data
+ * @param {!Array<number>|number} data
  * @return {ArrayBuffer}
  */
 aurora.binary.toUInt16ArrayBuffer = function(data) {
