@@ -448,8 +448,12 @@ Object.values(buildScriptCalls).sort(function(p1, p2){
 	Execute plugin build scripts sequentially and in order.
 */
 function processQueue(queue, done){
-	if(queue.length>0){queue.pop()(function(){processQueue(queue, done);});}
-	else{done();}
+    if(queue.length>0){
+        queue.pop()(function(){
+            processQueue(queue, done);
+        });
+    }
+    else{done();}
 }
 
 function getExportedString(name, globalStr){
@@ -621,9 +625,12 @@ processQueue(orderedScripts, function(){
             });
         };
     };
+
     processQueue(Object.values(buildTargets).map(function(target){
         var argsFile = config.output+"/compile." + target.filename + ".args";
+        console.log("preparing", target.filename, target.compiled);
 	return function(doneCb){
+            console.log("building", target.filename, target.compiled);
 	    if(target.compiled===true){
                 fs.writeFileSync(argsFile, "");
 		console.log("Compiling "+target.filename);
@@ -799,7 +806,7 @@ processQueue(orderedScripts, function(){
 		    }
 		    console.log(stdout);
 		    console.log(stderr);
-                    /*
+                    
 		    fs.unlink(entryFilePath, function(err){
 			if(err){console.error(err);}
 			fs.unlink(customOutputWrapperPath, function(err){
@@ -809,7 +816,7 @@ processQueue(orderedScripts, function(){
 				postProcess(target, doneCb);
 			    });
 			});
-		    });todo*/
+		    });
 		});
 	    }
 	    else{

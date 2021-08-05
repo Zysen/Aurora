@@ -61,9 +61,7 @@ aurora.websocket.Server = function() {
     var serverInstance = this;
     aurora.http.serversUpdatedE.on('update', function(servers) {
         for (let portStr in serverInstance.lastSockets_) {
-            console.log('closing socket', serverInstance.lastSockets_[portStr]);
             serverInstance.lastSockets_[portStr]['shutDown']();
-            console.log('closing socket done');
         }
         for (let portStr in servers) {
             var server = servers[portStr];
@@ -290,6 +288,9 @@ aurora.websocket.Server.prototype.getChannel = function(pluginName, channelId, m
     }
     else {
         this.channels_[channelIdStr].addCallback(messageCallback);
+        if (opt_clientCloseCallback) {
+            this.channels_[channelIdStr].addCloseCallback(opt_clientCloseCallback);
+        }
     }
     return this.channels_[channelIdStr];
 };
@@ -316,6 +317,8 @@ aurora.websocket.ChannelMessage;
 aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCloseCallback) {
     var clientRegistration = {};
     var callbacks = [messageCb];
+    var closeCallbacks = opt_clientCloseCallback ? [opt_clientCloseCallback] : [];
+    
     var registerCallbacks = [];
     var locked = aurora.websocket.Server.instance.locked_;
     /**
@@ -394,14 +397,15 @@ aurora.websocket.Channel = function(pluginId, channelId, messageCb, opt_clientCl
     this.unregister = function(clientId) {
         delete clientRegistration[clientId];
         aurora.auth.instance.getClientToken(clientId, function (token) {
-            if (opt_clientCloseCallback) {
-                opt_clientCloseCallback(token, clientId);
-            }
+            closeCallbacks.forEach(function (cb) {cb(token, clientId);});
         });
 
     };
     this.addCallback = function(messageCb2) {
         callbacks.push(messageCb2);
+    };
+    this.addCloseCallback = function(messageCb2) {
+        closeCallbacks.push(messageCb2);
     };
 
 
