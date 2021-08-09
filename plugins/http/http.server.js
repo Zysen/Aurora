@@ -1,4 +1,6 @@
 goog.provide('aurora.http');
+
+goog.require('aurora.log');
 goog.require('aurora.websocket.enums');
 goog.require('config');
 goog.require('goog.structs.AvlTree');
@@ -58,6 +60,7 @@ aurora.http.REQUEST_ASYNC = {};
     let themeGetter = function (req) {
         return config['http']['theme'];
     };
+    let log = aurora.log.createModule('HTTP');
     
     aurora.http.serversUpdatedE = new EventEmitter();
 
@@ -229,7 +232,7 @@ aurora.http.REQUEST_ASYNC = {};
             });
         });
         httpServer.shutdown = function(doneCb) {
-            console.log('HTTP Server Shutdown ' + port, nextSocketId);
+            log.info('HTTP Server Shutdown ' + port, nextSocketId);
             httpServer.close(function() {
                 for (var index in serverSockets) {serverSockets[index].destroy();}
                 running = false;
@@ -371,7 +374,7 @@ aurora.http.REQUEST_ASYNC = {};
                             response.end();
                         }
                         catch (e) {
-                            console.error('Assertion error during http abort.', e);
+                            log.error('Assertion error during http abort.', e);
                         }
                     }
                 });
@@ -608,7 +611,7 @@ aurora.http.REQUEST_ASYNC = {};
                                         }
                                         else if (err) {
                                             aurora.http.writeError(404, state);
-                                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                                            log.info('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
                                         }
                                         else {
                                             sendFile(fsname, state);
@@ -619,24 +622,28 @@ aurora.http.REQUEST_ASYNC = {};
                             }
                         }
                         catch (e) {
-                            console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                            log.error('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
                             aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
-                            console.log(e);
+                            log.error(e);
                         }
                     };
                     processAsyncCallbacks(null, processAfterCallbacks);
                 }
                 catch (e) {
                     aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
-                    console.log('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
-                    console.log(e);
+                    log.error('REQUEST Error ' + request.method + ' ' + request.url + ' ' + request.connection.remoteAddress);
+                    log.error(e);
                 }
             });
         };
     }
     function shutdownAllServers(servers, done) {
         if (servers.length > 0) {
-            servers.pop().server.shutdown(function() {
+            let s = servers.pop();
+            if (s.certWatch) {
+                s.close();
+            }
+            s.server.shutdown(function() {
                 shutdownAllServers(servers, done);
             });
         }
@@ -645,17 +652,113 @@ aurora.http.REQUEST_ASYNC = {};
         }
     }
 
+    const glob = require('glob'); 
+
+    function getCertFiles(cert, key) {
+        let certArr = glob.sync(cert);
+        let keyArr = glob.sync(key);
+        
+        if (certArr.length > 0 && keyArr.length > 0) {
+            return {cert: certArr[0], key: keyArr[0]};
+        }
+        return null;
+    }
+
+
+    function watchServerCert(certPath, keyPath, server) {
+        let firstValid = true;
+        let info = {
+            timeout: null,
+            globTimeout: null,
+            watcher: null,
+            close: function () {
+                if (info.timeout) {
+                    clearTimeout(info.timeout);
+                    info.timeout = null;
+                }
+                if (info.globTimeout) {
+                    clearTimeout(info.globTimeout);
+                    info.globTimeout = null;
+                    
+                        }
+                if (info.watcher) {
+                    info.watcher.close();
+                    info.watcher = null;
+                }
+            }
+        };
+        if (!certPath || !keyPath) {
+            return null; // not configured so don't watch
+        }
+        function watchPaths() {
+            if (info.globTimeout) {
+                info.globTimeout = null;
+            }
+            let paths = getCertFiles(certPath, keyPath);
+            function setCred () {
+                try {
+                    server['_sharedCreds']['context']['setCert'](fs.readFileSync(paths.cert));
+                    server['_sharedCreds']['context']['setKey'](fs.readFileSync(paths.key));
+                }
+                catch (e) {
+                    log.warn('error setting certificates trying again');
+                    log.warn(e);
+                    if (info.timeout) {
+                        clearTimeout(info.timeout);
+                    }
+                    setTimeout(setCred, 1000);
+                }
+            }
+            if (paths) {
+                if (!firstValid) {
+                    setCred();
+                }
+                fs.watch(paths.cert, () => {
+                    if (info.timeout) {
+                        clearTimeout(info.timeout);
+                    }
+                    info.timeout = setTimeout(setCred,10000);
+                });
+                
+            }
+            else {
+                firstValid = false;
+                info.globTimeout = setTimeout(watchPaths, 20000);
+            }
+        }
+
+        watchPaths();
+        return info;
+    }
 
     var httpServers = {};
     function loadServers() {
         shutdownAllServers(Object.values(httpServers), function() {
+
+
+                
+            function getCertFile(file, defaultFile) {
+                if (file) {
+                    let files = glob.sync(file);
+                    if (files.length > 0) {
+                        return files[0];
+                    }
+                }
+                return defaultFile;
+            }
             httpServers = {};
             config['http']['servers'].forEach(function(serverConfig) {
                 if (serverConfig.port !== undefined) {
                     if (serverConfig.protocol === 'https') {
-                        serverConfig['key'] = fs.readFileSync((serverConfig.key || 'resources/defaultKey.pem'));
-                        serverConfig['cert'] = fs.readFileSync((serverConfig.cert || 'resources/defaultCert.pem'));
-                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: startServer(node_https, serverConfig.port, makeRequestHandler(serverConfig), serverConfig), config: serverConfig});
+                        let certFile = getCertFile(serverConfig.certFile, 'resources/defaultCert.pem');
+                        let keyFile = getCertFile(serverConfig.keyFile, 'resources/defaultKey.pem');
+                        serverConfig['key'] = fs.readFileSync(keyFile);
+                        serverConfig['cert'] = fs.readFileSync(certFile);
+
+                        let server = startServer(node_https, serverConfig.port, makeRequestHandler(serverConfig), serverConfig);
+                        let watch = watchServerCert(serverConfig.certFile, serverConfig.keyFile, server);
+                        
+                        httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: server, config: serverConfig, certWatch: watch});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else if (serverConfig.protocol === 'http') {
@@ -663,11 +766,11 @@ aurora.http.REQUEST_ASYNC = {};
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);
                     }
                     else {
-                        console.error('HTTP Server config entry contains an unsupported protocol.', serverConfig);
+                        log.error('HTTP Server config entry contains an unsupported protocol.', serverConfig);
                     }
                 }
                 else {
-                    console.error('HTTP Server config entry does not specify a port.', serverConfig);
+                    log.error('HTTP Server config entry does not specify a port.', serverConfig);
                 }
             });
             aurora.http.serversUpdatedE.emit('update', httpServers);
