@@ -462,7 +462,7 @@ aurora.http.REQUEST_ASYNC = {};
                             let message = sConfig['httpsRedirectMessage'];
                             let httpPort = sConfig['port'];
                             var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
-                            let url = 'https://' + request.headers.host.replace(":"+httpPort, port) + request.url;
+                            let url = 'https://' + (request.headers.host || '').replace(":"+httpPort, port) + request.url;
                             if (message) {
 	                        response.writeHead(403, {'Location': url});
                                 response.end(message.replaceAll('{REDIRECT}', goog.string.htmlEscape(url)));
