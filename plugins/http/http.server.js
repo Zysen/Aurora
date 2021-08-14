@@ -70,10 +70,17 @@ aurora.http.REQUEST_ASYNC = {};
 
     /**
      * @param {!aurora.http.RequestState} state
-     * @param {function(string)} cb
+     * @param {function(string, Object<string,boolean>)} cb
      **/
     aurora.http.loadTemplate = function (state, cb) {
-        aurora.http.loadThemedFile('template.html', state, cb);
+        aurora.http.loadThemedFile('template.html', state, function (template) {
+	    let matches = {};
+	    for (let match of template.matchAll(/{[A-Z]+}/g)) {
+		matches[match[0].substring(1, match[0].length -1)] = true;
+	    }
+	
+	    cb(template, matches);
+	});
     };
 
     /**
@@ -587,6 +594,7 @@ aurora.http.REQUEST_ASYNC = {};
                                             
                                             response.writeHead(200, responseHeaders.toClient());
                                             aurora.http.loadTemplate(state, function (template) {
+						// see if the page has sections to load 
                                                 response.end(template.replace('{BODY}', pageData.toString()));
                                             });
                                         });
