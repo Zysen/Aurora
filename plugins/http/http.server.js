@@ -437,6 +437,26 @@ aurora.http.REQUEST_ASYNC = {};
         });
     };
 
+    function getSections(page) {
+        let res = {};
+        let start = null;
+        let prevName = null;
+        for (let m of page.matchAll(/<!--SECTION:[A-Z]+-->/g)) {
+            if (start !== null) {
+                res[prevName] = page.substring(start, m.index);
+            }
+            prevName = m[0].substring(12, m[0].length-3);
+            start = m.index + m[0].length;
+        }
+        if (start !== null) {
+            res[prevName] = page.substring(start);
+        }
+        if (!start) {
+            res['BODY'] = page;
+        }
+        return res;
+        
+    }
     function redirect (response, url) {
 	response.writeHead(302, {'Location': url});
         response.end();
@@ -593,9 +613,13 @@ aurora.http.REQUEST_ASYNC = {};
                                             }
                                             
                                             response.writeHead(200, responseHeaders.toClient());
-                                            aurora.http.loadTemplate(state, function (template) {
-						// see if the page has sections to load 
-                                                response.end(template.replace('{BODY}', pageData.toString()));
+                                            aurora.http.loadTemplate(state, function (template, matches) {
+						// see if the page has sections to load
+                                                let sections = getSections(pageData.toString());                                                  
+                                                for (let k in matches) {
+                                                    template = template.replace('{'  + k + '}', sections[k] || '');
+                                                }
+                                                response.end(template);
                                             });
                                         });
                                         return;
