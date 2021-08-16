@@ -463,6 +463,7 @@ aurora.http.REQUEST_ASYNC = {};
     }
     function makeRequestHandler(sConfig) {
         return function (request, response) {
+             log.info("got request", request.url, "from", request.connection.remoteAddress);
              aurora.startup.doWhenStarted(function () {
                  let cookies = {};
                  let responseHeaders = responseHeadersDef();
