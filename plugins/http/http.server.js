@@ -684,18 +684,22 @@ aurora.http.REQUEST_ASYNC = {};
 
     const glob = require('glob'); 
 
-    function getCertFiles(cert, key) {
+    function getCertFiles(cert, key, ca) {
         let certArr = glob.sync(cert);
-        let keyArr = glob.sync(key);
-        
+        let caArr = ca ? glob.sync(ca) : [];
+        let keyArr = key ? glob.sync(key) : [];        
         if (certArr.length > 0 && keyArr.length > 0) {
-            return {cert: certArr[0], key: keyArr[0]};
+            let res = {cert: certArr[0], key: keyArr[0]};
+            if (caArr.length > 0) {
+                res.ca = caArr[0];
+            }
+            return res;
         }
         return null;
     }
 
 
-    function watchServerCert(certPath, keyPath, server) {
+    function watchServerCert(certPath, keyPath, caPath, server) {
         let firstValid = true;
         let info = {
             timeout: null,
@@ -724,11 +728,24 @@ aurora.http.REQUEST_ASYNC = {};
             if (info.globTimeout) {
                 info.globTimeout = null;
             }
-            let paths = getCertFiles(certPath, keyPath);
+            let paths = getCertFiles(certPath, keyPath, caPath);
+            console.log("paths", paths);
             function setCred () {
                 try {
-                    server['_sharedCreds']['context']['setCert'](fs.readFileSync(paths.cert));
-                    server['_sharedCreds']['context']['setKey'](fs.readFileSync(paths.key));
+                    log.info("setting new certificates");
+                    let info = {
+                        cert: fs.readFileSync(paths.cert, 'utf8'),
+                        key: fs.readFileSync(paths.key, 'utf8')
+                    };
+                    try {
+                        if (paths.ca) {
+                            info.ca =  fs.readFileSync(paths.ca);
+                        }
+                    }
+                    catch (e) {
+                        log.info("can't read ca file");
+                    }
+                    server['setSecureContext'](info);
                 }
                 catch (e) {
                     log.warn('error setting certificates trying again');
@@ -744,6 +761,7 @@ aurora.http.REQUEST_ASYNC = {};
                     setCred();
                 }
                 fs.watch(paths.cert, () => {
+                    log.info("certificate file updated");
                     if (info.timeout) {
                         clearTimeout(info.timeout);
                     }
@@ -782,11 +800,16 @@ aurora.http.REQUEST_ASYNC = {};
                     if (serverConfig.protocol === 'https') {
                         let certFile = getCertFile(serverConfig.certFile, 'resources/defaultCert.pem');
                         let keyFile = getCertFile(serverConfig.keyFile, 'resources/defaultKey.pem');
+                        let caFile = getCertFile(serverConfig.caFile, '');
                         serverConfig['key'] = fs.readFileSync(keyFile);
                         serverConfig['cert'] = fs.readFileSync(certFile);
+                        try {
+                            serverConfig['ca'] = fs.readFileSync(certFile);
+                        } catch (e) {
+                        }
 
                         let server = startServer(node_https, serverConfig.port, makeRequestHandler(serverConfig), serverConfig);
-                        let watch = watchServerCert(serverConfig.certFile, serverConfig.keyFile, server);
+                        let watch = watchServerCert(serverConfig.certFile, serverConfig.keyFile, serverConfig.caFile, server);
                         
                         httpServers[serverConfig.port + ''] = /** @type {aurora.http.ConfigServerType} */ ({server: server, config: serverConfig, certWatch: watch});
                         aurora.http.serversUpdatedE.emit(serverConfig.port + '', httpServers[serverConfig.port + '']);

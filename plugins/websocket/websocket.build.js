@@ -2,6 +2,13 @@ var fs = require('fs');
 var path = require('path');
 
 var foundPlugins = [];
+
+let baseDir = process.argv[6];
+let myPlugin = path.relative(baseDir,__dirname);
+let genDir = path.join(process.argv[7], myPlugin);
+
+fs.mkdirSync(genDir, {recursive:true});
+
 fs.readFile(process.argv[5], function(err, data) {
     var config = JSON.parse(data);
     config.plugins.forEach(function(pluginDir) {
@@ -23,7 +30,10 @@ fs.readFile(process.argv[5], function(err, data) {
     });
     code.push(lines.join(',\n'));
     code.push('};');
-    fs.writeFile(__dirname + path.sep + 'websocket.gen.shared.js', code.join('\n'), function(err) {
-	console.log('Generated ' + __dirname + path.sep + 'websocket.gen.shared.js');
+
+    const file = path.join(genDir,'websocket.gen.shared.js');
+                           
+    fs.writeFile(file, code.join('\n'), function(err) {
+	    console.log('Generated ' + file);
     });
 });
