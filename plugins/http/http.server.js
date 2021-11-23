@@ -251,7 +251,7 @@ aurora.http.REQUEST_ASYNC = {};
     }
 
     var responseHeadersDef = (function() {
-        var headers = {'Server': [config['http']['serverDescription'] || 'AuroraHTTP'], 'Date': [(new Date()).toGMTString()]};
+        var headers = {'Date': [(new Date()).toGMTString()]};
         return {
             set: function(name, value) {
                 if (headers[name] !== undefined) {
