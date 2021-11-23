@@ -760,6 +760,7 @@ processQueue(orderedScripts, function(){
 			      "--warning_level=VERBOSE",
 			      "--jscomp_error=checkTypes",
 			      "--js_output_file='"+compileOut+"'",
+                              "--language_out=ECMASCRIPT_2018",
 			      "--create_source_map='"+compileOut +".map'",
 			      "--source_map_format=V3",
 			      "--source_map_include_content=true", ]);
