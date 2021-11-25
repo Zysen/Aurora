@@ -729,7 +729,6 @@ aurora.http.REQUEST_ASYNC = {};
                 info.globTimeout = null;
             }
             let paths = getCertFiles(certPath, keyPath, caPath);
-            console.log("paths", paths);
             function setCred () {
                 try {
                     log.info("setting new certificates");
