@@ -96,8 +96,14 @@ function toUInt16ArrayBuffer(data, littleEndian) {
     return ab;
 }
 
-var channels = {};
-var onReadyCallbacks = [];
+/**
+ * @private
+ */
+aurora.websocket.channels_ = {};
+/**
+ * @private
+ */
+aurora.websocket.onReadyCallbacks_ = [];
 
 /**
  * @private
@@ -144,12 +150,19 @@ aurora.websocket.onError = function(cb) {
  * @param {function()} cb
  */
 aurora.websocket.onReady = function(cb) {
-    onReadyCallbacks.push(cb);
+    aurora.websocket.onReadyCallbacks_.push(cb);
     if (connection && connection.ready) {
         cb();
     }
 };
 
+aurora.websocket.reconnect = function() {
+    if (connection) {
+        connection.close();
+        connection = null;
+        aurora.websocket.connect();
+    }
+};
 /**
  * connect to server websocket
  */
@@ -167,7 +180,7 @@ aurora.websocket.connect = function() {
         console.log('WS connection established');
         connection.ready = true;
         // other onready callback may add to array while we are doing these callbacks
-        onReadyCallbacks.slice(0).forEach(function(cb) {
+        aurora.websocket.onReadyCallbacks_.slice(0).forEach(function(cb) {
             cb();
         });
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.CONNECTED;
@@ -189,6 +202,7 @@ aurora.websocket.connect = function() {
     connection.onclose = function(evt) {
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.DISCONNECTED;
         connection = null;
+        console.error('closing web socket');
         if (evt.code !== 1000) {
             // if 1000 is a normal closure basically we are changing pages
             // in firefox don't send events because it behaves differently on
@@ -200,9 +214,9 @@ aurora.websocket.connect = function() {
             });
         }
 
-	setTimeout(function() {
-	    aurora.websocket.connect();
-	}, 4000);
+	    setTimeout(function() {
+            aurora.websocket.connect();
+	    }, 4000);
     };
 
     var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');
@@ -244,7 +258,7 @@ aurora.websocket.connect = function() {
                     var pluginId = header[0];
                     var channelId = header[1];
                     var type = header[2];
-                    var channel = channels[pluginId + '_' + channelId];
+                    var channel = aurora.websocket.channels_[pluginId + '_' + channelId];
                     var decodedData = null;
                     if (myCount < prev) {
                         console.log('out of order recieved', pluginId, prev, myCount);
@@ -268,7 +282,7 @@ aurora.websocket.connect = function() {
                         channel.receive({data: decodedData});
                     }
                     else if (pluginId === websocketPluginId) {
-                        console.log('recived webSocket error');
+                        console.log('recived webSocket error', aurora.websocket.errorCallbacks_);
                         aurora.websocket.errorCallbacks_.slice(0).forEach(function(cb) {
                             cb(decodedData);
                         });
@@ -384,10 +398,10 @@ aurora.websocket.getChannel = function(pluginName, channelId, messageCallback, o
     }
     // I think this will get confusing especially if on widget sends a destroy
     // or gets a message for another widget
-    var channel = channels[pluginId + '_' + channelId];
+    var channel = aurora.websocket.channels_[pluginId + '_' + channelId];
     if (channel === undefined) {
         channel = new Channel(pluginId, channelId, messageCallback);
-        channels[pluginId + '_' + channelId] = channel;
+        aurora.websocket.channels_[pluginId + '_' + channelId] = channel;
     }
     else {
         channel.addCallback(messageCallback);

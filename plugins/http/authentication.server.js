@@ -117,17 +117,19 @@ aurora.auth.Auth = function() {
         let seriesId = sesh.length == 2 ? sesh[1] : undefined;
 
         
-        let loginIfNeeded = function (session) {
+        let loginIfNeeded = function (session, recent) {
             if (session) {
                 // if our user is null and we are trying to login, we should login so don't accept the login
                 if (!(session.data && session.data.userid === null && state.url.pathname === me.loginPath_)) {
                     
                     if (session.seriesId !== seriesId || token !== session.token) {
+
+                        
                         // the session table updated the token, this can happen for persistant logins
                         // as security feature, each time you login it gets updated
+                        // recent logins shouldn't need to resend cookies, we don't want to send it to someone else
                         state.responseHeaders.set('Set-Cookie', [
                             'sesh=' + encodeURIComponent(session.token + '-' + session.seriesId) + me.makeCookieSuffix() ]);
-                        
                     }
                    
                     if (session.data && session.data.userid !== null && !state.cookies['userid']) {
@@ -191,7 +193,7 @@ aurora.auth.Auth = function() {
 
         
         if (seriesId && token) {
-            me.sessions_.loginFindSession(token, seriesId, loginIfNeeded);
+            me.sessions_.loginFindSession(token, seriesId, request.connection.remoteAddress, loginIfNeeded);
         }
         else {
             loginIfNeeded(undefined);
@@ -662,7 +664,8 @@ aurora.auth.Auth.prototype.lock = function(token) {
  * @return {string}
  */
 aurora.auth.Auth.prototype.generateSeriesId = function() {
-    return this.crypto_.randomBytes(10).toString('hex');
+    let res = this.crypto_.randomBytes(10).toString('hex');
+    return res;
 };
 /**
  * @param {function ({token:string, seriesId:string, uniq: string})} cb

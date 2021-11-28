@@ -88,16 +88,17 @@ aurora.websocket.Server = function() {
                                 });
                             }
                             else {
+                                console.log('invalid token!!!!!!!!!!!!!!!!!');
                                 this.sendError_(connection, aurora.websocket.error.NO_SESSION);
 
                                 serverInstance.onClose_(connection, 'INVALIDTOKEN', 'invalid token');
-                                delete wsServer.clients[socketId];
-                                
+                                delete wsServer.clients[socketId];                                
                             }
                         }.bind(this));
                     });
                 });
                 serverInstance.lastSockets_[portStr] = wsServer;
+                log.info('Listening on websocket', portStr);
             }
         }
     });

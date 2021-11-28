@@ -242,6 +242,7 @@ aurora.auth.MemorySessionTable.prototype.registerClientToken = function(request,
                     this.log_.warn('Token Theft Assumed!!!, Deleting all tokens that relate to this seriesId');
                 }
                 else {
+                    console.log('can\'t find token', token, seriesId);
                     //                    connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));   //Legitimate Old Token Attempt
                 }
                 cb(false);
@@ -783,9 +784,10 @@ aurora.auth.MemorySessionTable.prototype.findSession = function(token, seriesIdO
 /**
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
+ * @param {string} ip
  * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
  */
-aurora.auth.MemorySessionTable.prototype.loginFindSession = function(token, seriesId, cb) {
+aurora.auth.MemorySessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {
     this.findSession(token, seriesId, cb);
 };
 
