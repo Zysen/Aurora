@@ -21,6 +21,7 @@ aurora.auth.DbSessionTable = function(auth, reader) {
     this.reader_ = reader;
     this.auth_ = auth;
     this.lastExpiry_ = new Date().getTime();
+    this.recentUpdates_ = {};
     let sessionT = aurora.db.schema.tables.base.session;
     let query = new recoil.db.Query();
     let me = this;
@@ -410,9 +411,10 @@ aurora.auth.DbSessionTable.prototype.findSessionById_ = function(token, cb) {
 /**
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
+ * @param {string} ip
  * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
  */
-aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId, cb) {
+aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {
     if (token == undefined) {
         cb(undefined);
         return;
@@ -426,7 +428,6 @@ aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId
             // in memory we are all good
             cb(session);
             return;
-            
         }
         me.reader_.readObjectByKey({}, sessionT, [{col: sessionT.cols.token, value: token}], null, function (error, object) {
             if (object == undefined) {
@@ -434,15 +435,29 @@ aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId
                 cb(undefined);
                 return;
             }
-            
+            let old = ip + '-' + token + '-' + seriesId;
+            if (me.recentUpdates_[old]) {
+                let newSeriesId = me.recentUpdates_[old];
+                me.memory_.loginFindSession(
+                    token, newSeriesId, ip, function (session) {
+                        cb(session);
+                    }
+                );
+                return;
+            }
             if (object.seriesId !== seriesId) {
                 // remove the series id this is invalid also remove all tokens that match this is a security violatin
-                console.log('series id did not match', token, seriesId);
                 me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.token, query.val(token)), null, function () {});
                 cb(undefined);
                 return;
             }
+            
             object.seriesId = me.auth_.generateSeriesId();
+            // allow the old token for 30 seconds
+            me.recentUpdates_[old] = object.seriesId;
+            setTimeout(function () {
+                delete me.recentUpdates_[old];
+            }, 30000);
             me.reader_.updateOneLevel(
                 {}, sessionT, {seriesId: object.seriesId, expiry: new Date().getTime()},
                 query.eq(sessionT.cols.id, query.val(object.id)), function () {
@@ -452,13 +467,9 @@ aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId
                 });                
             });
             // change the series id and add the new the memory table
-
-
         });            
     });
     
-
-
 };
 
 /**

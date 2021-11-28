@@ -209,9 +209,10 @@ aurora.auth.SessionTable.prototype.findSession = function(token, seriesIdOrCb, o
 /**
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
+ * @param {string} ip
  * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
  */
-aurora.auth.SessionTable.prototype.loginFindSession = function(token, seriesId, cb) {};
+aurora.auth.SessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {};
 
 /**
  * updates the sessions and it expires later
