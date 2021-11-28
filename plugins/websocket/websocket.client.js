@@ -156,6 +156,9 @@ aurora.websocket.onReady = function(cb) {
     }
 };
 
+/**
+ * close and open again
+ */
 aurora.websocket.reconnect = function() {
     if (connection) {
         connection.close();
