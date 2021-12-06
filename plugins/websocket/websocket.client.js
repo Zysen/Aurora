@@ -166,6 +166,27 @@ aurora.websocket.reconnect = function() {
         aurora.websocket.connect();
     }
 };
+
+/**
+ * gets the document again to referesh the cookies
+ * @param {function()} reloadFunc
+ */
+aurora.websocket.getCookiesAndReload = function(reloadFunc) {
+    let sender = new goog.net.XhrIo();
+    sender.setResponseType(goog.net.XhrIo.ResponseType.TEXT);
+    sender.listen(goog.net.EventType.COMPLETE, function(e) {
+        if (sender.isSuccess()) {
+            reloadFunc();
+        }
+        else {
+            setTimeout(function() {
+                aurora.websocket.getCookiesAndReload(reloadFunc);
+            }, 4000);
+        }
+    });
+    sender.send('/');
+};
+
 /**
  * connect to server websocket
  */
@@ -202,8 +223,12 @@ aurora.websocket.connect = function() {
             cb(aurora.websocket.status_);
         });
     };
+    let reconnectTimeout = null;
     connection.onclose = function(evt) {
         aurora.websocket.status_ = aurora.websocket.CON_STATUS.DISCONNECTED;
+        if (connection) {
+            connection.close();
+        }
         connection = null;
         console.error('closing web socket');
         if (evt.code !== 1000) {
@@ -217,9 +242,11 @@ aurora.websocket.connect = function() {
             });
         }
 
-	    setTimeout(function() {
-            aurora.websocket.connect();
-	    }, 4000);
+        setTimeout(function () {
+            if (!connection) {
+                aurora.websocket.connect();
+            }
+        }, 1000);
     };
 
     var websocketPluginId = aurora.websocket.constants.plugins.indexOf('websocket');

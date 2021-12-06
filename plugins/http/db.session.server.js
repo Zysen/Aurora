@@ -279,7 +279,6 @@ aurora.auth.DbSessionTable.prototype.touch = function(token) {
         if (!session.dbTouch || me.lastExpiry_ > session.dbTouch) {
             session.dbTouch = new Date().getTime();
             let query = new recoil.db.Query();
-            console.log("updated session", token);
             me.reader_.updateOneLevel(
                 {}, sessionT, {expiry: new Date().getTime()},
                 query.eq(sessionT.cols.id, query.val(token)), function () {
