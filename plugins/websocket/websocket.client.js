@@ -242,7 +242,11 @@ aurora.websocket.connect = function() {
             });
         }
 
-        setTimeout(function () {
+        if (reconnectTimeout) {
+            return;
+        }
+        reconnectTimeout = setTimeout(function () {
+            reconnectTimeout = null;
             if (!connection) {
                 aurora.websocket.connect();
             }
