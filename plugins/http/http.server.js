@@ -1,6 +1,8 @@
 goog.provide('aurora.http');
 
 goog.require('aurora.log');
+goog.require('aurora.startup');
+goog.require('aurora.template.helpers');
 goog.require('aurora.websocket.enums');
 goog.require('config');
 goog.require('goog.structs.AvlTree');
@@ -93,7 +95,7 @@ aurora.http.REQUEST_ASYNC = {};
             aurora.http.loadThemedFile(
                 'http' + error + '.html', state,
                 function (errorTxt) {
-                    cb(aurora.template.replace(template, {'BODY': errorTxt.toString()}));
+                    cb(aurora.template.helpers.replace(template, {'BODY': errorTxt.toString()}));
                 });
         });
     };
@@ -617,7 +619,7 @@ aurora.http.REQUEST_ASYNC = {};
                                             aurora.http.loadTemplate(state, function (template, matches) {
 						// see if the page has sections to load
                                                 let sections = getSections(pageData.toString());
-                                                response.end(aurora.template.replace(template, sections));
+                                                response.end(aurora.template.helpers.replace(template, sections));
                                             });
                                         });
                                         return;

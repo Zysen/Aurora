@@ -1,18 +1,8 @@
 goog.provide('aurora.template');
+goog.require('aurora.template.helpers');
 goog.require('aurora.http');
 goog.require('config');
 
-
-/**
- * @param {string} body
- * @param {Object<string,string>} params
- * @return {string}
- */
-aurora.template.replace = function (body, params) {
-    return body.replace(/{[A-Z]+}/g, function (param) {
-        return params[param.substring(1, param.length -1)] || '';
-    });
-};
 /**
  * returns a function that will write a template out to an http request
  * @param {string} location
@@ -42,7 +32,7 @@ aurora.template.provide = function(location, parameters, cache, opt_responseCode
             }
             else {
                 var headers = state.responseHeaders;
-                data = aurora.template.replace(data, parameters);
+                data = aurora.template.helpers.replace(data, parameters);
                 var reqDate = request.headers['if-modified-since'];
                 if (reqDate !== undefined && new Date(reqDate).getUTCSeconds() === new Date(stats.mtime).getUTCSeconds()) {
                     response.writeHead(304, headers.toClient());
