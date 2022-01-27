@@ -35,7 +35,7 @@ aurora.auth.Auth = function() {
             me.delays_ = [];
         }
         catch (e) {
-            this.log_.error('Cannot create configured session table using memory on instead');
+            me.log_.error('Cannot create configured session table using memory one instead');
         }
     }, 1);
 
