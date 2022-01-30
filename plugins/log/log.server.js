@@ -219,9 +219,17 @@ aurora.log.level = aurora.log.enum['INFO'];
  * @final
  */
 aurora.log.syslog = (function() {
-    var syslog = require('modern-syslog');
-    syslog.open(config.logName || 'gui', syslog['LOG_PID']);
-    return syslog;
+	if(process.platform !== "linux"){
+		return;
+	}
+    try{
+		var syslog = require('modern-syslog');
+		syslog.open(config.logName || 'gui', syslog['LOG_PID']);
+		return syslog;
+	}
+	catch(e){
+		console.error(e);
+	}
 })();
 
 /**

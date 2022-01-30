@@ -542,7 +542,7 @@ processQueue(orderedScripts, function(){
                     return function(searchExpStr) {
 		        fs.readdirSync(path.join(pluginDir,pluginName)).forEach(function(pluginFileName){
 			    var stat = fs.statSync(path.join(pluginDir,pluginName,pluginFileName));
-                            if (shouldBuild(target)) {
+                            if (shouldBuild(target) || build==="resources") {
 			        copyDirectorySync(pluginDir+path.sep+pluginName+"/resources", config.output+"/resources");
                             }
 			    if(stat.isFile()){
@@ -763,7 +763,7 @@ processQueue(orderedScripts, function(){
                               "--language_out=ECMASCRIPT_2018",
 			      "--create_source_map='"+compileOut +".map'",
 			      "--source_map_format=V3",
-			      "--source_map_include_content=true", ]);
+			      "--source_map_include_content=true"]);
 			    //"--export_local_property_definitions"
 				//,"--assume_function_wrapper"			//This allows extra optimizations if you can assume a function wrapper.
 					//,"--generate_exports=true"
@@ -771,9 +771,12 @@ processQueue(orderedScripts, function(){
                     target.defines.forEach(function (def) {
                         buildCommandArray.push('-D');
                         buildCommandArray.push(def);
-                    });
-                        
+                    });          
                 }
+				if(debug){
+					buildCommandArray.push("--debug");
+                    buildCommandArray.push("--formatting=PRETTY_PRINT");
+				}
 		var customOutputWrapperPath = config.output+path.sep+"output_wrapper_custom.txt";
 		if(target.sourceMapLocation){
 					if(target.sourceMapLocation==="local"){
