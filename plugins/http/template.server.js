@@ -1,6 +1,7 @@
 goog.provide('aurora.template');
-goog.require('aurora.template.helpers');
+
 goog.require('aurora.http');
+goog.require('aurora.template.helpers');
 goog.require('config');
 
 /**
