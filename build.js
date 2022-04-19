@@ -586,12 +586,18 @@ processQueue(orderedScripts, function(){
     catch(e){}	//Do nothing intentionally.
     if (configStat) {
 	var customConfig = JSON.parse(fs.readFileSync("config.json"));
-	for(let pluginName in customConfig){
-	    for(var key in customConfig[pluginName]){
-                pluginConfigs[pluginName] = pluginConfigs[pluginName] || {};
-		pluginConfigs[pluginName][key] = customConfig[pluginName][key];
-	    }
-	}	
+	    for(let pluginName in customConfig){
+            let val = customConfig[pluginName];
+            if (val instanceof Object) {
+	            for(var key in val){
+                    pluginConfigs[pluginName] = val || {};
+		            pluginConfigs[pluginName][key] = val[key];
+	            }
+            }
+            else {
+                pluginConfigs[pluginName] = val;
+            }
+	    }	
     }
     if(Object.keys(pluginConfigs).length>0){
 	fs.writeFileSync(config.output+"/config.json", JSON.stringify(pluginConfigs, null, "\t"));
