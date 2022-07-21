@@ -18,7 +18,6 @@ aurora.log.Log = function(module) {
  * @param {string=} opt_colour
  */
 aurora.log.Log.prototype.processLogEntry_ = function(dst, level, args, opt_colour) {
-    var moment = require('moment');
     var log = aurora.log;
     var syslog = log.syslog;
     var minLevel = log.level;
@@ -57,7 +56,6 @@ aurora.log.Log.prototype.processLogEntry_ = function(dst, level, args, opt_colou
         }
         syslogEntry += ' ' + args[index];
         }
-        //syslogEntry+="\t"+moment().format('YYYY MMM DD hh:mm:ss.sss');
         if (levelNum <= log.level || hasOverride) {
             syslog.log(levelNum, syslogEntry);        //level.padRight(9, " ")+" "+
         }
