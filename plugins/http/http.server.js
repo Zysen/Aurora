@@ -67,7 +67,6 @@ aurora.http.REQUEST_ASYNC = {};
     aurora.http.serversUpdatedE = new EventEmitter();
 
     let makeThemePath = function (theme, fname) {
-		console.log("Theme Path", [__dirname, 'resources', 'htdocs', 'themes', theme, fname].join(path.sep));
         return [__dirname, 'resources', 'htdocs', 'themes', theme, fname].join(path.sep);
     };
 
@@ -77,7 +76,6 @@ aurora.http.REQUEST_ASYNC = {};
      **/
     aurora.http.loadTemplate = function (state, cb) {
         aurora.http.loadThemedFile('template.html', state, function (template) {
-			console.log("loadTemplate", typeof(template));
 			let matches = {};
 			for (let match of template.matchAll(/{[A-Z]+}/g)) {
 				matches[match[0].substring(1, match[0].length -1)] = true;
@@ -604,7 +602,7 @@ aurora.http.REQUEST_ASYNC = {};
                                 return;
 							case path.sep + 'themes' + path.sep + themeGetter() + path.sep + 'style.css':
                                 sendFile([__dirname, "resources", "htdocs", "themes", themeGetter(), "style.css"].join(path.sep), state, true);
-                                 return;
+                                return;
                             case path.sep:
                             case '/':
                                 url += (config['http']['defaultPage'] || 'home');
