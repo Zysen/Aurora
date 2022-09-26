@@ -351,6 +351,31 @@ aurora.auth.DbSessionTable.prototype.makeEntry = function (object) {
 };
 
 /**
+ * gets a list of user tokens
+ * @param {number} userid
+ * @return {Promise<Array<string>>} list of internal tokens
+ */
+aurora.auth.DbSessionTable.prototype.getUserTokens =  async function  (userid) {
+    let query = new recoil.db.Query();
+    const sessionT = aurora.db.schema.tables.base.session;
+    
+    let sessions = await this.reader_.readObjectsAsync(
+        {}, sessionT, query.eq(sessionT.cols.userId,userid), null);
+
+    let resMap = {};
+    let addToMap = function (v) {
+        resMap[v] = true;
+    };
+
+    let memory = await this.memory_.getUserTokens();
+    sessions.map(v=> v.id).forEach(addToMap);
+    memory.forEach(addToMap);
+    return Object.keys(resMap);
+
+
+};
+
+/**
  * defaults to 1 year
  * @return {number}
  */
@@ -430,7 +455,6 @@ aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId
         }
         me.reader_.readObjectByKey({}, sessionT, [{col: sessionT.cols.token, value: token}], null, function (error, object) {
             if (object == undefined) {
-                console.log('did not find db session', token, seriesId);
                 cb(undefined);
                 return;
             }
@@ -502,17 +526,30 @@ aurora.auth.DbSessionTable.prototype.createUniqueId = function (cb) {
 };
 
 /**
- * @param {string|undefined} token an internal token
+ * @param {?} token an internal token
  * @param {function()=} opt_cb called when finished
  */
 aurora.auth.DbSessionTable.prototype.removeInternal = function(token, opt_cb) {
-    if (!token) {
+    if (token == undefined) {
         if (opt_cb) {
             opt_cb();
         }
         return;
     }
-    this.memory_.removeInternal(token, opt_cb);
+
+    let sessionT = aurora.db.schema.tables.base.session;
+    let query = new recoil.db.Query();
+    
+    this.memory_.removeInternal(token, () => {
+        this.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.id, token), null, (err) => {
+            if (err) {
+                this.log_.error("remove session", err);
+            }
+            if (opt_cb) {
+                opt_cb();
+            }
+        });
+    });
 };
 
 

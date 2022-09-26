@@ -157,6 +157,23 @@ aurora.auth.MemorySessionTable = function(auth) {
 
 
 /**
+ * gets a list of user tokens
+ * @param {number} userid
+ * @return {Promise<Array<string>>} list of internal tokens
+ */
+aurora.auth.MemorySessionTable.prototype.getUserTokens =  async function  (userid) {
+    let res = [];
+    for (let k in this.table_) {
+        let entry = this.table_[k];
+        if (entry.data && entry.data.userid == userid) {
+            res.push(k);
+        }
+    }
+    return res;
+
+};
+
+/**
  * prints the session table to console
  */
 aurora.auth.MemorySessionTable.prototype.print = function() {
@@ -242,7 +259,6 @@ aurora.auth.MemorySessionTable.prototype.registerClientToken = function(request,
                     this.log_.warn('Token Theft Assumed!!!, Deleting all tokens that relate to this seriesId');
                 }
                 else {
-                    console.log('can\'t find token', token, seriesId);
                     //                    connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));   //Legitimate Old Token Attempt
                 }
                 cb(false);

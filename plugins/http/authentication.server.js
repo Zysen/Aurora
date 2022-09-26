@@ -150,7 +150,7 @@ aurora.auth.Auth = function() {
                 }
 
             }
-            
+            console.log('token', token);
             // do this after we get the session because the callback may use it
             if (me.allowedUrls_[state.url.pathname]) {
                 doneCallback(undefined);
@@ -177,11 +177,11 @@ aurora.auth.Auth = function() {
                     // possible attack
                     if (session) {
                         me.sessions_.removeSeriesId(seriesId, function () {
-                            me.sessions_.removeInternal(token);
+                            me.sessions_.remove(token);
                         });
                     }
                     else {
-                        me.sessions_.removeInternal(token);
+                        me.sessions_.remove(token);
                     }
                 });
             }
@@ -200,6 +200,44 @@ aurora.auth.Auth = function() {
         }
         return aurora.http.REQUEST_ASYNC;
     });
+};
+
+/**
+ * @param {number} token
+ * @param {!aurora.db.Reader} reader
+ * @param {number} userid
+ * @param {string} password
+ * @param {function(?,Array)} callback
+ */
+aurora.auth.Auth.prototype.changePassword = function (token, reader, userid, password, callback) {
+
+    let userT = aurora.db.schema.tables.base.user;
+    let query = new recoil.db.Query();
+	let userQuery = query.eq(userT.cols.id, query.val(userid));
+    let me = this;
+    const logoutOtherSessions = async  () => {
+        let tokens = await this.sessions_.getUserTokens(userid).catch((e) => {
+           me.log_.error("failed to get user tokens for " + userid);
+        });
+        tokens.forEach((tk) => {
+            if (tk != token) {
+                me.logout(tk);
+                me.forceLogout(tk);
+            }
+        });
+    };
+    reader.updateOneLevel(
+		{}, userT, {'password': password},
+		userQuery, function(err) {
+			if (err) {
+				callback('Unable to  update password', []);
+			}
+			else {
+				callback(null, []);
+                logoutOtherSessions().catch((e) => me.log_.warn('Error logging out sessons', e));
+                
+			}
+		});
 };
 
 /**
@@ -499,6 +537,8 @@ aurora.auth.Auth.prototype.setSessionData = function(token, data) {
         }
     }.bind(this));
 };
+
+
 /**
  * @param {string} token this is an internal token
  */
@@ -511,14 +551,13 @@ aurora.auth.Auth.prototype.logout = function(token) {
             var allClients = function(token) {
                 return function(con, curToken) {return curToken === token;};
             };
-            //        this.serverLogoutChannelE_.send("logout", undefined ,allClients(session.constToken));
         }
     }.bind(this));
 };
 
 
 /**
- * @param {string} token this is an external token (constToken);
+ * @param {string} token this is an external token;
  */
 aurora.auth.Auth.prototype.forceLogout = function(token) {
     this.sessions_.remove(token);

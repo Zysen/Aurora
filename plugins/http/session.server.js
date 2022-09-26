@@ -175,6 +175,14 @@ aurora.auth.SessionTable.prototype.lock = function(token) {};
 
 
 /**
+ * gets a list of user tokens
+ * @param {number} userid
+ * @return {Promise<Array<string>>} list of internal tokens 
+ */
+aurora.auth.SessionTable.prototype.getUserTokens = async function(userid) {};
+
+
+/**
  * 0 means session never locks
  * @param {number} val
  */
