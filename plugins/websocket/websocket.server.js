@@ -77,11 +77,40 @@ aurora.websocket.Server = function() {
                         connection.id = socketId;
                         wsServer.clients[socketId] = connection;
                         aurora.auth.instance.registerClientToken(request, socketId, connection, function (registered) {
+                            let curMessage = null;
                             if (registered) {
                                 connection.on('message', function(data) {
-                                    serverInstance.onMessage(connection, data);
+                                    if (data.utf8Data == 'data-start') {
+                                        curMessage = {};
+                                    }
+                                    else if (data.utf8Data == 'data-end') {
+                                        if (curMessage) {
+                                            serverInstance.onMessage(connection, curMessage);
+                                        }
+                                        curMessage = null;
+                                    }
+                                    else if (curMessage == null || (curMessage.type != undefined && curMessage.type != data.type)) {
+                                        curMessage = null;
+                                        serverInstance.onMessage(connection, data);
+
+                                    }
+                                    else if (data.type == 'binary' && data.binaryData) {
+                                        if (curMessage.binaryData) {
+                                            curMessage.binaryData = Buffer.concat([curMessage.binaryData, data.binaryData]);
+                                        }
+                                        else {
+                                            curMessage.type = data.type;
+                                            curMessage.binaryData = data.binaryData;
+                                        }
+                                    }
+                                    else {
+                                        curMessage = null;
+                                        serverInstance.onMessage(connection, data);
+                                    }
+                                        
                                 });
                                 connection.on('close', function(closeReason, description) {
+                                    curMessage = null;
                                     serverInstance.onClose_(connection, closeReason, description);
                                     aurora.auth.instance.unregisterClientToken(socketId);
                                     delete wsServer.clients[socketId];

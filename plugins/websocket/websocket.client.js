@@ -382,6 +382,7 @@ function Channel(pluginId, channelId, messageCb) {
             cb();
         }
     };
+    const maxSize = 60000;
     this.send = function(sendBuffer) {
         var data = convertData(sendBuffer);
         var doIt = function() {
@@ -390,7 +391,15 @@ function Channel(pluginId, channelId, messageCb) {
                  * according to the documentation and it works you can send a blob but the
                  * compiler is complaining
                  */
-                connection.send(/** @type {?} */ (new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data])));
+                // split it up if it gets too big the connection will close
+
+                connection.send('data-start');
+                let toSend = /** @type {?} */ (new Blob([toUInt16ArrayBuffer([pluginId, channelId, data.type], true), data.data]));
+                for (let start = 0; start < toSend.size; start += maxSize) {
+                    
+                    connection.send(toSend.slice(start, start + maxSize));
+                }
+                connection.send('data-end');
             }
         };
         if (connection && connection.ready) {
