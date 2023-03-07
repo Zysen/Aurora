@@ -144,13 +144,13 @@ aurora.auth.Auth = function() {
 
                     state.token = session.constToken;
                     state.locked = session.locked;
+                    state.userid = session.data && session.data.userid ? session.data.userid : null;
                     me.sessions_.touch(session.constToken);
                     doneCallback(undefined);
                     return;
                 }
 
             }
-            console.log('token', token);
             // do this after we get the session because the callback may use it
             if (me.allowedUrls_[state.url.pathname]) {
                 doneCallback(undefined);
