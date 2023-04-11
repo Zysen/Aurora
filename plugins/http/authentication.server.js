@@ -226,8 +226,9 @@ aurora.auth.Auth.prototype.changePassword = function (token, reader, userid, pas
             }
         });
     };
+    // changing the users password resets the lock count
     reader.updateOneLevel(
-		{}, userT, {'password': password},
+		{}, userT, {'lockcount': 0, 'password': password},
 		userQuery, function(err) {
 			if (err) {
 				callback('Unable to  update password', []);
