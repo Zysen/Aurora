@@ -807,7 +807,7 @@ aurora.http.REQUEST_ASYNC = {};
                         serverConfig['key'] = fs.readFileSync(keyFile);
                         serverConfig['cert'] = fs.readFileSync(certFile);
                         try {
-                            serverConfig['ca'] = fs.readFileSync(certFile);
+                            serverConfig['ca'] = fs.readFileSync(caFile);
                         } catch (e) {
                         }
 
