@@ -286,7 +286,6 @@ aurora.http.REQUEST_ASYNC = {};
     });
     let themeAccess = function (state, dir, url, perm, cb) {
         let fname = path.resolve(path.join(dir, url));
-        
         let parts = url ? url.split('/') : [];
         while(parts.length > 0 && (parts[0] === '' || parts[0] === '.')) {
             parts.shift();
@@ -521,8 +520,9 @@ aurora.http.REQUEST_ASYNC = {};
                         cookies[parts[0].trim()] = (parts[1] || '').trim();
                     });
 
-                    let url = path.normalize(decodeURIComponent(request.url));
-                    let parsedUrl = urlLib.parse(url);
+                     
+                     let url = path.normalize(decodeURIComponent(request.url));
+                     let parsedUrl = urlLib.parse(url);
                     
 
                     let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
@@ -607,7 +607,7 @@ aurora.http.REQUEST_ASYNC = {};
                             case '/':
                                 url += (config['http']['defaultPage'] || 'home');
                             default:
-                                let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : parsedUrl.pathname;
+                                let pathname = parsedUrl.pathname === '/' ? '/' + (config['http']['defaultPage'] || 'home') : decodeURIComponent(parsedUrl.pathname);
                                 // check ith the url is in the theme directory if so then we need to them it
                                 themeAccess(state, publicBasePath, pathname + '.html', fs.constants.R_OK, function(fsPath, err) {
                                     if (err === null) {
@@ -628,19 +628,6 @@ aurora.http.REQUEST_ASYNC = {};
                                     }
                                     themeAccess(state, publicBasePath, pathname, fs.constants.R_OK, function(fsname, err) {
                                         if (err && err['code'] === 'ENOENT') {
-                                            
-                                            if (config['http']['sourceDirectory'] !== undefined) {
-                                                themeAccess(state, config['http']['sourceDirectory'], url, fs.constants.R_OK, function(fsname, err) {
-                                                    if (err && err.code === 'ENOENT') {
-                                                        aurora.http.writeError(404, state);
-                                                    }
-                                                    else {
-                                                        sendFile(fsname, state);
-                                                    }
-                                                });
-                                                return;
-                                            }
-                                            
                                             aurora.http.writeError(404, state);
                                         }
                                         else if (err) {
