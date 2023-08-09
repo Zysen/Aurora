@@ -249,13 +249,19 @@ aurora.auth.Auth.prototype.persistMs = function () {
 };
 
 /**
+ * @param {boolean=} opt_remember
  * @return {string}
  */
-aurora.auth.Auth.prototype.makeCookieSuffix = function () {
+aurora.auth.Auth.prototype.makeCookieSuffix = function (opt_remember) {
     let d = new Date();
     let ms = this.persistMs();
     d.setTime(d.getTime() + ms); // in milliseconds
-    return '; Path=/; SameSite=Strict; HttpOnly; Max-age=' + Math.ceil(ms/1000) + '; Expires='+d.toGMTString()+';';
+    if (opt_remember) {
+        return '; Path=/; SameSite=Strict; HttpOnly; Max-age=' + Math.ceil(ms/1000) + '; Expires='+d.toGMTString()+';';
+    }
+    else {
+        return '; Path=/; SameSite=Strict; HttpOnly;';
+    }
 };
 /**
  * @private
@@ -277,7 +283,7 @@ aurora.auth.Auth.prototype.makeDoLogin_ = function(state) {
         if (credentials.token) {
             let tokenInfo = credentials.token;
             state.responseHeaders.set('Set-Cookie', [
-                'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix()]);
+                'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix(credentials.remember)]);
             
             let blockAutoLogin = function () {
                 // wait 5 minutes before we can do another password login
@@ -315,7 +321,7 @@ aurora.auth.Auth.prototype.makeDoLogin_ = function(state) {
             // proper login we will generate a token and login
             me.generateToken(function (tokenInfo) {
                 state.responseHeaders.set('Set-Cookie', [
-                    'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix()]);
+                    'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix(credentials.remember)]);
                 me.login(tokenInfo.uniq, tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state, doneCallback);
             });
         }

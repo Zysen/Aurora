@@ -295,8 +295,9 @@ aurora.auth.MemorySessionTable.prototype.updateSession_ = function(session, cb) 
     }
     this.lockExpiry_.add(session);
 
-    if (session.expiry !== null) {
-        session.expiry = process.hrtime()[0] * 1000 + session.timeout;
+    if (session.expiry !== null && session.timeout != null) {
+        
+        session.expiry = session.timeout == null ? null : process.hrtime()[0] * 1000 + session.timeout;
         this.expiry_.add(session);
     }
     this.updateExpire_();
@@ -754,7 +755,6 @@ aurora.auth.MemorySessionTable.prototype.updateExpire_ = function() {
 
     var curTime = process.hrtime()[0] * 1000;
     this.expiry_.inOrderTraverse(function(s) {
-
         if (s.expiry !== null) {
             if (!s.expireWithClients) {
                 for (var k in s.clients) {
