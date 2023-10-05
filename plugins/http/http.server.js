@@ -41,10 +41,6 @@ aurora.http.escapeRegExp = function(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 };
 
-/**
- * @const
- */
-aurora.http.REQUEST_ASYNC = {};
 (function() {
 
     var types = aurora.websocket.enums.types;
@@ -161,25 +157,34 @@ aurora.http.REQUEST_ASYNC = {};
         });
     };
 
-    var callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
+    let callbacks = new goog.structs.AvlTree(recoil.util.object.compareKey);
     /**
      * @param {!aurora.http.RequestState} state
      **/
     aurora.http.notFound = function(state) {
         aurora.http.writeError(404, state);
     };
-    aurora.http.getPost = function(request, callback) {
-        if (request.method == 'POST') {
-            var body = '';
-            request.on('data', function(data) {
-                body += data;
-            });
-            request.on('end', function() {
-                callback(qs.parse(body));
-            });
-            return true;
-        }
-        return false;
+    aurora.http.getPost = function(request) {
+        return new Promise((resolve, reject) => {
+            if (request.method == 'POST') {
+                var body = '';
+                request.on('data', function(data) {
+                    body += data;
+                });
+                request.on('end', function() {
+                    try {
+                        resolve({valid: true, data: qs.parse(body)});
+                    }
+                    catch (e) {
+                        reject(e);
+                    }
+                });
+            }
+            else {
+                resolve({valid: false});
+            }
+        });
+
     };
 
     /**
@@ -197,7 +202,7 @@ aurora.http.REQUEST_ASYNC = {};
      * @param {number} priority lower priority go first also if callback returns a non-false value
      * all other requests of the same priority are skipped
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState):Promise} callback if this returns false then it will stop any more callbacks
      * @param {boolean} allowLocked (default false)
      */
     aurora.http.addRequestCallback = function(priority, pattern, callback, allowLocked) {
@@ -213,7 +218,7 @@ aurora.http.REQUEST_ASYNC = {};
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState):Promise} callback if this returns false then it will stop any more callbacks
      * @param {boolean=} opt_allowLocked default true, if true no lock check will be performed
      */
     aurora.http.addPreRequestCallback = function(pattern, callback, opt_allowLocked) {
@@ -221,7 +226,7 @@ aurora.http.REQUEST_ASYNC = {};
     };
     /**
      * @param {RegExp|string} pattern
-     * @param {function(aurora.http.RequestState,function(?)):?} callback if this returns false then it will stop any more callbacks
+     * @param {function(aurora.http.RequestState):Promise} callback if this returns false then it will stop any more callbacks
      * @param {boolean=} opt_allowLocked default false, if true no lock check will be performed
      */
     aurora.http.addMidRequestCallback = function(pattern, callback, opt_allowLocked) {
@@ -458,13 +463,13 @@ aurora.http.REQUEST_ASYNC = {};
         
     }
     function redirect (response, url) {
-	response.writeHead(302, {'Location': url});
+	      response.writeHead(302, {'Location': url});
         response.end();
     }
     function makeRequestHandler(sConfig) {
         return function (request, response) {
              log.info("got request", request.url, "from", request.connection.remoteAddress);
-             aurora.startup.doWhenStarted(function () {
+             aurora.startup.doWhenStarted(async function () {
                  let cookies = {};
                  let responseHeaders = responseHeadersDef();
                  try {
@@ -495,7 +500,7 @@ aurora.http.REQUEST_ASYNC = {};
                             var port = httpsRedirect === 443 ? '':':' + httpsRedirect;
                             let url = 'https://' + (request.headers.host || '').replace(":"+httpPort, port) + request.url;
                             if (message) {
-	                        response.writeHead(403, {'Location': url});
+	                              response.writeHead(403, {'Location': url});
                                 response.end(message.replaceAll('{REDIRECT}', goog.string.htmlEscape(url)));
                             }
                             else {
@@ -528,57 +533,40 @@ aurora.http.REQUEST_ASYNC = {};
                     let state = {request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: parsedUrl, outUrl: url};
                     //            allRequests.push(state);
 
-                    let processAsyncCallbacks = function (start, doneCb) {
+                    const processCallbacks = async () => {
                         let exit = false;
                         let async = false;
-                        let traverseFunc = function (startKey, startIdxIn) {
-                            return function(cb) {
-                                let startIdx = startKey === null ? 0 : (startKey < cb.key ? 0 : startIdxIn);
-                                for (let i = startIdx; i < cb.callbacks.length; i++) {
-                                    let cur = cb.callbacks[i];
-                                    if (state.locked && !cur.allowLocked) {
-                                        continue;
-                                    }
-                                    if (cur.pattern.test(parsedUrl.pathname)) {
-                                        let res = cur.callback(state, function (asyncRes) {
-                                            if (asyncRes !== false) {
-                                                processAsyncCallbacks({cb: cb, idx: i + 1}, doneCb);
-                                            }
-                                            
-                                        });
-                                        if (res === false || aurora.http.REQUEST_ASYNC === res) {
-                                            exit = true;
-                                            return true;
-                                        }
+
+                        let all = callbacks.toList();
+                        for (let i = 0; i < all.length; i++) {
+                            let entry = all[i];
+
+                            for (let j = 0; j < entry.callbacks.length; j++) {
+                                let cur = entry.callbacks[j];
+                                if (state.locked && !cur.allowLocked) {
+                                    continue;
+                                }
+                                if (cur.pattern.test(parsedUrl.pathname)) {
+                                    let res = await cur.callback(state);
+                                    if (res === false) {
+                                        // stop the request was processed and no further action required
+                                        return false;
                                     }
                                 }
-                                return false;
-                            };
-                            
-                        };
-                        if (start) {
-                            callbacks.inOrderTraverse(traverseFunc(start.cb.key, start.idx), start.cb);
+                            }
                         }
-                        else {
-                            callbacks.inOrderTraverse(traverseFunc(null, 0));
-                        }
-                        url = state.outUrl;
-                        if (!exit) {
-                            doneCb();
-                        }
-                        
+                        // continue nothing was found
+                        return true;
                     };
-                    
-
-                    
-                    let processAfterCallbacks = function () {
-                        try {
-                            switch (url) {
-                            case path.sep + 'client.min.js':
-                                if (config['http']['sourceDirectory'] !== undefined) {
+                     
+                     const processBuiltinCallbacks = async () => {
+                         try {
+                             switch (url) {
+                             case path.sep + 'client.min.js':
+                                 if (config['http']['sourceDirectory'] !== undefined) {
                                     responseHeaders.set('X-SourceMap', path.sep + 'client.min.js.map');
                                 }
-                                sendFile(__dirname + path.sep + url, state, true);
+                                 sendFile(__dirname + path.sep + url, state, true);
                                 return;
                             case '/favicon.ico':
                                 
@@ -647,8 +635,10 @@ aurora.http.REQUEST_ASYNC = {};
                             aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));
                             log.error(e);
                         }
-                    };
-                    processAsyncCallbacks(null, processAfterCallbacks);
+                     };
+                     if (await processCallbacks()) {
+                         await processBuiltinCallbacks();
+                     }
                 }
                 catch (e) {
                     aurora.http.writeError(500,/** {aurora.http.RequestState} */({request: request, cookies: cookies, responseHeaders: responseHeaders, response: response, url: undefined, outUrl: ''}));

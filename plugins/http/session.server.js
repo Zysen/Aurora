@@ -81,9 +81,9 @@ aurora.auth.SessionTable.prototype.unregisterClientToken = function(clientId) {}
  * @param {?} request
  * @param {string} clientId
  * @param {?} connection
- * @param {function (boolean)} cb
+ * @return {Promise<boolean>}
  */
-aurora.auth.SessionTable.prototype.registerClientToken = function(request, clientId, connection, cb) {};
+aurora.auth.SessionTable.prototype.registerClientToken = function(request, clientId, connection) {};
 
 
 /**
@@ -99,10 +99,10 @@ aurora.auth.SessionTable.prototype.removeSeriesId = function(seriesId, opt_cb) {
  * @param {string} constToken
  * @param {?number} timeout
  * @param {Object} data
- * @param {function(?,?aurora.auth.SessionTable.Entry)} callback
  * @param {boolean=} opt_locked default false
+ * @return {!Promise<!aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.SessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data, callback, opt_locked) {};
+aurora.auth.SessionTable.prototype.createSession = async function(token, seriesId, constToken, timeout, data, opt_locked) {};
 
 
 /**
@@ -147,16 +147,16 @@ aurora.auth.SessionTable.prototype.setAllowLock = function(token, val) {};
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.SessionTable.prototype.getExpireWithClients = function(token, cb) {};
+aurora.auth.SessionTable.prototype.getExpireWithClients = async function(token) {};
 
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.SessionTable.prototype.getAllowLock = function(token, cb) {};
+aurora.auth.SessionTable.prototype.getAllowLock = function(token) {};
 
 /**
  * @return {boolean}
@@ -202,25 +202,25 @@ aurora.auth.SessionTable.prototype.addLockHandler = function(callback) {};
 
 /**
  * @param {string|undefined} token
- * @param {function((undefined|aurora.auth.SessionTable.Entry))} cb not optional always last parameter
+ * @return {!Promise<(undefined|aurora.auth.SessionTable.Entry)>}
  */
-aurora.auth.SessionTable.prototype.findSessionExternal = function(token, cb) {};
+aurora.auth.SessionTable.prototype.findSessionExternal = function(token) {};
 
 
 /**
  * @param {string|undefined} token this is an internal token passed in by cookie
- * @param {string|undefined|function((undefined|aurora.auth.SessionTable.Entry))} seriesIdOrCb
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} opt_cb not optional always last parameter
+ * @param {string=} opt_seriesId
+ * @return {Promise<(undefined|aurora.auth.SessionTable.Entry)>}
  */
-aurora.auth.SessionTable.prototype.findSession = function(token, seriesIdOrCb, opt_cb) {};
+aurora.auth.SessionTable.prototype.findSession = function(token, opt_seriesId) {};
 
 /**
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
  * @param {string} ip
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.SessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {};
+aurora.auth.SessionTable.prototype.loginFindSession = function(token, seriesId, ip) {};
 
 /**
  * updates the sessions and it expires later

@@ -66,7 +66,7 @@ aurora.auth.Auth = function() {
     this.disallowedPrefixes_ = [];
     this.activeSessionExpiry_ = 120000;//30000;  //120000===2 minutes         //3600000 === An hour   //How long an http session lasts
 
-    aurora.http.addPreRequestCallback(/.*/, function(state, doneCallback) {   //Enforce login page when not authenticated.
+    aurora.http.addPreRequestCallback(/.*/, async function(state) {   //Enforce login page when not authenticated.
         var request = state.request;
         var response = state.response;
         if (state.url.pathname === '/logout') {
@@ -76,34 +76,32 @@ aurora.auth.Auth = function() {
 
             if (seriesId) {
                 me.log_.info("logging out");
-                me.sessions_.findSession(token, seriesId, function (session) {
-                    if (session) {
-                        me.sessions_.remove(session.constToken, function () {
-                            let logoutPage  = (config['authentication'] || {})['logoutURL'];
+                let session = await me.sessions_.findSession(token, seriesId);
+                if (session) {
+                    me.sessions_.remove(session.constToken, function () {
+                        let logoutPage  = (config['authentication'] || {})['logoutURL'];
 
-                            
-                            var referer = logoutPage || state.request.headers['referer'];
-                            me.log_.info("session removed");
-                            if (referer) {
-                                try {
-                                    state.response.writeHead(302, {'Location': referer});
-                                    state.response.end();
+                        var referer = logoutPage || state.request.headers['referer'];
+                        me.log_.info("session removed");
+                        if (referer) {
+                            try {
+                                state.response.writeHead(302, {'Location': referer});
+                                state.response.end();
                                     return;
-                                }
-                                catch (e) {
-                                    
-                                }
                             }
-                            me.log_.info("logging out redirecting to login page");
+                            catch (e) {
+                                
+                            }
+                        }
+                        me.log_.info("logging out redirecting to login page");
                             
-                            me.loginPageCb_(state);
-
-                        });
-                    }
-                    else {
                         me.loginPageCb_(state);
-                    }
-                });
+                        
+                    });
+                }
+                else {
+                    me.loginPageCb_(state);
+                }
                 return false;
             }
             // logout
@@ -117,7 +115,7 @@ aurora.auth.Auth = function() {
         let seriesId = sesh.length == 2 ? sesh[1] : undefined;
 
         
-        let loginIfNeeded = function (session, recent) {
+        let loginIfNeeded = async function (session, recent) {
             if (session) {
                 // if our user is null and we are trying to login, we should login so don't accept the login
                 if (!(session.data && session.data.userid === null && state.url.pathname === me.loginPath_)) {
@@ -146,15 +144,13 @@ aurora.auth.Auth = function() {
                     state.locked = session.locked;
                     state.userid = session.data && session.data.userid ? session.data.userid : null;
                     me.sessions_.touch(session.constToken);
-                    doneCallback(undefined);
-                    return;
+                    return undefined;
                 }
 
             }
             // do this after we get the session because the callback may use it
             if (me.allowedUrls_[state.url.pathname]) {
-                doneCallback(undefined);
-                return;
+                return undefined;
             }
             
             let disallowed = false;
@@ -167,38 +163,36 @@ aurora.auth.Auth = function() {
             if (!disallowed) {
                 for (let index = 0; index < me.allowedPrefixes_.length; index++) {
                     if (me.allowedPrefixes_[index].test(state.url.pathname)) {
-                        doneCallback(undefined);
-                        return;
+                        return undefined;
                     }
                 }
             }
             if (seriesId) {
-                me.sessions_.findSession(token, seriesId, function (session) {
+                let session = await me.sessions_.findSession(token, seriesId);
                     // possible attack
-                    if (session) {
-                        me.sessions_.removeSeriesId(seriesId, function () {
-                            me.sessions_.remove(token);
-                        });
-                    }
-                    else {
+                if (session) {
+                    me.sessions_.removeSeriesId(seriesId, function () {
                         me.sessions_.remove(token);
-                    }
-                });
+                    });
+                }
+                else {
+                    me.sessions_.remove(token);
+                }
             }
             else {
                 me.sessions_.removeInternal(token);
             }
-            me.getCredentials(state, me.makeDoLogin_(state), doneCallback);
+            return await me.getCredentials(state, me.makeDoLogin_(state));
         };
 
         
         if (seriesId && token) {
-            me.sessions_.loginFindSession(token, seriesId, request.connection.remoteAddress, loginIfNeeded);
+            let session = await me.sessions_.loginFindSession(token, seriesId, request.connection.remoteAddress, loginIfNeeded);
+            return await loginIfNeeded(session);
         }
         else {
-            loginIfNeeded(undefined);
+            return await loginIfNeeded(undefined);
         }
-        return aurora.http.REQUEST_ASYNC;
     });
 };
 
@@ -266,15 +260,14 @@ aurora.auth.Auth.prototype.makeCookieSuffix = function (opt_remember) {
 /**
  * @private
  * @param {aurora.http.RequestState} state
- * @return {function({response:function(?, aurora.http.RequestState, function(?))},function(?))} first argument is the credentials that we have got, the second 
+ * @return {function({response:function(?, aurora.http.RequestState): Promise<?>})} returns function that writes the cretails rsponse
  */
  
 aurora.auth.Auth.prototype.makeDoLogin_ = function(state) {
     let me = this;
-    return function(credentials, doneCallback) {
+    return async function(credentials) {
         if (!me.sessions_.isMaster()) {
-            credentials.response({message: 'cannot log into slave server'}, state, doneCallback);
-            return;
+            return await credentials.response({message: 'cannot log into slave server'}, state);
         }
 
         console.log("logging in with token, todo test", credentials.token);
@@ -296,34 +289,34 @@ aurora.auth.Auth.prototype.makeDoLogin_ = function(state) {
                 
             };
             if (credentials.token.token === '') {
-                credentials.response({message: 'no token given'}, state, doneCallback);
+                return await credentials.response({message: 'no token given'}, state);
             }
             // if the autologin is blocked autologin will just look like the login failed but all it will do is extend block
             else if (!this.blockAutoLogin_) {
-                me.sessions_.findSession(credentials.token.token, credentials.token.seriesId, function (session) {
-                    if (session) {
-                        credentials.response(null, state, doneCallback);
-                    }
-                    else {
-                        blockAutoLogin();
-                        me.loginPageCb_(state);
-                        doneCallback(false);
-                    }
-                });
+                let session = await me.sessions_.findSession(credentials.token.token, credentials.token.seriesId);
+                
+                if (session) {
+                    return await credentials.response(null, state);
+                }
+                else {
+                    blockAutoLogin();
+                    me.loginPageCb_(state);
+                    return false;
+                }
             }
             else {
                 blockAutoLogin();
                 me.loginPageCb_(state);
-                doneCallback(false);
+                return false;
             }
         }
         else {
             // proper login we will generate a token and login
-            me.generateToken(function (tokenInfo) {
-                state.responseHeaders.set('Set-Cookie', [
-                    'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix(credentials.remember)]);
-                me.login(tokenInfo.uniq, tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state, doneCallback);
-            });
+            let tokenInfo = await me.generateToken();
+            
+            state.responseHeaders.set('Set-Cookie', [
+                'sesh=' + encodeURIComponent(tokenInfo.token + '-' + tokenInfo.seriesId) + me.makeCookieSuffix(credentials.remember)]);
+            return await me.login(tokenInfo.uniq, tokenInfo.token, tokenInfo.seriesId, credentials.remember, credentials, state);
         }
     };
 };
@@ -399,44 +392,33 @@ aurora.auth.Auth.prototype.addAuthenticator = function(auth) {
  * allows athenticator to get credentals out of the http
  * request themselves this means it is total generic how the login is works
  * @param {aurora.http.RequestState} state
- * @param {function (?, ?)} loginCallback first arg credentials, second donecb
- * @param {function (?)} doneCb
+ * @param {function (?):Promise<boolean>} loginCallback first arg credentials, second donecb
+ * @return {Promise<boolean|undefined>}
  */
-aurora.auth.Auth.prototype.getCredentials = function(state, loginCallback, doneCb) {
+aurora.auth.Auth.prototype.getCredentials = async function(state, loginCallback) {
     // no authenticators so we can't login
     let me = this;
     let pos = 0;
     if (me.authenticators_.length === 0) {
         me.log_.warn("No Authenticators added to system will not be able to log in");
     }
-
-    let authenticateNext = function (idx) {
-        if (idx >= me.authenticators_.length) {
-            // no authenticators accepted the request just show the login page
-            me.loginPageCb_(state);
-            // we don't want to continue
-            doneCb(false);
-            return;
-        }
-        let auth = me.authenticators_[idx];
-        if (auth.getCredentials) {
-            auth.getCredentials(state, function (credentials) {
+    try {
+        for (let i = 0; i < this.authenticators_.length; i++) {
+            let auth = me.authenticators_[i];
+            if (auth.getCredentials) {
+                let credentials = await auth.getCredentials(state);
                 if (credentials) {
-                    // do the login 
-                    loginCallback(credentials, doneCb);
-                    
+                    // do the login
+                    return await loginCallback(credentials);
                 }
-                else {
-                    authenticateNext(idx + 1);
-                }
-            });
+            }
         }
-        else {
-            authenticateNext(idx + 1);
-        }
-    };
-    authenticateNext(0);
-
+    }
+    catch (e) {
+        this.log_.error('error authenticating', e);
+    }
+    this.loginPageCb_(state);
+    return false;
 };
 
 /**
@@ -481,10 +463,10 @@ aurora.auth.Auth.prototype.setLoginPage = function(cb) {
  * @param {boolean} rememberMe
  * @param {Object} credentials
  * @param {aurora.http.RequestState} state
- * @param {function(?)} doneCallback
+ * @return {Promise<boolean>}
  **/
-aurora.auth.Auth.prototype.login = function(uniqueId, token, seriesId, rememberMe, credentials, state, doneCallback) {
-
+aurora.auth.Auth.prototype.login = async function(uniqueId, token, seriesId, rememberMe, credentials, state) {
+    
     // check to see if the token exists if not
     var res = {token: token, seriesId: seriesId};
     var row = undefined;
@@ -493,73 +475,66 @@ aurora.auth.Auth.prototype.login = function(uniqueId, token, seriesId, rememberM
     var me = this;
     let constToken = uniqueId;
 
-    var doAuth = function(i) {
-        
-        if (i >= me.authenticators_.length) {
-            me.sessions_.createSession(
-                token, seriesId, constToken, rememberMe ? null : me.activeSessionExpiry_, data,
-                function (err) {
-                    credentials.response(err, state, data, doneCallback);
-                }
-            );
-            return;
-        }
+    for (let i = 0; i < me.authenticators_.length; i++) {
         var auth = me.authenticators_[i];
-        auth.validate(constToken, credentials, data, function(message) {
-            if (message) {
-                // the authentication failed unregister all the successful authentications;
-                for (var j = i - 1; j >= 0; j--) {
-                    me.authenticators_[j].unregister(constToken);
-                }
-                credentials.response(message, state, data, doneCallback);
-            } else {
-                doAuth(i + 1);
+        let message = await auth.validate(constToken, credentials, data);
+        
+        if (message) {
+            // the authentication failed unregister all the successful authentications;
+            for (var j = i - 1; j >= 0; j--) {
+                await me.authenticators_[j].unregister(constToken);
             }
-        });
-    };
+            return await credentials.response(message, state, data);
+        }
+    }
+    try {
+        await me.sessions_.createSession(
+            token, seriesId, constToken, rememberMe ? null : me.activeSessionExpiry_, data);
+    }
+    catch (err) {
+        return await credentials.response(err, state, data);
+    }
 
-    doAuth(0);
+    return await credentials.response(null, state, data);
+
 
 };
 
 /**
  * @param {string} token
- * @param {function(?Object)} cb
+ * @return {!Promise<?Object>}
  */
-aurora.auth.Auth.prototype.getSessionData = function(token, cb) {
-    var session = this.sessions_.findSessionExternal(token, function (session) {
-        cb(session ?session.data : null);
-    });
+aurora.auth.Auth.prototype.getSessionData = async function(token) {
+    let session = await this.sessions_.findSessionExternal(token);
+    return session ?session.data : null;
 };
 
 /**
  * @param {string} token
  * @param {Object} data
+ * @return {Promise}
  */
-aurora.auth.Auth.prototype.setSessionData = function(token, data) {
-    var session = this.sessions_.findSessionExternal(token, function (session) {
-        if (session) {
-            session.data = data;
-            this.sessions_.syncSession(token);
-        }
-    }.bind(this));
+aurora.auth.Auth.prototype.setSessionData = async function(token, data) {
+    var session = await this.sessions_.findSessionExternal(token);
+    if (session) {
+        session.data = data;
+        await this.sessions_.syncSession(token);
+    }
 };
 
 
 /**
  * @param {string} token this is an internal token
+ * @return {Promise}
  */
-aurora.auth.Auth.prototype.logout = function(token) {
-    var session = this.sessions_.findSession(token, function (session) {
-        if (session) {
-            for (var j = this.authenticators_.length - 1; j >= 0; j--) {
-                this.authenticators_[j].unregister(session.constToken);
-            }
-            var allClients = function(token) {
-                return function(con, curToken) {return curToken === token;};
-            };
+aurora.auth.Auth.prototype.logout = async function(token) {
+    let session = await this.sessions_.findSession(token);
+    if (session) {
+        for (var j = this.authenticators_.length - 1; j >= 0; j--) {
+            await this.authenticators_[j].unregister(session.constToken);
         }
-    }.bind(this));
+
+    }
 };
 
 
@@ -594,10 +569,10 @@ aurora.auth.Auth.prototype.getToken = function(token, cb) {
  * @param {?} request
  * @param {string} clientId
  * @param {?} connection
- * @param {function(boolean)} cb
+ * @return {Promise<boolean>}
  */
-aurora.auth.Auth.prototype.registerClientToken = function(request, clientId, connection, cb) {
-    this.sessions_.registerClientToken(request, clientId, connection, cb);
+aurora.auth.Auth.prototype.registerClientToken = async function(request, clientId, connection) {
+    return await this.sessions_.registerClientToken(request, clientId, connection);
 
 };
 
@@ -666,19 +641,19 @@ aurora.auth.Auth.prototype.addLockHandler = function(callback) {
 
 /**
  * @param {string} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.Auth.prototype.getExpireWithClients = function(token, cb) {
-    this.sessions_.getExpireWithClients(token, cb);
+aurora.auth.Auth.prototype.getExpireWithClients = async function(token) {
+    return await this.sessions_.getExpireWithClients(token);
 };
 
 
 /**
  * @param {string} token constant token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.Auth.prototype.getAllowLock = function(token, cb) {
-    this.sessions_.getAllowLock(token, cb);
+aurora.auth.Auth.prototype.getAllowLock = async function(token) {
+    return await this.sessions_.getAllowLock(token);
 };
 
 
@@ -714,14 +689,13 @@ aurora.auth.Auth.prototype.generateSeriesId = function() {
     return res;
 };
 /**
- * @param {function ({token:string, seriesId:string, uniq: string})} cb
+ * @return {Promise<{token:string, seriesId:string, uniq: string}>}
  */
-aurora.auth.Auth.prototype.generateToken = function(cb) {
+aurora.auth.Auth.prototype.generateToken = async function() {
     let me = this;
     // generate a unique key somehow
-    this.sessions_.createUniqueId(function (uniq) {
-        cb({token: me.crypto_.randomBytes(10).toString('hex') + uniq, seriesId:me.generateSeriesId(), uniq: uniq});
-    });
+    let uniq = await this.sessions_.createUniqueId();
+    return {token: me.crypto_.randomBytes(10).toString('hex') + uniq, seriesId:me.generateSeriesId(), uniq: uniq};
 };
 
 /**

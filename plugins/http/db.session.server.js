@@ -85,10 +85,10 @@ aurora.auth.DbSessionTable.prototype.unregisterClientToken = function(clientId) 
  * @param {?} request
  * @param {string} clientId
  * @param {?} connection
- * @param {function (boolean)} cb
+ * @return {Promise<boolean>} cb
  */
-aurora.auth.DbSessionTable.prototype.registerClientToken = function(request, clientId, connection, cb) {
-    this.memory_.registerClientToken(request, clientId, connection, cb);
+aurora.auth.DbSessionTable.prototype.registerClientToken = async function(request, clientId, connection) {
+    return await this.memory_.registerClientToken(request, clientId, connection);
 };
 
 /**
@@ -137,31 +137,27 @@ aurora.auth.DbSessionTable.prototype.removeSeriesId = function(seriesId, opt_cb)
  * @param {string} constToken
  * @param {?number} timeout
  * @param {Object} data
- * @param {function(?,?aurora.auth.SessionTable.Entry)} callback
  * @param {boolean=} opt_locked default false
+ * @return {!Promise<!aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.DbSessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data, callback, opt_locked) {
+aurora.auth.DbSessionTable.prototype.createSession = async function(token, seriesId, constToken, timeout, data, opt_locked) {
     let me = this;
-    this.memory_.createSession(token, seriesId, constToken, timeout, data, function (err, session) {
-        // !session is here just for the compiler if no error there will be a session
-        if (err || !session) {
-            callback(err, null);
-            return;
+    let session = await this.memory_.createSession(token, seriesId, constToken, timeout, data);
+    if (!data.remember) {
+        return session;
+    }
+    let sessionT = aurora.db.schema.tables.base.session;
+    let query = new recoil.db.Query();
+    try {
+        await me.reader_.insertAsync({}, sessionT, me.makeDbEntry(session, data.userid));
+    }
+    catch (err) {
+        // if we got an error the session won't be persistant but still good
+        if (err) {
+            me.log_.error("failed to create persistant session", err);
         }
-        if (!data.remember) {
-            callback(err, session);
-            return;
-        }
-        let sessionT = aurora.db.schema.tables.base.session;
-        let query = new recoil.db.Query();
-        me.reader_.insert({}, sessionT, me.makeDbEntry(session, data.userid), function(err, result) {
-            // if we got an error the session won't be persistant but still good
-            if (err) {
-                me.log_.error("failed to create persistant session", err);
-            }
-            callback(null, session);
-        });
-    });
+    }
+    return session;
 };
 
 /**
@@ -187,24 +183,24 @@ aurora.auth.DbSessionTable.prototype.remove = function(token, opt_cb) {
     let me = this;
     let sessionT = aurora.db.schema.tables.base.session;
     let query = new recoil.db.Query();
-    this.memory_.remove(token, function () {
-        me.findSessionById_(token, function (session) {
-            if (session) {
-                me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.id, session.constToken), null, function (err) {
-                    if (err) {
-                        me.log_.error("remove session", err);
-                    }
-                    if (opt_cb) {
-                        opt_cb();
-                    }
-                });
+    this.memory_.remove(token, async () => {
+        
+        let session = await me.findSessionById_(token);
+        
+        if (session) {
+            try {
+                await me.reader_.deleteObjectsAsync({}, sessionT, query.eq(sessionT.cols.id, session.constToken), null);
             }
-            else {
-                if (opt_cb) {
-                    opt_cb();
-                }
+            catch (err) {
+                me.log_.error("remove session", err);
             }
-        });
+            if (opt_cb) {
+                opt_cb();
+            }
+        }
+        else if (opt_cb) {
+            opt_cb();
+        }
     });
 };
 
@@ -250,19 +246,19 @@ aurora.auth.DbSessionTable.prototype.setAllowLock = function(token, val) {
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.DbSessionTable.prototype.getExpireWithClients = function(token, cb) {
-    this.memory_.getExpireWithClients(token, cb);
+aurora.auth.DbSessionTable.prototype.getExpireWithClients = async function(token) {
+    return await this.memory_.getExpireWithClients(token);
 };
 
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.DbSessionTable.prototype.getAllowLock = function(token, cb) {
-    this.memory_.getAllowLock(token, cb);
+aurora.auth.DbSessionTable.prototype.getAllowLock = async function(token) {
+    return await this.memory_.getAllowLock(token);
 };
 
 /**
@@ -321,10 +317,10 @@ aurora.auth.DbSessionTable.prototype.setSessionExpiresWithClient = function(val)
 
 /**
  * @param {string|undefined} token
- * @param {function((undefined|aurora.auth.SessionTable.Entry))} cb not optional always last parameter
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.DbSessionTable.prototype.findSessionExternal = function(token, cb) {
-    this.memory_.findSessionExternal(token, cb);
+aurora.auth.DbSessionTable.prototype.findSessionExternal = async function(token) {
+    return await this.memory_.findSessionExternal(token);
 };
 
 /**
@@ -407,28 +403,27 @@ aurora.auth.DbSessionTable.prototype.makeDbEntry = function (entry, userid) {
 /**
  * @private
  * @param {string|undefined} token this is an internal token passed in by cookie
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.DbSessionTable.prototype.findSessionById_ = function(token, cb) {
+aurora.auth.DbSessionTable.prototype.findSessionById_ = async function(token) {
     if (token == undefined) {
-        cb(undefined);
-        return;
+        return undefined;
     }
     let me = this;
     let sessionT = aurora.db.schema.tables.base.session;
     let query = new recoil.db.Query();
 
-    me.reader_.readObjectByKey({}, sessionT, [{col: sessionT.cols.id, value: token}], null, function (error, object) {
+    try {
+        let object = await me.reader_.readObjectByKeyAsync({}, sessionT, [{col: sessionT.cols.id, value: token}], null);
         if (object == undefined) {
-            cb(undefined);
-            return;
+            return undefined;
         }
-        let entry = me.makeEntry(object);
-        cb(error ? undefined: entry);
-
-    });
-    
-
+        return me.makeEntry(object);
+        
+    }
+    catch (e) {
+        return undefined;
+    }
 
 };
 
@@ -436,72 +431,77 @@ aurora.auth.DbSessionTable.prototype.findSessionById_ = function(token, cb) {
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
  * @param {string} ip
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
+ * @return {!Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.DbSessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {
+aurora.auth.DbSessionTable.prototype.loginFindSession = async function(token, seriesId, ip) {
     if (token == undefined) {
-        cb(undefined);
-        return;
+        return undefined;
     }
     let me = this;
     let sessionT = aurora.db.schema.tables.base.session;
     let query = new recoil.db.Query();
 
-    this.memory_.findSession(token, seriesId, function (session) {
-        if (session) {
-            // in memory we are all good
-            cb(session);
-            return;
-        }
-        me.reader_.readObjectByKey({}, sessionT, [{col: sessionT.cols.token, value: token}], null, function (error, object) {
-            if (object == undefined) {
-                cb(undefined);
-                return;
-            }
-            let old = ip + '-' + token + '-' + seriesId;
-            if (me.recentUpdates_[old]) {
-                let newSeriesId = me.recentUpdates_[old];
-                me.memory_.loginFindSession(
-                    token, newSeriesId, ip, function (session) {
-                        cb(session);
-                    }
-                );
-                return;
-            }
-            if (object.seriesId !== seriesId) {
-                // remove the series id this is invalid also remove all tokens that match this is a security violatin
-                me.reader_.deleteObjects({}, sessionT, query.eq(sessionT.cols.token, query.val(token)), null, function () {});
-                cb(undefined);
-                return;
-            }
-            
-            object.seriesId = me.auth_.generateSeriesId();
-            // allow the old token for 30 seconds
-            me.recentUpdates_[old] = object.seriesId;
-            setTimeout(function () {
-                delete me.recentUpdates_[old];
-            }, 30000);
-            me.reader_.updateOneLevel(
-                {}, sessionT, {seriesId: object.seriesId, expiry: new Date().getTime()},
-                query.eq(sessionT.cols.id, query.val(object.id)), function () {
-                let entry = /** @type {!aurora.auth.SessionTable.Entry} */ (me.makeEntry(object));
-                me.memory_.loadEntry(entry, function (err) {
-                    cb(err ? undefined: entry);
-                });                
-            });
-            // change the series id and add the new the memory table
-        });            
-    });
+    let session = await this.memory_.findSession(token, seriesId);
     
+    if (session) {
+        // in memory we are all good
+        return session;
+    }
+    try {
+        let object = undefined;
+        try {
+        object = await me.reader_.readObjectByKeyAsync({}, sessionT, [{col: sessionT.cols.token, value: token}], null);
+
+        }
+        catch(e) {
+            // we may not find the object so that is ok
+        }
+        
+        if (object == undefined) {
+            return undefined;
+        }
+        let old = ip + '-' + token + '-' + seriesId;
+        if (me.recentUpdates_[old]) {
+            let newSeriesId = me.recentUpdates_[old];
+            return await me.memory_.loginFindSession(
+                token, newSeriesId, ip);
+        }
+        if (object.seriesId !== seriesId) {
+            // remove the series id this is invalid also remove all tokens that match this is a security violatin
+            me.reader_.deleteObjectsAsync({}, sessionT, query.eq(sessionT.cols.token, query.val(token)), null).catch(() => {});
+            return undefined;
+        }
+        
+            
+        object.seriesId = me.auth_.generateSeriesId();
+        // allow the old token for 30 seconds
+        me.recentUpdates_[old] = object.seriesId;
+        setTimeout(function () {
+            delete me.recentUpdates_[old];
+        }, 30000);
+        await me.reader_.updateOneLevelAsync(
+            {}, sessionT, {seriesId: object.seriesId, expiry: new Date().getTime()},
+            query.eq(sessionT.cols.id, query.val(object.id)));
+        
+        let entry = /** @type {!aurora.auth.SessionTable.Entry} */ (me.makeEntry(object));
+        
+        await me.memory_.loadEntry(entry);
+        return entry;         
+        // change the series id and add the new the memory table
+    } catch (e) {
+        this.log_.error("error finding session", e);
+        return undefined;
+    }
 };
 
 /**
  * @param {string|undefined} token this is an internal token passed in by cookie
- * @param {string|undefined|function((undefined|aurora.auth.SessionTable.Entry))} seriesIdOrCb
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} opt_cb not optional always last parameter
+ * @param {string=} opt_seriesId
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
+
  */
-aurora.auth.DbSessionTable.prototype.findSession = function(token, seriesIdOrCb, opt_cb) {
-    this.memory_.findSession(token, seriesIdOrCb, opt_cb);
+aurora.auth.DbSessionTable.prototype.findSession = async function(token, opt_seriesId) {
+    return await this.memory_.findSession(token, opt_seriesId);
 };
 
 /**
@@ -515,14 +515,20 @@ aurora.auth.DbSessionTable.prototype.addLockHandler = function(callback) {
 
 /**
  * the string will be 16 chars long
- * @param {function (string)} cb
+ * @return {!Promise<string>}
  */
-aurora.auth.DbSessionTable.prototype.createUniqueId = function (cb) {
-    this.reader_.sequence('session_sequence', function (err, seq) {
-        cb(seq + '' || '1');
+aurora.auth.DbSessionTable.prototype.createUniqueId = function () {
+    return new Promise((resolve, reject) => {
+        
+        this.reader_.sequence('session_sequence', function (err, seq) {
+            if (err) {
+                reject(err);
+            }
+            else {
+                resolve( seq + '' || '1');
+            }
+        });
     });
-
-
 };
 
 /**

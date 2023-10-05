@@ -197,17 +197,11 @@ aurora.auth.MemorySessionTable.prototype.getClientToken = function(clientId, cb)
  * gets a constant token from token that is in the cookie
  *
  * @param {string} token
- * @param {function(?string)}  cb
+ * @return {!Promise<?string>}
  */
-aurora.auth.MemorySessionTable.prototype.getToken = function(token, cb) {
-    this.findSession(token, function (session) {
-        if (session) {
-            cb(session.constToken);
-        }
-        else {
-            cb(null);
-        }
-    });
+aurora.auth.MemorySessionTable.prototype.getToken = async function(token) {
+    let session = await this.findSession(token);
+    return session ? session.constToken : null;
 };
 
 /**
@@ -217,23 +211,23 @@ aurora.auth.MemorySessionTable.prototype.unregisterClientToken = function(client
     var info = this.clients_[clientId];
     if (info) {
         delete this.clients_[clientId];
-        this.findSession(info.token, function (session) {
+        this.findSession(info.token).then((session) => {
             if (session) {
                 this.updateSession_(session, function() {
                     delete session.clients[clientId];
                 });
             }
             
-        }.bind(this));
+        });
     }
 };
 /**
  * @param {?} request
  * @param {string} clientId
  * @param {?} connection
- * @param {function (boolean)} cb
+ * @return {Promise<boolean>}
  */
-aurora.auth.MemorySessionTable.prototype.registerClientToken = function(request, clientId, connection, cb) {
+aurora.auth.MemorySessionTable.prototype.registerClientToken = async function(request, clientId, connection) {
 
     var cookies = {};
 
@@ -246,27 +240,25 @@ aurora.auth.MemorySessionTable.prototype.registerClientToken = function(request,
         if (sesh.length === 2) {
             var token = sesh[0];
             var seriesId = sesh[1];
-            this.findSession(token, seriesId, function (session) {
-                if (session) {
-                    this.clients_[clientId] = {token: token, constToken: session.constToken};
-                    this.updateSession_(session, function() {
-                        session.clients[clientId] = {};
-                    });
-                    cb(true);
-                    return;
-                }
-                else if (this.removeSeriesId(seriesId)) {
-                    this.log_.warn('Token Theft Assumed!!!, Deleting all tokens that relate to this seriesId');
-                }
-                else {
-                    //                    connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));   //Legitimate Old Token Attempt
-                }
-                cb(false);
-            }.bind(this));
-            return;
+            let session = await this.findSession(token, seriesId);
+            if (session) {
+                this.clients_[clientId] = {token: token, constToken: session.constToken};
+                this.updateSession_(session, function() {
+                    session.clients[clientId] = {};
+                });
+                return true;
+            }
+            else if (this.removeSeriesId(seriesId)) {
+                this.log_.warn('Token Theft Assumed!!!, Deleting all tokens that relate to this seriesId');
+            }
+            else {
+                //                    connection.sendUTF(JSON.stringify({command: AURORA.COMMANDS.AUTH.TOKEN_INVALID}));   //Legitimate Old Token Attempt
+            }
+            return false;
+
         }
     }
-    cb(false);
+    return false;
 };
 
 /**
@@ -331,10 +323,10 @@ aurora.auth.MemorySessionTable.prototype.removeSeriesId = function(seriesId, opt
  * @param {string} constToken
  * @param {?number} timeout
  * @param {Object} data
- * @param {function(?,?aurora.auth.SessionTable.Entry)} callback
  * @param {boolean=} opt_locked default false
+ * @return {!Promise<!aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.MemorySessionTable.prototype.createSession = function(token, seriesId, constToken, timeout, data, callback, opt_locked) {
+aurora.auth.MemorySessionTable.prototype.createSession = async function(token, seriesId, constToken, timeout, data, opt_locked) {
     var exp = timeout === null ? null : (process.hrtime()[0] * 1000 + timeout);
     let lockTime = this.defaultLockTimeout_ ? process.hrtime()[0] * 1000 + this.defaultLockTimeout_ : 0;
     var session = {
@@ -348,16 +340,16 @@ aurora.auth.MemorySessionTable.prototype.createSession = function(token, seriesI
     this.internalTokens_[constToken] = token;
     this.updateExpire_();
     this.syncSession(token);
-    callback(null, session);
+    return session;
 };
 
 
 /**
  * loads the seesion into memory from a different internal source
  * @param {!aurora.auth.SessionTable.Entry} entry
- * @param {function(?)} callback
+ * @return {Promise} only throws error
  */
-aurora.auth.MemorySessionTable.prototype.loadEntry = function(entry, callback) {
+aurora.auth.MemorySessionTable.prototype.loadEntry = async function(entry) {
     
     var exp = entry.timeout === null ? null : (process.hrtime()[0] * 1000 + entry.timeout);
     let lockTime = this.defaultLockTimeout_ ? process.hrtime()[0] * 1000 + this.defaultLockTimeout_ : 0;
@@ -375,7 +367,6 @@ aurora.auth.MemorySessionTable.prototype.loadEntry = function(entry, callback) {
     this.internalTokens_[constToken] = token;
     this.updateExpire_();
     this.syncSession(token);
-    callback(null);
 };
 
 /**
@@ -503,20 +494,6 @@ aurora.auth.MemorySessionTable.prototype.removeAll = function() {
 
 };
 
-/**
- * @private
- * @param {string|undefined} token
- * @param {string|undefined} seriesId
- * @param {string} clientId
- * @param {function(({connection:?}|undefined))} cb
- */
-aurora.auth.MemorySessionTable.prototype.findSession_ = function(token, seriesId, clientId, cb) {
-    this.findSession(token, seriesId, function (session) {
-        cb(session ? session.clients[clientId] : undefined);
-    });
-
-};
-
 
 /**
  * for a session set should it expire if it has open clients
@@ -526,11 +503,11 @@ aurora.auth.MemorySessionTable.prototype.findSession_ = function(token, seriesId
  */
 
 aurora.auth.MemorySessionTable.prototype.setExpireWithClients = function(token, val) {
-    this.findSessionExternal(token, function (session) {
+    this.findSessionExternal(token).then(session => {
         if (session && session.expireWithClients != val) {
             this.updateSession_(session, function() {session.expireWithClients = val;});
         }
-    }.bind(this));
+    });
 };
 
 
@@ -541,7 +518,7 @@ aurora.auth.MemorySessionTable.prototype.setExpireWithClients = function(token, 
 
 aurora.auth.MemorySessionTable.prototype.setAllowLock = function(token, val) {
     let me = this;
-    this.findSessionExternal(token, function (session) {
+    this.findSessionExternal(token).then(session => {
         if (session) {
             this.updateSession_(session, function() {
                 if (!session.locked) {
@@ -555,43 +532,41 @@ aurora.auth.MemorySessionTable.prototype.setAllowLock = function(token, val) {
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.MemorySessionTable.prototype.getExpireWithClients = function(token, cb) {
-    this.findSessionExternal(token, function (session) {
-        cb(!!(session && session.expireWithClients));
-    });
+aurora.auth.MemorySessionTable.prototype.getExpireWithClients = async function(token) {
+    let session = await this.findSessionExternal(token);
+    return !!(session && session.expireWithClients);
 };
 
 
 /**
  * @param {string|undefined} token
- * @param {function(boolean)} cb
+ * @return {!Promise<boolean>}
  */
-aurora.auth.MemorySessionTable.prototype.getAllowLock = function(token, cb) {
-    let session = this.findSessionExternal(token, function (session) {
-        cb(!!(session && !!session.lockTimeout));
-    });
+aurora.auth.MemorySessionTable.prototype.getAllowLock = async function(token) {
+    let session = await this.findSessionExternal(token);
+    return !!(session && !!session.lockTimeout);
 };
 
 /**
  * updates the sessions and it expires later
  * @param {string|undefined} token
- * @param {function(?)=} opt_cb
+ * @param {function(?)=} opt_cb use this to do the updating of the sesion
  */
 
 aurora.auth.MemorySessionTable.prototype.touch = function(token, opt_cb) {
-    this.findSessionExternal(token, function (session) {
+    this.findSessionExternal(token).then(session => {
         if (session && session.expiry !== null) {
             this.updateSession_(session, function() {
                 if (opt_cb) {
                     opt_cb(session);
                 }
-
+                
             });
         }
         
-    }.bind(this));
+    });
 };
 
 /**
@@ -625,7 +600,7 @@ aurora.auth.MemorySessionTable.prototype.expire = function() {
  */
 aurora.auth.MemorySessionTable.prototype.unlock = function(token) {
     
-    this.findSessionExternal(token, function (session) {
+    this.findSessionExternal(token).then((session) => {
         if (session) {
             this.updateSession_(session, function() {
                 session.locked = false;
@@ -634,7 +609,7 @@ aurora.auth.MemorySessionTable.prototype.unlock = function(token) {
                 h(session.constToken, false);
             });
         }
-    }.bind(this));
+    });
 };
 
 /**
@@ -642,7 +617,7 @@ aurora.auth.MemorySessionTable.prototype.unlock = function(token) {
  * @param {string} token
  */
 aurora.auth.MemorySessionTable.prototype.lock = function(token) {
-    this.findSessionExternal(token, function (session) {
+    this.findSessionExternal(token).then((session) => {
         if (session) {
             this.updateSession_(session, function() {
                 session.locked = true;
@@ -651,7 +626,7 @@ aurora.auth.MemorySessionTable.prototype.lock = function(token) {
                 h(session.constToken, true);
             });
         }
-    }.bind(this));
+    });
 };
 
 
@@ -774,37 +749,33 @@ aurora.auth.MemorySessionTable.prototype.updateExpire_ = function() {
 
 /**
  * @param {string|undefined} token
- * @param {function((undefined|aurora.auth.SessionTable.Entry))} cb not optional always last parameter
+ * @return {!Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.MemorySessionTable.prototype.findSessionExternal = function(token, cb) {
-    this.findSession(this.internalTokens_[token||''], cb);
+aurora.auth.MemorySessionTable.prototype.findSessionExternal = async function(token) {
+    return await this.findSession(this.internalTokens_[token||'']);
 };
 
 /**
  * @param {string|undefined} token an internal token
- * @param {string|undefined|function((undefined|aurora.auth.SessionTable.Entry))} seriesIdOrCb
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} opt_cb not optional always last parameter
+ * @param {string=} opt_seriesId
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.MemorySessionTable.prototype.findSession = function(token, seriesIdOrCb, opt_cb) {
-    let cb = /** @type {function((undefined|aurora.auth.SessionTable.Entry))} */ (opt_cb === undefined ? seriesIdOrCb: opt_cb);
-    let opt_seriesId = opt_cb === undefined ? undefined : seriesIdOrCb;
-    var v = this.table_[token];
-
+aurora.auth.MemorySessionTable.prototype.findSession = async function(token, opt_seriesId) {
+    let v = this.table_[token];
     if (v === undefined || (opt_seriesId !== undefined && v.seriesId !== opt_seriesId)) {
-        cb(undefined);
-        return;
+        return undefined;
     }
-    cb(v);
+    return v;
 };
 
 /**
  * @param {string} token this is an internal token passed in by cookie
  * @param {string} seriesId
  * @param {string} ip
- * @param {(function((undefined|aurora.auth.SessionTable.Entry)))=} cb
+ * @return {Promise<undefined|aurora.auth.SessionTable.Entry>}
  */
-aurora.auth.MemorySessionTable.prototype.loginFindSession = function(token, seriesId, ip, cb) {
-    this.findSession(token, seriesId, cb);
+aurora.auth.MemorySessionTable.prototype.loginFindSession = async function(token, seriesId, ip) {
+    return await this.findSession(token, seriesId);
 };
 
 /**

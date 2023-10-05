@@ -59,7 +59,7 @@ aurora.websocket.Server = function() {
     });
 
     var serverInstance = this;
-    aurora.http.serversUpdatedE.on('update', function(servers) {
+    aurora.http.serversUpdatedE.on('update', (servers) => {
         for (let portStr in serverInstance.lastSockets_) {
             serverInstance.lastSockets_[portStr]['shutDown']();
         }
@@ -71,19 +71,20 @@ aurora.websocket.Server = function() {
                     'httpServer': server.server
                 });
                 wsServer.clients = {};
-                wsServer.on('request', function(request) {
+                wsServer.on('request', (request) => {
                     var connection = request['accept'](null, request['origin']);
-                    serverInstance.getUniqueClientId_(wsServer.clients, function(socketId) {
+                    serverInstance.getUniqueClientId_(wsServer.clients, (socketId) => {
                         connection.id = socketId;
                         wsServer.clients[socketId] = connection;
-                        aurora.auth.instance.registerClientToken(request, socketId, connection, function (registered) {
+                        aurora.auth.instance.registerClientToken(request, socketId, connection).then((registered) => {
                             let curMessage = null;
                             if (registered) {
-                                connection.on('message', function(data) {
+                                connection.on('message', (data) => {
                                     if (data.utf8Data == 'data-start') {
                                         curMessage = {};
                                     }
                                     else if (data.utf8Data == 'data-end') {
+
                                         if (curMessage) {
                                             serverInstance.onMessage(connection, curMessage);
                                         }
@@ -109,7 +110,7 @@ aurora.websocket.Server = function() {
                                     }
                                         
                                 });
-                                connection.on('close', function(closeReason, description) {
+                                connection.on('close', (closeReason, description) => {
                                     curMessage = null;
                                     serverInstance.onClose_(connection, closeReason, description);
                                     aurora.auth.instance.unregisterClientToken(socketId);
@@ -121,7 +122,7 @@ aurora.websocket.Server = function() {
                                 serverInstance.onClose_(connection, 'INVALIDTOKEN', 'invalid token');
                                 delete wsServer.clients[socketId];                                
                             }
-                        }.bind(this));
+                        });
                     });
                 });
                 serverInstance.lastSockets_[portStr] = wsServer;
@@ -178,6 +179,8 @@ aurora.websocket.Server.prototype.onMessage = function(connection, message) {
         return;
     }
     // todo if the channel or plugin id don't exist we shouldn't die this is asecurity risk
+    
+
     if (message['type'] === 'utf8') {
         try {
             var m = (JSON.parse(message['utf8Data']));
