@@ -214,23 +214,6 @@ aurora.log.enum = {'DEBUG': 7, 'INFO': 6, 'NOTICE': 5, 'WARN': 4, 'ERROR': 3, 'C
 aurora.log.level = aurora.log.enum['INFO'];
 
 /**
- * @final
- */
-aurora.log.syslog = (function() {
-	if(process.platform !== "linux"){
-		return;
-	}
-    try{
-		var syslog = require('modern-syslog');
-		syslog.open(config.logName || 'gui', syslog['LOG_PID']);
-		return syslog;
-	}
-	catch(e){
-		console.error(e);
-	}
-})();
-
-/**
  * forces update of logs from file
  */
 aurora.log.refresh = function() {
